@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>플러스로또 ADMIN · IA & Design System v0.1</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+:root{
+  /* ── Brand / Ink ─────────────────────────── */
+  --ink-900:#0B1530; --ink-800:#101D3D; --ink-700:#182A52; --ink-600:#243A66; --ink-500:#34507F;
+  /* ── Primary (action / link / active) ─────── */
+  --primary-700:#1E47B0; --primary-600:#2756D6; --primary-500:#3D6EEC; --primary-100:#DCE6FF; --primary-50:#EEF3FF;
+  /* ── Accent (signal / 문자·아웃콜 등 능동 액션) ── */
+  --accent-600:#D97706; --accent-500:#F59E0B; --accent-100:#FDECC8; --accent-50:#FFF7E6;
+  /* ── Semantic ─────────────────────────────── */
+  --success:#16A34A; --success-bg:#E7F6EE; --success-bd:#BCE6CC;
+  --warning:#D97706; --warning-bg:#FEF3E2; --warning-bd:#FAD9A6;
+  --danger:#DC2626;  --danger-bg:#FCEBEB;  --danger-bd:#F4C2C2;
+  --info:#0EA5E9;    --info-bg:#E6F6FE;    --info-bd:#B8E6FA;
+  /* ── Neutral ──────────────────────────────── */
+  --gray-50:#F7F8FA; --gray-100:#EDF0F4; --gray-200:#E1E6EC; --gray-300:#CCD3DD; --gray-400:#99A3B2;
+  --gray-500:#6B7585; --gray-600:#4B5565; --gray-700:#343C49; --gray-800:#212732; --gray-900:#0F1420;
+  /* ── Membership grade (refined) ───────────── */
+  --g-free:#94A3B8;   --g-free-bg:#EEF1F5;
+  --g-simple:#64748B; --g-simple-bg:#EAEDF2;
+  --g-gold:#C99700;   --g-gold-bg:#FBF2D2;
+  --g-goldp:#B45309;  --g-goldp-bg:#FBEBD9;
+  --g-vip:#0F9D6B;    --g-vip-bg:#E3F6EE;
+  --g-royal:#7C3AED;  --g-royal-bg:#F1EAFE;
+  --g-ovr:#0F1420;    --g-ovr-bg:#E5E7EB;
+  --g-toss:#0EA5E9;   --g-toss-bg:#E4F4FD;
+  --g-out:#DC2626;    --g-out-bg:#FBE7E7;
+  /* ── Layout ───────────────────────────────── */
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-full:999px;
+  --sb-w:248px; --topbar-h:56px;
+  --shadow-sm:0 1px 2px rgba(15,20,32,.06),0 1px 1px rgba(15,20,32,.04);
+  --shadow-md:0 4px 14px rgba(15,20,32,.08);
+  --shadow-lg:0 16px 40px rgba(15,20,32,.14);
+  --font:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo",sans-serif;
+  --mono:"JetBrains Mono","SFMono-Regular",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);color:var(--gray-800);background:#fff;line-height:1.6;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" on,"cv01" on}
+
+/* ── Doc shell ──────────────────────────────── */
+.doc{display:grid;grid-template-columns:264px 1fr;min-height:100vh}
+.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:var(--ink-900);color:#fff;padding:28px 22px}
+.toc .logo{font-size:19px;font-weight:800;letter-spacing:-.4px;display:flex;align-items:center;gap:9px;margin-bottom:4px}
+.toc .logo .dot{width:11px;height:11px;border-radius:3px;background:var(--accent-500);box-shadow:0 0 0 3px rgba(245,158,11,.2)}
+.toc .sub{font-size:11.5px;color:#8794b3;margin-bottom:26px;letter-spacing:.2px}
+.toc a{display:block;color:#aab4d1;text-decoration:none;font-size:13px;padding:6px 10px;border-radius:6px;transition:.15s;line-height:1.45}
+.toc a:hover{color:#fff;background:rgba(255,255,255,.06)}
+.toc a.lv2{padding-left:22px;font-size:12px;color:#7c88a8}
+.toc .grp{font-size:10.5px;font-weight:700;letter-spacing:1.4px;color:#566188;text-transform:uppercase;margin:20px 10px 6px}
+.main{min-width:0;background:var(--gray-50)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 40px 120px}
+
+/* ── Section / typography ───────────────────── */
+section{padding-top:64px;scroll-margin-top:24px}
+.eyebrow{font-size:11.5px;font-weight:700;letter-spacing:1.6px;color:var(--primary-600);text-transform:uppercase;margin-bottom:10px}
+h1{font-size:30px;font-weight:800;letter-spacing:-.8px;color:var(--ink-900);line-height:1.2}
+h2{font-size:23px;font-weight:800;letter-spacing:-.5px;color:var(--ink-900);margin-bottom:6px}
+h3{font-size:16.5px;font-weight:700;color:var(--ink-800);margin:30px 0 12px;letter-spacing:-.2px}
+h4{font-size:13.5px;font-weight:700;color:var(--gray-700);margin:20px 0 8px;text-transform:uppercase;letter-spacing:.6px}
+p{font-size:14.5px;color:var(--gray-700);margin-bottom:12px}
+.lead{font-size:16px;color:var(--gray-600);line-height:1.65}
+a.ln{color:var(--primary-600);text-decoration:none;border-bottom:1px solid var(--primary-100)}
+strong{color:var(--ink-800);font-weight:700}
+code{font-family:var(--mono);font-size:12.5px;background:var(--gray-100);color:var(--ink-700);padding:1.5px 6px;border-radius:5px;border:1px solid var(--gray-200)}
+.divider{height:1px;background:var(--gray-200);margin:54px 0 0}
+.note{background:var(--accent-50);border:1px solid var(--accent-100);border-left:3px solid var(--accent-500);border-radius:8px;padding:14px 16px;font-size:13.5px;color:var(--gray-700);margin:16px 0}
+.note b{color:var(--accent-600)}
+.warn{background:var(--danger-bg);border:1px solid var(--danger-bd);border-left:3px solid var(--danger);border-radius:8px;padding:14px 16px;font-size:13.5px;color:var(--gray-700);margin:16px 0}
+
+/* ── Cover ──────────────────────────────────── */
+.cover{padding:80px 40px 0}
+.cover .badge{display:inline-flex;gap:7px;align-items:center;background:var(--ink-900);color:#fff;font-size:11.5px;font-weight:600;padding:6px 13px;border-radius:999px;margin-bottom:22px}
+.cover .badge .v{color:var(--accent-500);font-family:var(--mono)}
+.cover h1{font-size:42px;letter-spacing:-1.4px;margin-bottom:14px}
+.cover h1 em{font-style:normal;color:var(--primary-600)}
+.meta-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.chip{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:9px 14px;font-size:12.5px;color:var(--gray-600)}
+.chip b{color:var(--ink-800)}
+
+/* ── Cards / grids ──────────────────────────── */
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:22px;box-shadow:var(--shadow-sm)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:760px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+
+/* ── Tables (doc) ───────────────────────────── */
+table.tbl{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0;background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden}
+table.tbl th{background:var(--gray-50);text-align:left;padding:10px 13px;font-weight:700;color:var(--gray-600);font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;border-bottom:1px solid var(--gray-200)}
+table.tbl td{padding:10px 13px;border-bottom:1px solid var(--gray-100);color:var(--gray-700);vertical-align:top}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl td code{font-size:11.5px}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.3px}
+.tag.ok{background:var(--success-bg);color:var(--success);border:1px solid var(--success-bd)}
+.tag.no{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd)}
+.tag.partial{background:var(--warning-bg);color:var(--warning);border:1px solid var(--warning-bd)}
+.tag.role{background:var(--primary-50);color:var(--primary-600);border:1px solid var(--primary-100);font-family:var(--mono)}
+
+/* ── Swatches ───────────────────────────────── */
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin:14px 0}
+.sw{border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;background:#fff}
+.sw .c{height:60px}
+.sw .m{padding:8px 10px}
+.sw .m .n{font-size:11.5px;font-weight:700;color:var(--gray-800)}
+.sw .m .h{font-size:10.5px;font-family:var(--mono);color:var(--gray-500);text-transform:uppercase}
+
+/* ── Type specimens ─────────────────────────── */
+.spec{display:flex;align-items:baseline;gap:18px;padding:12px 0;border-bottom:1px solid var(--gray-100)}
+.spec .lbl{width:130px;flex:none;font-size:11.5px;font-family:var(--mono);color:var(--gray-500)}
+.spec .ex{color:var(--ink-900)}
+
+/* ───────────────────────────────────────────── */
+/*  LIVE COMPONENT PREVIEW THEME (the actual UI)  */
+/* ───────────────────────────────────────────── */
+.preview{border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;margin:16px 0;background:#fff}
+.preview-bar{background:var(--gray-50);border-bottom:1px solid var(--gray-200);padding:7px 14px;font-size:11px;font-weight:700;color:var(--gray-500);letter-spacing:.6px;text-transform:uppercase}
+.preview-body{padding:20px;background:var(--gray-50)}
+
+/* App shell preview */
+.app{display:grid;grid-template-columns:200px 1fr;height:430px;border-radius:10px;overflow:hidden;border:1px solid var(--gray-200);font-size:12px;background:#fff}
+.app .nav{background:var(--ink-900);color:#fff;padding:14px 0;overflow-y:auto}
+.app .nav .brand{font-weight:800;font-size:14px;padding:4px 16px 14px;display:flex;align-items:center;gap:7px}
+.app .nav .brand .dot{width:8px;height:8px;border-radius:2px;background:var(--accent-500)}
+.app .nav .grp{font-size:9px;font-weight:700;letter-spacing:1px;color:#566188;padding:12px 16px 4px;text-transform:uppercase}
+.app .nav .it{display:flex;align-items:center;gap:9px;padding:7px 16px;color:#aab4d1;cursor:default;position:relative}
+.app .nav .it .ic{width:15px;text-align:center;opacity:.85}
+.app .nav .it .rb{margin-left:auto;font-size:9px;background:#566188;color:#cdd6ef;padding:0 6px;border-radius:999px;font-weight:700}
+.app .nav .it.active{color:#fff;background:rgba(61,110,236,.16);box-shadow:inset 3px 0 0 var(--primary-500)}
+.app .nav .it.active .rb{background:var(--primary-500);color:#fff}
+.app .nav .it .pill{margin-left:auto;font-size:8.5px;font-family:var(--mono);color:#7c88a8;border:1px solid #2c3c63;border-radius:4px;padding:0 4px}
+.app .top{height:46px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;padding:0 16px;gap:12px;background:#fff}
+.app .top .tt{font-weight:700;color:var(--ink-900);font-size:13px}
+.app .top .desc{font-size:11px;color:var(--gray-400)}
+.app .top .acc{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--gray-500)}
+.app .top .av{width:24px;height:24px;border-radius:7px;background:var(--primary-100);color:var(--primary-600);display:grid;place-items:center;font-weight:700;font-size:11px}
+.app .content{padding:16px;overflow:auto;height:calc(430px - 46px)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:7px;border:1px solid transparent;cursor:pointer;transition:.14s;line-height:1}
+.btn:active{transform:translateY(.5px)}
+.btn-pri{background:var(--primary-600);color:#fff}.btn-pri:hover{background:var(--primary-700)}
+.btn-acc{background:var(--accent-500);color:#fff}.btn-acc:hover{background:var(--accent-600)}
+.btn-dng{background:var(--danger);color:#fff}.btn-dng:hover{background:#b91c1c}
+.btn-suc{background:var(--success);color:#fff}
+.btn-sec{background:#fff;color:var(--gray-700);border-color:var(--gray-300)}.btn-sec:hover{background:var(--gray-50);border-color:var(--gray-400)}
+.btn-gho{background:transparent;color:var(--gray-600)}.btn-gho:hover{background:var(--gray-100)}
+.btn-sm{font-size:11.5px;padding:6px 10px}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* Badges */
+.bdg{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;line-height:1.4;border:1px solid transparent}
+.bdg .led{width:6px;height:6px;border-radius:999px}
+.b-free{background:var(--g-free-bg);color:#5b6677}.b-free .led{background:var(--g-free)}
+.b-simple{background:var(--g-simple-bg);color:#4d5868}.b-simple .led{background:var(--g-simple)}
+.b-gold{background:var(--g-gold-bg);color:#8a6a00}.b-gold .led{background:var(--g-gold)}
+.b-goldp{background:var(--g-goldp-bg);color:#8a3f07}.b-goldp .led{background:var(--g-goldp)}
+.b-vip{background:var(--g-vip-bg);color:#0a6e4b}.b-vip .led{background:var(--g-vip)}
+.b-royal{background:var(--g-royal-bg);color:#5b21b6}.b-royal .led{background:var(--g-royal)}
+.b-ovr{background:var(--g-ovr-bg);color:#1f2430}.b-ovr .led{background:var(--g-ovr)}
+.b-toss{background:var(--g-toss-bg);color:#0673a3}.b-toss .led{background:var(--g-toss)}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;border:1px solid transparent}
+.s-active{background:var(--success-bg);color:var(--success);border-color:var(--success-bd)}
+.s-wait{background:var(--warning-bg);color:var(--warning);border-color:var(--warning-bd)}
+.s-fail{background:var(--danger-bg);color:var(--danger);border-color:var(--danger-bd)}
+.s-cancel{background:var(--gray-100);color:var(--gray-500);border-color:var(--gray-200)}
+.s-stop{background:#fbe7e7;color:#9a1c1c;border-color:#f0bcbc}
+.s-info{background:var(--info-bg);color:#0673a3;border-color:var(--info-bd)}
+
+/* Data table preview */
+.dt{border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;background:#fff}
+.dt .dt-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--gray-200);background:#fff}
+.dt .dt-head .res{font-size:12px;color:var(--gray-500)}
+.dt .dt-head .res b{color:var(--ink-800);font-family:var(--mono)}
+.dt .dt-head .sp{margin-left:auto}
+.dt-scroll{overflow-x:auto}
+table.data{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+table.data thead th{position:sticky;top:0;background:var(--gray-50);color:var(--gray-600);font-weight:700;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;padding:9px 12px;text-align:left;border-bottom:1px solid var(--gray-200)}
+table.data tbody td{padding:9px 12px;border-bottom:1px solid var(--gray-100);color:var(--gray-700)}
+table.data tbody tr:hover{background:var(--primary-50)}
+table.data .num{font-family:var(--mono);font-size:11.5px;text-align:right;color:var(--gray-800)}
+table.data .muted{color:var(--gray-400)}
+.bulkbar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--ink-800);color:#fff;font-size:12px;border-top:1px solid var(--gray-200)}
+.bulkbar .sel{font-weight:700}.bulkbar .sp{margin-left:auto}
+.bulkbar .mini{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:6px;font-size:11px;padding:5px 9px;cursor:default}
+
+/* Filter */
+.filters{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:12px}
+.filters .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.fsel{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--gray-600);background:var(--gray-50);border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px}
+.fsel .k{color:var(--gray-400);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fchip{display:inline-flex;align-items:center;gap:6px;font-size:11px;background:var(--primary-50);color:var(--primary-600);border:1px solid var(--primary-100);border-radius:999px;padding:4px 6px 4px 10px;font-weight:600}
+.fchip .x{width:14px;height:14px;border-radius:999px;background:var(--primary-100);display:grid;place-items:center;font-size:10px}
+
+/* Input */
+.inp{font-family:var(--font);font-size:13px;color:var(--gray-800);background:#fff;border:1px solid var(--gray-300);border-radius:7px;padding:8px 11px;width:100%}
+.inp:focus{outline:none;border-color:var(--primary-500);box-shadow:0 0 0 3px rgba(61,110,236,.16)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11.5px;font-weight:700;color:var(--gray-600);margin-bottom:5px}
+.field .hint{font-size:11px;color:var(--gray-400);margin-top:4px}
+.formrow{display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:start;padding:14px 0;border-bottom:1px solid var(--gray-100)}
+.formrow .fl{font-size:12.5px;font-weight:600;color:var(--gray-600);padding-top:9px}
+
+/* KPI */
+.kpi{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
+.kpi .ic{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:16px}
+.kpi .k{font-size:11.5px;color:var(--gray-500);font-weight:600}
+.kpi .v{font-size:26px;font-weight:800;color:var(--ink-900);margin-top:6px;font-family:var(--mono);letter-spacing:-1px}
+.kpi .d{font-size:11.5px;margin-top:4px;font-weight:600}
+.kpi .d.up{color:var(--success)}.kpi .d.dn{color:var(--danger)}
+.kpi.acc{background:linear-gradient(135deg,var(--ink-800),var(--ink-700));border-color:var(--ink-700)}
+.kpi.acc .k{color:#9fb0d6}.kpi.acc .v{color:#fff}
+
+/* Tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--gray-200);margin-bottom:0}
+.tab{font-size:12.5px;font-weight:600;color:var(--gray-500);padding:9px 14px;cursor:default;border-bottom:2px solid transparent}
+.tab.on{color:var(--primary-600);border-bottom-color:var(--primary-600)}
+.tab .ct{font-size:10px;background:var(--gray-100);color:var(--gray-500);padding:1px 6px;border-radius:999px;margin-left:5px}
+.tab.on .ct{background:var(--primary-50);color:var(--primary-600)}
+
+/* misc */
+ul.clean{list-style:none;margin:10px 0}
+ul.clean li{position:relative;padding:5px 0 5px 22px;font-size:14px;color:var(--gray-700)}
+ul.clean li::before{content:"";position:absolute;left:4px;top:12px;width:6px;height:6px;border-radius:2px;background:var(--primary-500)}
+ul.dash{list-style:none;margin:8px 0}
+ul.dash li{padding:3px 0 3px 16px;position:relative;font-size:13.5px;color:var(--gray-600)}
+ul.dash li::before{content:"–";position:absolute;left:0;color:var(--gray-400)}
+.tree{font-family:var(--mono);font-size:12.5px;line-height:1.85;color:var(--gray-700);background:var(--ink-900);color:#cdd6ef;border-radius:10px;padding:20px 22px;overflow-x:auto}
+.tree .r{color:#fff;font-weight:700}
+.tree .m{color:#7c88a8}
+.tree .ok{color:#5fd09a}.tree .no{color:#f08a8a}.tree .pa{color:#f0c060}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--gray-500);margin:10px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.codeblock{background:var(--ink-900);color:#cdd6ef;border-radius:10px;padding:18px 20px;font-family:var(--mono);font-size:12px;line-height:1.7;overflow-x:auto;margin:14px 0}
+.codeblock .c{color:#7c88a8}
+.codeblock .k{color:#8ab4ff}
+.codeblock .s{color:#7fd0a0}
+.foot{text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0 0}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<!-- ───────────── TOC ───────────── -->
+<nav class="toc">
+  <div class="logo"><span class="dot"></span>플러스로또 ADMIN</div>
+  <div class="sub">IA &amp; Design System · v0.1</div>
+  <a href="#intro">개요 &amp; 스택</a>
+  <div class="grp">01 · 정보구조</div>
+  <a href="#ia-map" class="lv2">사이트맵</a>
+  <a href="#ia-nav" class="lv2">내비게이션 모델</a>
+  <a href="#ia-role" class="lv2">권한 매트릭스</a>
+  <a href="#ia-route" class="lv2">라우트 구조</a>
+  <a href="#ia-tpl" class="lv2">페이지 템플릿</a>
+  <a href="#ia-data" class="lv2">데이터 모델</a>
+  <a href="#ia-gap" class="lv2">미확인 화면(19)</a>
+  <div class="grp">02 · 디자인 시스템</div>
+  <a href="#ds-principle" class="lv2">디자인 원칙</a>
+  <a href="#ds-color" class="lv2">컬러 토큰</a>
+  <a href="#ds-grade" class="lv2">등급 · 상태 토큰</a>
+  <a href="#ds-type" class="lv2">타이포그래피</a>
+  <a href="#ds-space" class="lv2">스페이싱 · 레이아웃</a>
+  <div class="grp">03 · 컴포넌트</div>
+  <a href="#c-shell" class="lv2">앱 셸 · 사이드바</a>
+  <a href="#c-table" class="lv2">데이터 테이블</a>
+  <a href="#c-filter" class="lv2">필터 · 검색</a>
+  <a href="#c-btn" class="lv2">버튼 · 뱃지</a>
+  <a href="#c-form" class="lv2">폼 · 입력</a>
+  <a href="#c-kpi" class="lv2">KPI · 탭</a>
+  <div class="grp">04 · 구현</div>
+  <a href="#build-tpl" class="lv2">화면 패턴</a>
+  <a href="#build-fs" class="lv2">폴더 구조</a>
+  <a href="#build-next" class="lv2">다음 단계</a>
+</nav>
+
+<!-- ───────────── MAIN ───────────── -->
+<main class="main">
+
+<!-- COVER -->
+<div class="cover">
+  <span class="badge">설계 문서 <span class="v">v0.1</span> · 2026.06</span>
+  <h1>플러스로또 <em>운영 콘솔</em><br>정보구조 &amp; 디자인 시스템</h1>
+  <p class="lead" style="max-width:680px">기존 「플러스로또」 관리자 백오피스를 <strong>기능은 100% 보존</strong>하고 <strong>UX/UI만 직관적으로 재설계</strong>하기 위한 1차 설계 문서. 스크린샷 역설계 + 라이브 사이트 검증을 토대로, React·TypeScript·Supabase·Vercel 재구축의 단일 기준(Source of Truth)으로 사용합니다.</p>
+  <div class="meta-row">
+    <div class="chip"><b>도메인</b> · 로또 추천 인사이드 세일즈 CRM</div>
+    <div class="chip"><b>스택</b> · React + TS + Supabase + Vercel</div>
+    <div class="chip"><b>화면</b> · 13개 대분류 / 약 56개</div>
+    <div class="chip"><b>방법론</b> · Claude Code</div>
+  </div>
+</div>
+
+<div class="wrap">
+
+<!-- INTRO -->
+<section id="intro">
+  <div class="eyebrow">Overview</div>
+  <h2>이 시스템은 무엇인가</h2>
+  <p>「플러스로또」는 단순 로또 사이트가 아니라, <strong>유입된 리드를 영업조직(실장·팀장·담당자)이 전화로 전환시키는 아웃바운드 텔레마케팅 CRM 백오피스</strong>입니다. 일반 사용자용 프론트가 아닌 내부 운영툴이며, 약 15만 명 규모의 회원 DB를 다룹니다.</p>
+
+  <h3>핵심 운영 흐름</h3>
+  <div class="card" style="background:var(--ink-900);border:none;padding:26px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#cdd6ef;font-size:13px;font-weight:600">
+      <span style="background:rgba(61,110,236,.2);color:#9fc0ff;padding:8px 13px;border-radius:8px">유입<br><small style="opacity:.7;font-weight:400">유입코드/분류</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(61,110,236,.2);color:#9fc0ff;padding:8px 13px;border-radius:8px">담당 배정<br><small style="opacity:.7;font-weight:400">수동/자동할당</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(245,158,11,.2);color:#fbcd72;padding:8px 13px;border-radius:8px">아웃콜<br><small style="opacity:.7;font-weight:400">미아웃콜 관리</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(22,163,74,.2);color:#7fdcaa;padding:8px 13px;border-radius:8px">전환<br><small style="opacity:.7;font-weight:400">무료→유료등급</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(22,163,74,.2);color:#7fdcaa;padding:8px 13px;border-radius:8px">결제<br><small style="opacity:.7;font-weight:400">다중 PG</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(124,58,237,.2);color:#c4a3fb;padding:8px 13px;border-radius:8px">번호발송<br><small style="opacity:.7;font-weight:400">SMS 스케줄</small></span>
+      <span style="color:#566188">→</span>
+      <span style="background:rgba(255,255,255,.1);color:#cdd6ef;padding:8px 13px;border-radius:8px">매출귀속<br><small style="opacity:.7;font-weight:400">담당/팀장</small></span>
+    </div>
+  </div>
+
+  <h3>문서 사용법</h3>
+  <ul class="clean">
+    <li><strong>01 정보구조</strong>는 "무엇을 만드는가" — 전체 화면 지도, 권한 모델, 라우트, 데이터 엔티티.</li>
+    <li><strong>02–03 디자인 시스템 / 컴포넌트</strong>는 "어떻게 보이는가" — 아래 모든 컬러·컴포넌트는 실제 렌더링된 결과물이며, 그대로 CSS 토큰/Tailwind config로 옮깁니다.</li>
+    <li><strong>04 구현</strong>은 Claude Code 투입용 — 폴더 구조, 화면 패턴, 우선순위.</li>
+  </ul>
+  <div class="note">이 문서는 <b>스크린샷 37장(실제 렌더)</b>을 근거로 작성됐습니다. 나머지 19장은 원본 사이트가 <code>file not found</code>로 응답해 비어 있었고, 해당 화면들은 <a href="#ia-gap" class="ln">미확인 화면</a> 섹션에 라이브 재캡처 대상으로 정리했습니다. 백엔드 로직(PG 연동·문자 스케줄러·자동배정·권한)은 라이브 사이트 검증 단계에서 확정합니다.</div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════ 01 IA ════════ -->
+<section id="ia-map">
+  <div class="eyebrow">01 · Information Architecture</div>
+  <h2>사이트맵</h2>
+  <p>13개 대분류 / 약 56개 화면. 좌측 프리픽스 <span class="tag role">[관]</span><span class="tag role">[실]</span>는 원본의 역할 기반 메뉴 노출 규칙을 그대로 표기한 것입니다.</p>
+  <div class="legend">
+    <span><span class="tag ok">캡처됨</span> 실제 화면 확인</span>
+    <span><span class="tag no">미확인</span> 원본 file not found</span>
+    <span><span class="tag partial">일부</span> 부분 확인</span>
+  </div>
+  <div class="tree">
+<span class="r">01  메인</span>            <span class="ok">✔</span>  대시보드  <span class="m"># 원본은 목록으로 연결 → 신규 운영 대시보드로 재설계</span>
+<span class="r">02  커뮤니티</span> <span class="m">[실]</span>  <span class="no">✘</span>  공지사항 · 이벤트
+<span class="r">03  고객센터</span> <span class="m">[실]</span>  <span class="no">✘</span>  1:1문의 · 자주묻는질문 · 공지사항
+<span class="r">04  나의고객</span>         <span class="no">✘</span>  담당현황 · 문자발송  <span class="m"># 영업 개인 뷰</span>
+<span class="r">05  이용자</span> <span class="m">[관/실]</span> <span class="ok">✔</span>  ★ 26개 세그먼트 (시스템의 심장)
+                       전체 · 오늘다비 · 정상 · 유료 · 무료 · 실장담당 · 팀장담당 · 기타담당
+                       잘못된담당자 · 중복유입(오늘/어제) · 1주중복가입 · 담당미지정(신규/구/시도)
+                       당첨자 · 미아웃콜(신규/회수) · 접속자 · 장기미접속 · 정지 · 삭제 · 탈퇴
+                       수동간편등록 · 스케줄
+<span class="r">06  결제</span>     <span class="m">[실]</span>  <span class="ok">✔</span>  전체 · 대기 · 승인 · 실패 · 취소 · 수기결제
+<span class="r">07  매출</span>             <span class="no">✘</span>  실매출 · 전환매출 · 팀장매출
+<span class="r">08  관리자</span>           <span class="no">✘</span>  관리자목록 · 권한관리
+<span class="r">09  로그</span>     <span class="m">[관]</span>  <span class="no">✘</span>  관리자 · 포인트 · 문자 · 결제 · 유입
+<span class="r">10  통계</span>     <span class="m">[실]</span>  <span class="pa">◐</span>  가입 · 결제 · <span class="ok">유입로그✔</span>
+<span class="r">11  로또기록</span>         <span class="ok">✔</span>  로또당첨번호 (회차별 분석)
+<span class="r">12  베팅</span>     <span class="m">[실]</span>  <span class="ok">✔</span>  로또 (번호발행 내역)
+<span class="r">13  설정</span>     <span class="m">[실]</span>  <span class="ok">✔</span>  사이트 · 리포트 · 로또고정제외 · 이용약관
+  </div>
+</section>
+
+<section id="ia-nav">
+  <h2>내비게이션 모델</h2>
+  <p>좌측 고정 사이드바 + 상단 바 + 콘텐츠 영역의 3분할 셸. 개선 포인트는 <strong>대분류 그룹핑</strong>과 <strong>접이식 사이드바</strong>, 그리고 알림 카운트 뱃지의 의미 명확화입니다.</p>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">원본 구조의 문제</h4>
+      <ul class="dash">
+        <li>13개 메뉴가 그룹 없이 평면 나열 → 스캔 비용 높음</li>
+        <li>'메인'이 대시보드가 아니라 목록으로 빠짐</li>
+        <li>[관]/[실] 프리픽스가 라벨 안에 섞여 가독성 저하</li>
+        <li>카운트 뱃지(이용자 385, 결제 1)의 기준 불명확</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">재설계 방향</h4>
+      <ul class="dash">
+        <li>3개 논리 그룹: <b>운영 / 고객·세일즈 / 시스템</b></li>
+        <li>프리픽스 제거 → 역할에 따라 메뉴 자체를 노출/숨김</li>
+        <li>active 상태: 좌측 3px 인디케이터 + 배경 틴트</li>
+        <li>카운트 뱃지 = "내가 처리할 신규/대기 건수"로 통일</li>
+        <li>접이식(아이콘 only) 토글로 데이터 영역 극대화</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:8px">실제 사이드바 렌더는 <a href="#c-shell" class="ln">앱 셸 컴포넌트</a> 참고.</p>
+</section>
+
+<section id="ia-role">
+  <h2>권한 매트릭스</h2>
+  <p>원본 프리픽스에서 4개 역할이 도출됩니다. <span class="warn" style="display:inline;padding:2px 8px;border-left-width:2px">정확한 권한 경계는 <code>08 권한관리</code> 화면이 미확인 상태라 라이브 검증 필요</span></p>
+  <table class="tbl">
+    <thead><tr><th>모듈</th><th>관리자</th><th>실장</th><th>팀장</th><th>담당자</th></tr></thead>
+    <tbody>
+      <tr><td>메인 대시보드</td><td>전체</td><td>전체</td><td>팀 범위</td><td>개인 범위</td></tr>
+      <tr><td>이용자 (05)</td><td>전체 + [관]컬럼</td><td>전체</td><td>팀 담당분</td><td>개인 담당분</td></tr>
+      <tr><td>나의고객 (04)</td><td>○</td><td>○</td><td>○</td><td>○ (핵심 화면)</td></tr>
+      <tr><td>결제 (06)</td><td>○ (PG취소)</td><td>○</td><td>조회</td><td>본인 건 조회</td></tr>
+      <tr><td>매출 (07)</td><td>전체</td><td>전체</td><td>팀장매출</td><td>본인 실적</td></tr>
+      <tr><td>커뮤니티·고객센터</td><td>○</td><td>○ (관리)</td><td>조회</td><td>조회</td></tr>
+      <tr><td>관리자·권한 (08)</td><td>○</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>로그 (09)</td><td>○</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>통계 (10)</td><td>○</td><td>○</td><td>팀 범위</td><td>—</td></tr>
+      <tr><td>설정 (13)</td><td>○</td><td>○ (제한적)</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>구현은 Supabase <strong>RLS(Row Level Security) + 역할 클레임</strong>으로. 메뉴 노출은 프론트 라우트 가드, 데이터 접근은 RLS 정책으로 이중 통제.</p>
+</section>
+
+<section id="ia-route">
+  <h2>라우트 구조</h2>
+  <p>26개 이용자 세그먼트는 별도 페이지가 아니라 <strong>하나의 리스트 + 저장된 필터 뷰(query param)</strong>로 통합합니다. 코드 중복을 없애고 유지보수를 단순화하는 핵심 개선입니다.</p>
+  <div class="codeblock"><span class="c">// React Router 구조 (제안)</span>
+/login
+/                          <span class="c">→ /dashboard</span>
+/dashboard                 <span class="c">운영 대시보드 (신규)</span>
+
+/members                   <span class="c">이용자 메인 리스트</span>
+/members?view=paid         <span class="c">└ 26개 세그먼트 = 저장된 뷰</span>
+/members?view=no-outcall&sub=new
+/members/:id               <span class="c">이용자 상세 (drawer 또는 페이지)</span>
+
+/payments?status=all|pending|approved|failed|cancelled
+/payments/manual           <span class="c">수기결제</span>
+
+/revenue/{real|conversion|team}
+/my/{customers|sms}        <span class="c">나의고객</span>
+/community/{notices|events}
+/support/{inquiries|faq|notices}
+/admins  ·  /admins/roles
+/logs/{admin|point|sms|payment|inflow}
+/stats/{signup|payment|inflow}
+/lotto/results  ·  /bets
+/settings/{site|report|lotto-exclude|terms}</div>
+  <div class="note"><b>저장된 뷰(saved view)</b> 패턴: 26개 세그먼트의 필터 조건을 <code>view_presets</code> 테이블 또는 상수로 정의 → 사이드바/탭에서 선택 시 필터 자동 적용. 운영자가 커스텀 뷰를 직접 저장하는 확장도 자연스럽게 가능.</div>
+</section>
+
+<section id="ia-tpl">
+  <h2>페이지 템플릿 분류</h2>
+  <p>56개 화면은 결국 5개 템플릿의 반복입니다. 템플릿을 표준화하면 화면 90%가 조립으로 끝납니다.</p>
+  <div class="grid3">
+    <div class="card"><h4 style="margin-top:0;color:var(--primary-600)">A · 리스트형</h4><p style="font-size:13px;margin:0">필터 + 데이터 테이블 + 벌크액션 + 페이지네이션. <b>이용자·결제·매출·로그·베팅·로또</b> = 약 45개 화면.</p></div>
+    <div class="card"><h4 style="margin-top:0;color:var(--primary-600)">B · 폼형</h4><p style="font-size:13px;margin:0">섹션 그룹 + label/input 행. <b>사이트설정·이용약관·로또고정제외</b>.</p></div>
+    <div class="card"><h4 style="margin-top:0;color:var(--primary-600)">C · 대시보드형</h4><p style="font-size:13px;margin:0">KPI 카드 + 차트 + 처리 대기 리스트. <b>메인(신규)·리포트</b>.</p></div>
+    <div class="card"><h4 style="margin-top:0;color:var(--primary-600)">D · 통계형</h4><p style="font-size:13px;margin:0">기간 필터 + 차트 + 요약 테이블. <b>가입·결제·유입 통계</b>.</p></div>
+    <div class="card"><h4 style="margin-top:0;color:var(--primary-600)">E · 상세/편집</h4><p style="font-size:13px;margin:0">drawer/모달. <b>이용자 상세·결제 상세·문의 답변</b>.</p></div>
+    <div class="card" style="background:var(--gray-50);border-style:dashed"><h4 style="margin-top:0;color:var(--gray-500)">게시판형</h4><p style="font-size:13px;margin:0;color:var(--gray-500)">공지·이벤트·FAQ = 리스트형(A)의 경량 변형.</p></div>
+  </div>
+</section>
+
+<section id="ia-data">
+  <h2>데이터 모델 (Supabase 초안)</h2>
+  <p class="warn" style="padding:12px 16px">아래는 화면에서 <strong>역설계한 추정 스키마</strong>입니다. 컬럼·관계의 확정은 라이브 사이트 응답/네트워크 검증 단계에서 진행합니다.</p>
+  <table class="tbl">
+    <thead><tr><th>엔티티</th><th>핵심 컬럼(추정)</th><th>관계</th></tr></thead>
+    <tbody>
+      <tr><td><code>members</code> 회원</td><td>id, user_id, name, nickname, phone, grade, status, tendency(성향), inflow_code, inflow_type, assigned_staff_id, team_id, memo, win_history, registered_at, last_active_at, is_suspended, is_deleted, is_withdrawn</td><td>→ staff, team, payments</td></tr>
+      <tr><td><code>staff</code> 운영자</td><td>id, login_id, name, role(admin·manager·leader·rep), team_id, is_active, last_login_at</td><td>→ team</td></tr>
+      <tr><td><code>teams</code> 팀</td><td>id, name, leader_id</td><td>→ staff</td></tr>
+      <tr><td><code>products</code> 상품</td><td>id, name(로얄퍼스트·VIP골드·골드플러스…), price, duration_months, grade_granted, is_active</td><td>→ payments</td></tr>
+      <tr><td><code>payments</code> 결제</td><td>id, member_id, product_id, amount, method(무통장·수기·PG), pg_provider, status(대기·승인·실패·취소), period_start, period_end, depositor_name, staff_id, paid_at</td><td>→ member, product, staff</td></tr>
+      <tr><td><code>sms_sends</code> 문자</td><td>id, member_id, template_key, phone, body, type(가입·추천·당첨·마케팅), status, sent_at</td><td>→ member</td></tr>
+      <tr><td><code>lotto_rounds</code> 회차</td><td>round_no, draw_date, numbers[6], bonus, sum, odd_even, appear_rate, prize_1/2/3, total_sales</td><td>→ bets</td></tr>
+      <tr><td><code>bets</code> 베팅</td><td>id, round_no, issuer, member_ref, numbers[], rank, prize</td><td>→ round, member</td></tr>
+      <tr><td><code>*_logs</code> 감사</td><td>admin_logs · point_logs · sms_logs · payment_logs · inflow_logs (공통: actor, action, target, meta, created_at)</td><td>—</td></tr>
+      <tr><td><code>assignments</code> 배정이력</td><td>id, member_id, staff_id, assigned_by, type(manual·auto), created_at</td><td>→ member, staff</td></tr>
+      <tr><td><code>site_settings</code> 설정</td><td>구조화 또는 key-value: 무통장·PG configs·SMS templates·grade colors·발송 스케줄</td><td>—</td></tr>
+      <tr><td>게시 콘텐츠</td><td><code>notices · events · inquiries · faqs · terms</code></td><td>—</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="ia-gap">
+  <h2>미확인 화면 (19개) — 라이브 재캡처 대상</h2>
+  <p>전체의 약 1/3, 특히 <strong>매출 정산 · 권한관리 · 로그 5종</strong>이 통째로 비어 있습니다. <code>adminbt</code> 계정 권한 제한 또는 비활성 라우트로 추정됩니다. "기능 100% 보존"을 위해 이 화면들의 실제 모습이 필요합니다.</p>
+  <table class="tbl">
+    <thead><tr><th>모듈</th><th>화면</th><th>왜 중요한가</th></tr></thead>
+    <tbody>
+      <tr><td>07 매출</td><td>실매출·전환매출·팀장매출</td><td>영업 성과/수당 정산 로직의 핵심. 매출 귀속 규칙 확인 필수</td></tr>
+      <tr><td>08 관리자</td><td>관리자목록·권한관리</td><td>전체 권한 모델의 근거. 역할 정의가 여기서 확정됨</td></tr>
+      <tr><td>09 로그</td><td>관리자·포인트·문자·결제·유입</td><td>감사 추적 5종. 포인트 시스템 존재 여부 확인 필요</td></tr>
+      <tr><td>10 통계</td><td>가입통계·결제통계</td><td>차트 구성/지표 정의 (유입로그통계만 확인됨)</td></tr>
+      <tr><td>02 커뮤니티</td><td>공지사항·이벤트</td><td>게시판 CRUD 범위</td></tr>
+      <tr><td>03 고객센터</td><td>1:1문의·FAQ·공지</td><td>문의 답변 워크플로</td></tr>
+      <tr><td>04 나의고객</td><td>담당현황·문자발송</td><td>담당자(영업) 메인 화면. 콜 워크플로 핵심</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════ 02 DESIGN SYSTEM ════════ -->
+<section id="ds-principle">
+  <div class="eyebrow">02 · Design System</div>
+  <h2>디자인 원칙</h2>
+  <div class="grid2">
+    <div class="card"><h4 style="margin-top:0">① 운영 효율 우선</h4><p style="margin:0;font-size:13.5px">하루 수백 건을 처리하는 도구. 멋보다 <b>스캔 속도·클릭 수 최소화·밀도</b>가 먼저. 단, 밀도가 혼란이 되지 않도록 정돈.</p></div>
+    <div class="card"><h4 style="margin-top:0">② 데이터 가독성</h4><p style="margin:0;font-size:13.5px">숫자는 <b>tabular figures</b>로 자리 정렬, 본문 14px로 키워 원본의 8~9px 가독성 문제 해결.</p></div>
+    <div class="card"><h4 style="margin-top:0">③ 역할별 명확성</h4><p style="margin:0;font-size:13.5px">등급·상태를 <b>일관된 컬러 토큰</b>으로 코드화 → 범례 없이도 한눈에 구분.</p></div>
+    <div class="card"><h4 style="margin-top:0">④ 차분한 네이비</h4><p style="margin:0;font-size:13.5px">원본의 네이비 아이덴티티 계승, 액션은 단일 블루, 능동 행위(문자·아웃콜)는 앰버로 신호.</p></div>
+  </div>
+</section>
+
+<section id="ds-color">
+  <h2>컬러 토큰</h2>
+  <h3>Brand / Ink — 구조색</h3>
+  <p>사이드바·헤더·강조 텍스트. 원본보다 채도를 낮춰 장시간 사용에도 눈이 편한 딥 네이비.</p>
+  <div class="sw-grid">
+    <div class="sw"><div class="c" style="background:var(--ink-900)"></div><div class="m"><div class="n">ink-900</div><div class="h">#0B1530</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--ink-800)"></div><div class="m"><div class="n">ink-800</div><div class="h">#101D3D</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--ink-700)"></div><div class="m"><div class="n">ink-700</div><div class="h">#182A52</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--ink-600)"></div><div class="m"><div class="n">ink-600</div><div class="h">#243A66</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--ink-500)"></div><div class="m"><div class="n">ink-500</div><div class="h">#34507F</div></div></div>
+  </div>
+
+  <h3>Primary — 액션 / 링크 / active</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="c" style="background:var(--primary-700)"></div><div class="m"><div class="n">primary-700</div><div class="h">#1E47B0</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--primary-600)"></div><div class="m"><div class="n">primary-600</div><div class="h">#2756D6</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--primary-500)"></div><div class="m"><div class="n">primary-500</div><div class="h">#3D6EEC</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--primary-100)"></div><div class="m"><div class="n">primary-100</div><div class="h">#DCE6FF</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--primary-50);border-bottom:1px solid var(--gray-200)"></div><div class="m"><div class="n">primary-50</div><div class="h">#EEF3FF</div></div></div>
+  </div>
+
+  <h3>Accent — 능동 신호 (앰버)</h3>
+  <p>문자 발송, 아웃콜 대상, 주의 환기 등 "운영자가 먼저 행동해야 하는" 지점에만 절제해서 사용.</p>
+  <div class="sw-grid">
+    <div class="sw"><div class="c" style="background:var(--accent-600)"></div><div class="m"><div class="n">accent-600</div><div class="h">#D97706</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--accent-500)"></div><div class="m"><div class="n">accent-500</div><div class="h">#F59E0B</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--accent-100)"></div><div class="m"><div class="n">accent-100</div><div class="h">#FDECC8</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--accent-50);border-bottom:1px solid var(--gray-200)"></div><div class="m"><div class="n">accent-50</div><div class="h">#FFF7E6</div></div></div>
+  </div>
+
+  <h3>Semantic — 의미색</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="c" style="background:var(--success)"></div><div class="m"><div class="n">success</div><div class="h">#16A34A</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--warning)"></div><div class="m"><div class="n">warning</div><div class="h">#D97706</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--danger)"></div><div class="m"><div class="n">danger</div><div class="h">#DC2626</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--info)"></div><div class="m"><div class="n">info</div><div class="h">#0EA5E9</div></div></div>
+  </div>
+
+  <h3>Neutral — 그레이 스케일</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="c" style="background:var(--gray-900)"></div><div class="m"><div class="n">gray-900</div><div class="h">#0F1420</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-700)"></div><div class="m"><div class="n">gray-700</div><div class="h">#343C49</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-500)"></div><div class="m"><div class="n">gray-500</div><div class="h">#6B7585</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-400)"></div><div class="m"><div class="n">gray-400</div><div class="h">#99A3B2</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-300)"></div><div class="m"><div class="n">gray-300</div><div class="h">#CCD3DD</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-200)"></div><div class="m"><div class="n">gray-200</div><div class="h">#E1E6EC</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-100)"></div><div class="m"><div class="n">gray-100</div><div class="h">#EDF0F4</div></div></div>
+    <div class="sw"><div class="c" style="background:var(--gray-50);border-bottom:1px solid var(--gray-200)"></div><div class="m"><div class="n">gray-50</div><div class="h">#F7F8FA</div></div></div>
+  </div>
+</section>
+
+<section id="ds-grade">
+  <h2>등급 · 상태 토큰</h2>
+  <p>회원 등급과 처리 상태는 운영자가 가장 자주 스캔하는 정보입니다. 원본은 색이 임의(예: 골드=청록)였지만, <strong>직관적 의미로 재정의</strong>했습니다 — 골드=금색, 로얄=보라, VIP=에메랄드. 솔리드 도트 + 틴트 배경으로 색약 사용자도 라벨로 구분 가능.</p>
+
+  <h4>회원 등급 (Membership Grade)</h4>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:10px">
+      <span class="bdg b-simple"><span class="led"></span>간편가입</span>
+      <span class="bdg b-free"><span class="led"></span>무료회원</span>
+      <span class="bdg b-gold"><span class="led"></span>골드</span>
+      <span class="bdg b-goldp"><span class="led"></span>골드플러스</span>
+      <span class="bdg b-vip"><span class="led"></span>VIP</span>
+      <span class="bdg b-royal"><span class="led"></span>로얄</span>
+      <span class="bdg b-ovr"><span class="led"></span>인반언스</span>
+      <span class="bdg b-toss"><span class="led"></span>토스DB</span>
+    </div>
+    <table class="tbl" style="margin-bottom:0;margin-top:16px">
+      <thead><tr><th>등급</th><th>토큰</th><th>HEX</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>간편가입</td><td><code>--g-simple</code></td><td>#64748B</td><td>가입만, 미인증</td></tr>
+        <tr><td>무료회원</td><td><code>--g-free</code></td><td>#94A3B8</td><td>전환 타깃</td></tr>
+        <tr><td>골드</td><td><code>--g-gold</code></td><td>#C99700</td><td>유료 진입 등급</td></tr>
+        <tr><td>골드플러스</td><td><code>--g-goldp</code></td><td>#B45309</td><td>골드 상위</td></tr>
+        <tr><td>VIP</td><td><code>--g-vip</code></td><td>#0F9D6B</td><td>고가치</td></tr>
+        <tr><td>로얄</td><td><code>--g-royal</code></td><td>#7C3AED</td><td>최상위</td></tr>
+        <tr><td>인반언스*</td><td><code>--g-ovr</code></td><td>#0F1420</td><td>*명칭 라이브 확인 필요</td></tr>
+        <tr><td>토스DB</td><td><code>--g-toss</code></td><td>#0EA5E9</td><td>유입 소스 버킷(추정)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>처리 상태 (Status)</h4>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:10px">
+      <span class="st s-active">정상 / 승인</span>
+      <span class="st s-wait">대기</span>
+      <span class="st s-fail">실패</span>
+      <span class="st s-cancel">취소</span>
+      <span class="st s-stop">정지</span>
+      <span class="st s-info">신규</span>
+    </div>
+    <p style="margin:14px 0 0;font-size:13px;color:var(--gray-500)">회원 상태(정상·정지·삭제·탈퇴)와 결제 상태(대기·승인·실패·취소)에 동일 토큰 체계 적용 → 학습 비용 0.</p>
+  </div>
+</section>
+
+<section id="ds-type">
+  <h2>타이포그래피</h2>
+  <p>본문 <strong>Pretendard</strong> (한글·라틴 일관, 한국 제품 표준), 숫자/ID는 <strong>tabular figures</strong>로 자리 정렬. 데이터 밀도가 높은 화면이므로 line-height는 본문 1.6 / 테이블 1.45로 구분.</p>
+  <div class="card">
+    <div class="spec"><span class="lbl">display · 30/800</span><span class="ex" style="font-size:30px;font-weight:800;letter-spacing:-.8px">이용자 관리</span></div>
+    <div class="spec"><span class="lbl">h2 · 23/800</span><span class="ex" style="font-size:23px;font-weight:800;letter-spacing:-.5px">전체 이용자 150,674명</span></div>
+    <div class="spec"><span class="lbl">h3 · 16.5/700</span><span class="ex" style="font-size:16.5px;font-weight:700">결제 승인 대기 내역</span></div>
+    <div class="spec"><span class="lbl">body · 14.5/400</span><span class="ex" style="font-size:14.5px">담당자를 배정하고 아웃콜을 진행합니다.</span></div>
+    <div class="spec"><span class="lbl">body-sm · 13/400</span><span class="ex" style="font-size:13px">테이블 기본 셀 텍스트 크기입니다.</span></div>
+    <div class="spec"><span class="lbl">caption · 12/600</span><span class="ex" style="font-size:12px;font-weight:600;color:var(--gray-500)">최종 수정 2026-06-01</span></div>
+    <div class="spec"><span class="lbl">mono · tnum</span><span class="ex" style="font-family:var(--mono);font-size:14px;letter-spacing:-.2px">₩ 1,000,100 · 010-3569-8155</span></div>
+  </div>
+  <table class="tbl">
+    <thead><tr><th>역할</th><th>크기 / 굵기</th><th>용도</th></tr></thead>
+    <tbody>
+      <tr><td>Display / H1</td><td>28–30px / 800</td><td>페이지 제목</td></tr>
+      <tr><td>H2</td><td>22–23px / 800</td><td>섹션 제목, 결과 카운트</td></tr>
+      <tr><td>H3</td><td>16–17px / 700</td><td>카드/블록 제목</td></tr>
+      <tr><td>Body</td><td>14–14.5px / 400</td><td>본문 기본</td></tr>
+      <tr><td>Table cell</td><td>12–13px / 400</td><td>데이터 셀</td></tr>
+      <tr><td>Numeric</td><td>11.5–14px / mono, tnum</td><td>금액·전화·ID·일시</td></tr>
+      <tr><td>Label / Caption</td><td>11–12px / 600–700</td><td>라벨, 메타</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="ds-space">
+  <h2>스페이싱 · 레이아웃 · 형태</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">스페이싱 (4px 베이스)</h4>
+      <div style="display:flex;align-items:flex-end;gap:8px;margin:14px 0">
+        <div style="text-align:center"><div style="width:4px;height:4px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">4</div></div>
+        <div style="text-align:center"><div style="width:8px;height:8px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">8</div></div>
+        <div style="text-align:center"><div style="width:12px;height:12px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">12</div></div>
+        <div style="text-align:center"><div style="width:16px;height:16px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">16</div></div>
+        <div style="text-align:center"><div style="width:24px;height:24px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">24</div></div>
+        <div style="text-align:center"><div style="width:32px;height:32px;background:var(--primary-500);margin:0 auto"></div><div style="font-size:10px;color:var(--gray-400);margin-top:6px">32</div></div>
+      </div>
+      <p style="font-size:12.5px;margin:0;color:var(--gray-500)">스케일: 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48 · 64</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">라운드 / 보더</h4>
+      <div style="display:flex;gap:12px;align-items:center;margin:14px 0">
+        <div style="width:54px;height:42px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:6px;display:grid;place-items:center;font-size:10px;color:var(--gray-500)">6</div>
+        <div style="width:54px;height:42px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:8px;display:grid;place-items:center;font-size:10px;color:var(--gray-500)">8</div>
+        <div style="width:54px;height:42px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:12px;display:grid;place-items:center;font-size:10px;color:var(--gray-500)">12</div>
+        <div style="width:42px;height:42px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:999px;display:grid;place-items:center;font-size:10px;color:var(--gray-500)">full</div>
+      </div>
+      <p style="font-size:12.5px;margin:0;color:var(--gray-500)">input·버튼 6–7px · 카드 12px · 뱃지 full. 보더 1px <code>gray-200</code></p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h4 style="margin-top:0">그림자 (절제 · 평면 우선)</h4>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px">
+      <div style="width:120px;height:64px;background:#fff;border-radius:10px;box-shadow:var(--shadow-sm);display:grid;place-items:center;font-size:11px;color:var(--gray-500);border:1px solid var(--gray-100)">sm · 카드</div>
+      <div style="width:120px;height:64px;background:#fff;border-radius:10px;box-shadow:var(--shadow-md);display:grid;place-items:center;font-size:11px;color:var(--gray-500)">md · 드롭다운</div>
+      <div style="width:120px;height:64px;background:#fff;border-radius:10px;box-shadow:var(--shadow-lg);display:grid;place-items:center;font-size:11px;color:var(--gray-500)">lg · 모달/drawer</div>
+    </div>
+    <p style="font-size:12.5px;margin:14px 0 0;color:var(--gray-500)">고밀도 UI에서는 보더 기반 분리가 기본. 그림자는 떠 있는 요소(드롭다운·모달·drawer)에만.</p>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════ 03 COMPONENTS ════════ -->
+<section id="c-shell">
+  <div class="eyebrow">03 · Components (Live)</div>
+  <h2>앱 셸 · 사이드바</h2>
+  <p>아래는 실제 렌더된 셸입니다. 그룹핑된 네이비 사이드바, active 인디케이터, 카운트 뱃지, 상단 바를 확인하세요.</p>
+  <div class="preview">
+    <div class="preview-bar">App Shell — 3분할 (사이드바 / 상단바 / 콘텐츠)</div>
+    <div class="preview-body">
+      <div class="app">
+        <div class="nav">
+          <div class="brand"><span class="dot"></span>플러스로또</div>
+          <div class="grp">운영</div>
+          <div class="it"><span class="ic">▦</span>대시보드</div>
+          <div class="it active"><span class="ic">▤</span>이용자<span class="rb">385</span></div>
+          <div class="it"><span class="ic">💳</span>결제<span class="rb">1</span></div>
+          <div class="it"><span class="ic">📈</span>매출</div>
+          <div class="grp">고객 · 세일즈</div>
+          <div class="it"><span class="ic">👤</span>나의고객</div>
+          <div class="it"><span class="ic">📨</span>커뮤니티</div>
+          <div class="it"><span class="ic">🎧</span>고객센터</div>
+          <div class="grp">로또</div>
+          <div class="it"><span class="ic">🎯</span>로또기록</div>
+          <div class="it"><span class="ic">🎟</span>베팅</div>
+          <div class="grp">시스템</div>
+          <div class="it"><span class="ic">🛡</span>관리자<span class="pill">관</span></div>
+          <div class="it"><span class="ic">🗒</span>로그<span class="pill">관</span></div>
+          <div class="it"><span class="ic">📊</span>통계</div>
+          <div class="it"><span class="ic">⚙</span>설정</div>
+        </div>
+        <div>
+          <div class="top">
+            <div><span class="tt">이용자 관리</span> <span class="desc">전체 이용자 조회 및 일괄 처리</span></div>
+            <div class="acc"><span>실장 · two001</span><span class="av">실</span></div>
+          </div>
+          <div class="content" style="background:var(--gray-50)">
+            <div class="dt">
+              <div class="dt-head"><span class="res">결과 <b>150,674</b>명</span><span class="sp"></span><button class="btn btn-sec btn-sm">엑셀</button><button class="btn btn-acc btn-sm">문자 보내기</button></div>
+              <div class="dt-scroll">
+                <table class="data">
+                  <thead><tr><th><input type="checkbox"></th><th>No</th><th>상태</th><th>등급</th><th>담당</th><th>ID</th><th>이름</th><th>핸드폰</th><th>유입</th><th>가입일</th></tr></thead>
+                  <tbody>
+                    <tr><td><input type="checkbox"></td><td class="num">150,674</td><td><span class="st s-active">정상</span></td><td><span class="bdg b-free"><span class="led"></span>무료</span></td><td>two011</td><td>88db</td><td>강지훈</td><td class="num">010-5676-0122</td><td class="muted">chance</td><td class="num">26-04-18</td></tr>
+                    <tr><td><input type="checkbox"></td><td class="num">150,663</td><td><span class="st s-active">정상</span></td><td><span class="bdg b-royal"><span class="led"></span>로얄</span></td><td>two029</td><td>test</td><td>박애현</td><td class="num">010-2358-0382</td><td class="muted">test</td><td class="num">23-07-20</td></tr>
+                    <tr><td><input type="checkbox"></td><td class="num">150,662</td><td><span class="st s-stop">정지</span></td><td><span class="bdg b-gold"><span class="led"></span>골드</span></td><td>one005</td><td>pm-lee</td><td>장가천</td><td class="num">010-4129-9295</td><td class="muted">신규</td><td class="num">23-03-31</td></tr>
+                    <tr><td><input type="checkbox"></td><td class="num">150,661</td><td><span class="st s-active">정상</span></td><td><span class="bdg b-vip"><span class="led"></span>VIP</span></td><td>one005</td><td>pm-lee</td><td>김유성</td><td class="num">010-2432-6080</td><td class="muted">chance</td><td class="num">23-04-06</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="bulkbar"><span class="sel">3건 선택됨</span><span class="mini">상태 변경 ▾</span><span class="mini">담당자 배정 ▾</span><span class="mini">유입분류 ▾</span><span class="sp"></span><span class="mini">자동할당</span><span class="mini">담당리셋</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:13px;color:var(--gray-500)"><code>관</code> 핀 표시는 관리자 전용 메뉴(원본 [관] 프리픽스 대체). 실제 구현에선 역할에 따라 노출 자체를 제어하고, 핀은 관리자 화면에서만 식별용으로 표기.</p>
+</section>
+
+<section id="c-table">
+  <h2>데이터 테이블 — 시스템 핵심 컴포넌트</h2>
+  <p>화면의 80%가 이 컴포넌트입니다. 단일 <code>&lt;DataTable&gt;</code>로 표준화하여 sticky 헤더, 밀도 토글, 컬럼 토글, 행 선택, 인라인 편집, 벌크 액션 바, 페이지네이션을 모두 흡수합니다.</p>
+  <div class="preview">
+    <div class="preview-bar">DataTable — Comfortable 밀도 (행 44px)</div>
+    <div class="preview-body">
+      <div class="dt">
+        <div class="dt-head">
+          <span class="res">결과 <b>12,690</b>건</span>
+          <span class="sp"></span>
+          <button class="btn btn-gho btn-sm">⚙ 컬럼</button>
+          <button class="btn btn-gho btn-sm">밀도</button>
+          <button class="btn btn-sec btn-sm">엑셀 다운</button>
+          <button class="btn btn-dng btn-sm">PG 취소</button>
+        </div>
+        <div class="dt-scroll">
+          <table class="data" style="font-size:12.5px">
+            <thead><tr><th><input type="checkbox"></th><th>No</th><th>상태</th><th>담당</th><th>결제수단</th><th>금액</th><th>상품</th><th>기간</th><th>유저</th><th>결제일시</th></tr></thead>
+            <tbody>
+              <tr><td><input type="checkbox"></td><td class="num">12,690</td><td><span class="st s-active">승인</span></td><td>전미현</td><td>수기-뉴폰</td><td class="num">400,100</td><td><span class="bdg b-royal"><span class="led"></span>로얄퍼스트</span></td><td class="num muted">25.05.07 ~ 28.05.07</td><td>하태식</td><td class="num">25.05.07 18:12</td></tr>
+              <tr><td><input type="checkbox"></td><td class="num">12,689</td><td><span class="st s-active">승인</span></td><td>장윤서</td><td>무통장</td><td class="num">50,000</td><td><span class="bdg b-vip"><span class="led"></span>VIP골드</span></td><td class="num muted">25.04.30 ~ 26.02.02</td><td>최수영</td><td class="num">25.04.30 18:24</td></tr>
+              <tr><td><input type="checkbox"></td><td class="num">12,687</td><td><span class="st s-wait">대기</span></td><td>이수련</td><td>무통장</td><td class="num">0</td><td><span class="bdg b-gold"><span class="led"></span>골드</span></td><td class="num muted">25.04.03 ~ 28.04.03</td><td>이수련</td><td class="num">25.04.03 10:43</td></tr>
+              <tr><td><input type="checkbox"></td><td class="num">12,684</td><td><span class="st s-fail">실패</span></td><td>장윤서</td><td>무통장</td><td class="num">50,000</td><td><span class="bdg b-vip"><span class="led"></span>VIP골드</span></td><td class="num muted">25.01.24 ~ 26.02.02</td><td>최수영</td><td class="num">25.01.24 14:55</td></tr>
+              <tr><td><input type="checkbox"></td><td class="num">12,683</td><td><span class="st s-cancel">취소</span></td><td class="muted">(정의현)</td><td>무통장</td><td class="num">0</td><td><span class="bdg b-goldp"><span class="led"></span>골드플러스</span></td><td class="num muted">24.12.26 ~ 26.06.26</td><td>정의현</td><td class="num">24.12.26 15:01</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h4>핵심 사양</h4>
+  <ul class="dash">
+    <li><b>Sticky header</b> — 긴 목록 스크롤 시 컬럼명 고정 (원본엔 없던 기능)</li>
+    <li><b>밀도 토글</b> — Comfortable(44px) / Compact(36px) 운영자 선택</li>
+    <li><b>컬럼 토글</b> — 20개 컬럼 중 필요한 것만. 역할별 기본 프리셋</li>
+    <li><b>숫자 우측 정렬 + tabular</b> — 금액/번호 스캔 용이</li>
+    <li><b>행 hover 하이라이트</b> + 선택 시 벌크바 등장</li>
+    <li><b>인라인 편집</b> — 상태/담당/유입분류는 셀에서 직접 (드롭다운 정리)</li>
+  </ul>
+</section>
+
+<section id="c-filter">
+  <h2>필터 · 검색</h2>
+  <p>원본의 3줄짜리 빽빽한 필터 바를 <strong>접이식 패널 + 활성 필터 칩</strong>으로 재구성. 평소엔 접혀 있고, 적용된 조건만 칩으로 항상 보입니다.</p>
+  <div class="preview">
+    <div class="preview-bar">FilterBar — 활성 조건은 칩으로 가시화</div>
+    <div class="preview-body">
+      <div class="filters">
+        <div class="row">
+          <span class="fsel"><span class="k">유입분류</span> 전체 ▾</span>
+          <span class="fsel"><span class="k">담당자</span> 전체 ▾</span>
+          <span class="fsel"><span class="k">등급</span> 전체 ▾</span>
+          <span class="fsel"><span class="k">상태</span> 전체 ▾</span>
+          <span class="fsel"><span class="k">가입일</span> 기간 ▾</span>
+          <button class="btn btn-gho btn-sm">+ 상세 필터</button>
+          <span class="sp" style="margin-left:auto"></span>
+          <input class="inp" style="width:200px" placeholder="ID · 이름 · 핸드폰 검색">
+          <button class="btn btn-pri btn-sm">검색</button>
+        </div>
+        <div class="chips">
+          <span class="fchip">등급 : 골드 <span class="x">×</span></span>
+          <span class="fchip">상태 : 정상 <span class="x">×</span></span>
+          <span class="fchip">유입 : 신규 <span class="x">×</span></span>
+          <span class="fchip" style="background:var(--gray-100);color:var(--gray-500);border-color:var(--gray-200)">초기화</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="c-btn">
+  <h2>버튼 · 뱃지</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">버튼</h4>
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn btn-pri">검색</button>
+        <button class="btn btn-acc">문자 발송</button>
+        <button class="btn btn-suc">변경</button>
+        <button class="btn btn-dng">PG 취소</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-sec">엑셀 다운</button>
+        <button class="btn btn-gho">초기화</button>
+        <button class="btn btn-pri btn-sm">작은 버튼</button>
+      </div>
+      <p style="font-size:12px;color:var(--gray-500);margin:14px 0 0">primary=일반 액션, accent=능동 발송, success=일괄변경, danger=취소/삭제.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">뱃지 / 상태칩</h4>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <span class="bdg b-gold"><span class="led"></span>골드</span>
+        <span class="bdg b-vip"><span class="led"></span>VIP</span>
+        <span class="bdg b-royal"><span class="led"></span>로얄</span>
+        <span class="bdg b-free"><span class="led"></span>무료</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <span class="st s-active">정상</span>
+        <span class="st s-wait">대기</span>
+        <span class="st s-fail">실패</span>
+        <span class="st s-stop">정지</span>
+        <span class="st s-cancel">취소</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="c-form">
+  <h2>폼 · 입력 (설정형 화면)</h2>
+  <p>사이트설정처럼 항목이 많은 화면은 <strong>섹션 카드 + 2열 label/input</strong> 패턴으로. 원본의 빽빽한 3열 테이블 폼을 정돈합니다.</p>
+  <div class="preview">
+    <div class="preview-bar">SettingsForm — 섹션 그룹 패턴</div>
+    <div class="preview-body">
+      <div class="card" style="max-width:520px;margin:0 auto">
+        <h4 style="margin-top:0;color:var(--ink-900);font-size:14px;text-transform:none;letter-spacing:0">문자 발송 설정</h4>
+        <div class="formrow"><div class="fl">발신번호</div><div><input class="inp" value="1661-9414"></div></div>
+        <div class="formrow"><div class="fl">SMTNT ID</div><div><input class="inp" value="lotto_dream"></div></div>
+        <div class="formrow"><div class="fl">추천번호 발송</div><div style="display:flex;gap:8px"><span class="fsel">매주 금 ▾</span><span class="fsel">09:00 ▾</span></div></div>
+        <div class="formrow" style="border-bottom:none"><div class="fl">당첨 발송</div><div style="display:flex;gap:8px;align-items:center"><label style="font-size:12.5px;color:var(--gray-600)"><input type="checkbox" checked> 추첨 즉시</label></div></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn btn-pri">변경사항 저장</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="c-kpi">
+  <h2>KPI 카드 · 탭</h2>
+  <p>신규 운영 대시보드의 구성 요소. 원본엔 없던, 운영자가 아침에 가장 먼저 보는 화면을 위한 카드.</p>
+  <div class="grid4" style="margin-bottom:18px">
+    <div class="kpi"><div class="ic" style="background:var(--primary-50);color:var(--primary-600)">▤</div><div class="k">오늘 신규 유입</div><div class="v">342</div><div class="d up">▲ 12% 어제比</div></div>
+    <div class="kpi"><div class="ic" style="background:var(--accent-50);color:var(--accent-600)">📞</div><div class="k">미아웃콜</div><div class="v">87</div><div class="d dn">▲ 처리 필요</div></div>
+    <div class="kpi"><div class="ic" style="background:var(--warning-bg);color:var(--warning)">💳</div><div class="k">결제 대기</div><div class="v">5</div><div class="d" style="color:var(--gray-400)">승인 대기 중</div></div>
+    <div class="kpi acc"><div class="ic" style="background:rgba(255,255,255,.12);color:#fff">₩</div><div class="k">오늘 매출</div><div class="v" style="font-size:22px">2.8M</div><div class="d up">▲ 8%</div></div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div class="tabs" style="padding:0 12px">
+      <span class="tab on">전체 <span class="ct">150,674</span></span>
+      <span class="tab">유료 <span class="ct">3,210</span></span>
+      <span class="tab">무료 <span class="ct">147k</span></span>
+      <span class="tab">미아웃콜 <span class="ct">87</span></span>
+      <span class="tab">정지 <span class="ct">42</span></span>
+    </div>
+    <div style="padding:16px;font-size:13px;color:var(--gray-500)">탭은 이용자 26개 세그먼트의 상위 그룹 진입점으로도 활용 — 자주 쓰는 5~6개를 탭으로, 나머지는 드롭다운으로.</div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════ 04 BUILD ════════ -->
+<section id="build-tpl">
+  <div class="eyebrow">04 · Implementation</div>
+  <h2>화면 패턴 (조립 가이드)</h2>
+  <p>각 템플릿이 어떤 컴포넌트로 조립되는지의 매핑. Claude Code에 이 매핑을 그대로 전달하면 됩니다.</p>
+  <table class="tbl">
+    <thead><tr><th>템플릿</th><th>조립 컴포넌트</th><th>적용 화면</th></tr></thead>
+    <tbody>
+      <tr><td><b>A 리스트형</b></td><td><code>PageHeader</code> + <code>FilterBar</code> + <code>DataTable</code> + <code>BulkActionBar</code> + <code>Pagination</code></td><td>이용자(26), 결제(6), 매출(3), 로그(5), 베팅, 로또</td></tr>
+      <tr><td><b>B 폼형</b></td><td><code>PageHeader</code> + <code>SettingsSection</code>×N + <code>SaveBar</code></td><td>사이트설정, 이용약관, 로또고정제외</td></tr>
+      <tr><td><b>C 대시보드</b></td><td><code>KpiCard</code>×4 + <code>Chart</code> + <code>TaskList</code>(처리대기)</td><td>메인 대시보드(신규), 리포트</td></tr>
+      <tr><td><b>D 통계형</b></td><td><code>DateRangeFilter</code> + <code>Chart</code>(recharts) + <code>SummaryTable</code></td><td>가입·결제·유입 통계</td></tr>
+      <tr><td><b>E 상세/편집</b></td><td><code>Drawer</code> + <code>DetailField</code> + <code>InlineEdit</code> + <code>ActionFooter</code></td><td>이용자 상세, 결제 상세, 문의 답변</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="build-fs">
+  <h2>폴더 구조 (제안)</h2>
+  <div class="codeblock"><span class="k">src/</span>
+├─ app/
+│  ├─ routes.tsx            <span class="c"># 라우트 + 역할 가드</span>
+│  └─ providers.tsx         <span class="c"># Supabase, Query, Theme</span>
+├─ <span class="k">design-system/</span>      <span class="c"># 이 문서의 토큰이 사는 곳</span>
+│  ├─ tokens.css            <span class="c"># CSS 변수 (위 컬러/스페이싱 전부)</span>
+│  ├─ tailwind.config.ts    <span class="c"># 토큰 → Tailwind 매핑</span>
+│  └─ components/           <span class="c"># Button, Badge, DataTable, FilterBar …</span>
+├─ <span class="k">features/</span>
+│  ├─ members/              <span class="c"># 이용자 + 26 saved views</span>
+│  │  ├─ views.ts           <span class="c"># 26개 필터 프리셋 정의</span>
+│  │  ├─ MembersPage.tsx
+│  │  └─ MemberDrawer.tsx
+│  ├─ payments/  revenue/  community/  support/
+│  ├─ admins/    logs/      stats/
+│  ├─ lotto/     bets/      settings/
+│  └─ dashboard/
+├─ <span class="k">lib/</span>
+│  ├─ supabase.ts           <span class="c"># client + 타입</span>
+│  ├─ rls/                  <span class="c"># 역할별 정책 메모</span>
+│  └─ format.ts             <span class="c"># 금액·전화·일시 포매터(tnum)</span>
+└─ types/                   <span class="c"># DB 엔티티 타입 (위 데이터 모델)</span></div>
+  <div class="note"><b>핵심 원칙</b>: 토큰은 <code>design-system/tokens.css</code> 한 곳에서만 정의 → 색 하나 바꾸면 전 화면 반영. 26개 이용자 세그먼트는 <code>views.ts</code>의 필터 프리셋 배열로, 화면 코드는 1개만 존재.</div>
+</section>
+
+<section id="build-next">
+  <h2>다음 단계</h2>
+  <ul class="clean">
+    <li><strong>① 라이브 검증</strong> — 미확인 19개 화면(특히 매출·권한·로그)을 실제 접속으로 캡처하고, 네트워크 응답으로 데이터 스키마 확정.</li>
+    <li><strong>② 토큰 코드화</strong> — 이 문서의 컬러/타이포/스페이싱을 <code>tokens.css</code> + <code>tailwind.config.ts</code>로 추출 (바로 가능).</li>
+    <li><strong>③ 코어 컴포넌트 우선 구축</strong> — <code>DataTable</code> · <code>FilterBar</code> · <code>Badge</code>를 먼저. 이 3개가 화면의 80%를 커버.</li>
+    <li><strong>④ 수직 슬라이스 1개 완성</strong> — '이용자' 모듈을 끝까지(리스트→필터→벌크액션→상세 drawer) 만들어 패턴 확정 후 나머지에 복제.</li>
+    <li><strong>⑤ Supabase 스키마 + RLS</strong> — 데이터 모델 확정본으로 마이그레이션 작성.</li>
+  </ul>
+  <div class="warn">⚠ 결정 필요: 원본의 <b>등급 색상이 임의(골드=청록 등)</b>였는데, 본 문서는 직관적 의미(골드=금색·로얄=보라)로 바꿨습니다. 운영진이 기존 색에 익숙하다면 그대로 둘지, 신규 체계로 갈지 확정 부탁드립니다. 마찬가지로 <code>인반언스</code> 등급 명칭/의미도 라이브 확인이 필요합니다.</div>
+</section>
+
+<div class="foot">플러스로또 운영 콘솔 · IA &amp; Design System v0.1 · 스크린샷 역설계 기반 · 라이브 검증 후 v0.2 갱신 예정</div>
+
+</div><!-- /wrap -->
+</main>
+</div><!-- /doc -->
+</body>
+</html>

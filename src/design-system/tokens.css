@@ -1,0 +1,103 @@
+/* 플러스로또 디자인 토큰 — 단일 소스 (CLAUDE §3.1 + 스펙 :root 병합).
+   임의 hex/px 금지. 모든 색은 여기서만 정의하고 tailwind.config.ts 가 var() 로 참조한다. */
+:root {
+  /* ── Brand / Ink (구조색) ─────────────────────── */
+  --ink-900: #0b1530;
+  --ink-800: #101d3d;
+  --ink-700: #182a52;
+  --ink-600: #243a66;
+  --ink-500: #34507f;
+
+  /* ── Primary (action / link / active) ─────────── */
+  --primary-700: #1e47b0;
+  --primary-600: #2756d6;
+  --primary-500: #3d6eec;
+  --primary-100: #dce6ff;
+  --primary-50: #eef3ff;
+
+  /* ── Accent (능동 신호: 문자·아웃콜) ──────────── */
+  --accent-600: #d97706;
+  --accent-500: #f59e0b;
+  --accent-100: #fdecc8;
+  --accent-50: #fff7e6;
+
+  /* ── Semantic ─────────────────────────────────── */
+  --success: #16a34a;
+  --success-bg: #e7f6ee;
+  --success-bd: #bce6cc;
+  --warning: #d97706;
+  --warning-bg: #fef3e2;
+  --warning-bd: #fad9a6;
+  --danger: #dc2626;
+  --danger-bg: #fcebeb;
+  --danger-bd: #f4c2c2;
+  --info: #0ea5e9;
+  --info-bg: #e6f6fe;
+  --info-bd: #b8e6fa;
+
+  /* ── Neutral ──────────────────────────────────── */
+  --gray-50: #f7f8fa;
+  --gray-100: #edf0f4;
+  --gray-200: #e1e6ec;
+  --gray-300: #ccd3dd;
+  --gray-400: #99a3b2;
+  --gray-500: #6b7585;
+  --gray-600: #4b5565;
+  --gray-700: #343c49;
+  --gray-800: #212732;
+  --gray-900: #0f1420;
+
+  /* ── Membership grade (직관적 의미로 재정의) ──── */
+  --g-free: #94a3b8;
+  --g-free-bg: #eef1f5;
+  --g-simple: #64748b;
+  --g-simple-bg: #eaedf2;
+  --g-gold: #c99700;
+  --g-gold-bg: #fbf2d2;
+  --g-goldp: #b45309;
+  --g-goldp-bg: #fbebd9;
+  --g-vip: #0f9d6b;
+  --g-vip-bg: #e3f6ee;
+  --g-royal: #7c3aed;
+  --g-royal-bg: #f1eafe;
+  --g-ovr: #0f1420;
+  --g-ovr-bg: #e5e7eb;
+  --g-toss: #0ea5e9;
+  --g-toss-bg: #e4f4fd;
+  --g-out: #dc2626;
+  --g-out-bg: #fbe7e7;
+
+  /* ── Lotto balls (동행복권 공식 색대 — 원본 재현) ── */
+  --ball-y: #fbc400; /* 1–10 */
+  --ball-b: #69c8f2; /* 11–20 */
+  --ball-r: #ff7272; /* 21–30 */
+  --ball-k: #aab1c0; /* 31–40 */
+  --ball-g: #b0d840; /* 41–45 */
+
+  /* ── Layout ───────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+  --sb-w: 248px;
+  --topbar-h: 56px;
+  --row-comfortable: 44px;
+  --row-compact: 36px;
+  --shadow-sm: 0 1px 2px rgba(15, 20, 32, 0.06), 0 1px 1px rgba(15, 20, 32, 0.04);
+  --shadow-md: 0 4px 14px rgba(15, 20, 32, 0.08);
+  --shadow-lg: 0 16px 40px rgba(15, 20, 32, 0.14);
+
+  /* ── Sidebar (navy) ───────────────────────────── */
+  --nav-bg: var(--ink-900);
+  --nav-fg: #aab4d1;
+  --nav-fg-muted: #7c88a8;
+  --nav-grp: #566188;
+  --nav-active-bg: rgba(61, 110, 236, 0.16);
+  --nav-border: #2c3c63;
+  --nav-badge-bg: #566188;
+  --nav-badge-fg: #cdd6ef;
+
+  --font: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, "Apple SD Gothic Neo", sans-serif;
+  --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
+}

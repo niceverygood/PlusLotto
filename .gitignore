@@ -1,0 +1,26 @@
+# dependencies
+node_modules
+
+# build
+dist
+dist-ssr
+
+# env
+.env
+.env.local
+.env.*.local
+
+# vercel (link 시 생성 — 커밋 금지)
+.vercel
+
+# misc
+*.local
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# claude code (personal local settings)
+.claude/settings.local.json
+.env*.local
