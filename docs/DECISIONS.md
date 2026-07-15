@@ -591,3 +591,14 @@
   - **GitHub 원격 저장소·Vercel 프로젝트 미생성**: 로컬 git 저장소만 init. 원격 생성/연결/배포는 사용자 요청 시 별도 진행.
   - **사업자명/정산 계좌**: `seed.ts` 의 `holder:'(주)플러스로또'`, 약관의 "플러스로또(이하 "회사")" 는 브랜드명만 88lotto 패턴을 그대로 따라 치환한 **mock 시드 placeholder**. 실제 운영 법인명·정산계좌·고객센터 연락처는 미확인 → `docs/ASSUMPTIONS.md` 참조.
 - **검증**: `npm install`·`tsc --noEmit`·`npm run dev` 로 브라우저에서 로그인/대시보드에 "플러스로또" 브랜드가 정상 표시되는지 확인.
+
+### D88. PlusLotto 전용 Supabase 신규 발급 + 로컬 라이브 전환 (현장 7/15)
+- **배경**: 정의현 차장 확정(7/15 카톡) — "플러스로또 홈페이지랑 전산 두 개 다 88로또랑 별개로" → D87 후속으로 PlusLotto 전용 Supabase 프로젝트를 신규 발급받아 연결. 88lotto 인프라와 완전 분리(D87 의 금지 원칙 그대로).
+- **인프라**: Supabase ref `xmfdbmlpvvqqkhqemfay`(ap-northeast-2, PostgreSQL 17). 로컬 macOS 가 IPv6 미지원이라 직결 대신 **세션 풀러**(`aws-1-ap-northeast-2.pooler.supabase.com:5432`, user `postgres.<ref>`) 경유로 작업.
+- **적재 절차(런북 `docs/SUPABASE_MIGRATION.md` 변형)**: psql 미설치 환경이라 스크래치패드에서 `pg` 드라이버로 직접 실행 —
+  1. 마이그레이션 `0001`~`0012` 전부 순차 적용(테이블 18개).
+  2. 시드: `buildSeed()` JSON 덤프 → 직결 적재(회원 160·결제 67·문자 106·베팅 199·배정 135 등, `seedSupabase.ts` 와 동일 순서/순환 FK 규칙). `lotto_rounds` 는 데모 16회차 대신 **공식 백업 `seed-data/lotto_rounds_1-1227.json` 1,227회차 전량**(중복 회차는 공식 우선 병합).
+  3. 인증: service_role 키 없이 **SQL 직접 생성**으로 5계정(`admin01`·`two001`·`leader01`·`rep01`·`rep02` @pluslotto.local) — GoTrue 호환 위해 token 계열 컬럼을 `''` 로 채움(NULL 이면 스캔 에러 나는 알려진 이슈). `staff.auth_user_id` 5건 연결. 초기 비밀번호는 88lotto 전환 때와 동일 규약의 임시값 — **운영 전 필수 변경**.
+- **검증**: REST password grant 토큰 발급 OK / 앱 로그인 → 대시보드 KPI 실집계 렌더 OK / RLS 스코프 — admin·manager 160/160, leader 160/160(D51 leader=전체 정책 반영 확인), rep01 47/160(본인 담당만) / 콘솔 에러 0.
+- **주의(로그인 UX)**: 라이브 로그인 폼 입력이 `type="email"` 이라 `admin01` 같은 login_id 는 브라우저 기본 검증에 막힘 → **`admin01@pluslotto.local` 전체 이메일로 입력**해야 함(88lotto 도 동일). login_id 입력 허용하려면 type 을 text 로 바꾸는 개선 여지.
+- **후속(미완)**: Vercel 신규 프로젝트+도메인 미생성 / Solapi 신규 계정 미발급(`SOLAPI_API_KEY` 빈 값) / `sb_secret_...`(service role) 키 미수령 — `npm run seed:supabase` 재시드·Vercel 크론(`weekly-reco`) env 등록에 필요 / 실 운영 계정 생성·임시 비밀번호 교체.
