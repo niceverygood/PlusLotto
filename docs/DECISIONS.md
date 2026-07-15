@@ -610,3 +610,8 @@
 - **검증**: `pluslotto.vercel.app/login` → `admin01@pluslotto.local` 로그인 → 대시보드 KPI 가 신규 Supabase 시드와 일치(미아웃콜 75·결제대기 5건 ₩165,000) 확인.
 - **미완 env(등록 필요 시 크론/문자/통화분석 활성화)**: `SUPABASE_SERVICE_ROLE_KEY`(sb_secret — weekly-reco·weekly-lotto-sync 크론 필수), `SOLAPI_API_KEY/SECRET`(문자 발송), `OPENAI_API_KEY`(통화 전사/분석). 등록 전까지 해당 서버 함수만 비활성, 콘솔 본체는 정상.
 - **커스텀 도메인**: 미정 — 도메인 구매/연결은 운영진 결정 대기.
+
+### D90. 문자 = 기존 원샷 계정 재사용 + 도메인 lotto-plus.co.kr 연결 (현장 7/15, 정의현 차장 결정)
+- **문자(SMS)**: D87/D88 에서 "별도 SMS 계정 신규 발급" 을 가정했으나, 정의현 차장이 **기존 원샷(OneShot/msgagent) 계정 재사용** 방침 제시 → 수용. 코드가 원래 원샷 기반(D59~D60: Solapi 는 `SOLAPI_ENABLED='true'` 일 때만, 활성화 이력 없음)이라 env 만 등록하면 됨. pluslotto Vercel production 에 `ONESHOT_ID=lotto_dream_api`·`ONESHOT_SEND_PHONE=15226385`(88로또와 동일 발신번호 — 플러스로또 전용 번호 추가 등록 여부는 운영진 결정 대기) 등록 + 재배포.
+  - **잔여**: `FIXIE_URL`(고정IP 프록시 — 원샷 인증이 IP 화이트리스트 방식이라 88lotto 와 같은 Fixie(LJCOMPANY, criterium.usefixie.com, IP 52.87.82.133/52.5.155.132) 프록시 필수). 88lotto Vercel env 가 **sensitive 타입이라 CLI/대시보드로 값 조회 불가** → usefixie.com 대시보드에서 proxy URL 재확인해 등록해야 함. 그 전까지 실발송 불가(콘솔 본체 무관). 실발송은 env 외에 site_settings 문자설정(`oneshot_enabled`·`sender_no`)도 켜야 작동.
+- **도메인**: 정의현 차장이 카페24에서 **`lotto-plus.co.kr`** 등록(주의: pluslotto 아님 — 표기 그대로). Vercel pluslotto 프로젝트에 apex+www 연결 완료. 잔여: 카페24 DNS 에 `A lotto-plus.co.kr → 76.76.21.21`, `CNAME www → cname.vercel-dns.com` 추가(또는 네임서버를 ns1/ns2.vercel-dns.com 으로 이관). 카페24 로그인 자격증명 입력은 보안정책상 운영자 직접 수행.
