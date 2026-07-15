@@ -602,3 +602,11 @@
 - **검증**: REST password grant 토큰 발급 OK / 앱 로그인 → 대시보드 KPI 실집계 렌더 OK / RLS 스코프 — admin·manager 160/160, leader 160/160(D51 leader=전체 정책 반영 확인), rep01 47/160(본인 담당만) / 콘솔 에러 0.
 - **주의(로그인 UX)**: 라이브 로그인 폼 입력이 `type="email"` 이라 `admin01` 같은 login_id 는 브라우저 기본 검증에 막힘 → **`admin01@pluslotto.local` 전체 이메일로 입력**해야 함(88lotto 도 동일). login_id 입력 허용하려면 type 을 text 로 바꾸는 개선 여지.
 - **후속(미완)**: Vercel 신규 프로젝트+도메인 미생성 / Solapi 신규 계정 미발급(`SOLAPI_API_KEY` 빈 값) / `sb_secret_...`(service role) 키 미수령 — `npm run seed:supabase` 재시드·Vercel 크론(`weekly-reco`) env 등록에 필요 / 실 운영 계정 생성·임시 비밀번호 교체.
+
+### D89. GitHub 연결 + Vercel 프로덕션 배포 — pluslotto.vercel.app (현장 7/15, D88 직후)
+- **GitHub**: 원격 `niceverygood/PlusLotto` 는 7/14 부트스트랩 때 이미 생성·푸시돼 있었음(로컬 origin 연결 확인). D88 커밋 푸시. ⚠️ **저장소가 public 상태** — 내부 운영툴 코드이므로 private 전환 필요(소유자 권한 작업이라 운영자가 직접: `gh repo edit niceverygood/PlusLotto --visibility private --accept-visibility-change-consequences`).
+- **Vercel**: 88lotto 와 같은 개인 스코프(`malshues-projects`)에 `pluslotto` 프로젝트 신규 생성, GitHub 저장소 자동 연결(main push = 프로덕션 자동배포). 정식 URL **`https://pluslotto.vercel.app`** — 88lotto 의 legacy alias `plus-lotto.vercel.app` 과는 별개 호스트.
+- **env(Production)**: `VITE_SUPABASE_URL`·`VITE_SUPABASE_ANON_KEY`(D88 신규 프로젝트)·`VITE_DATA_SOURCE=supabase`·`VITE_BRAND=플러스로또`·`CRON_SECRET`(신규 생성, 로컬 `.env.local` 과 동일값). Preview 환경은 CLI 버그(`--yes` 무시, git 브랜치 요구 루프)로 미등록 — preview 배포는 env 없음 → mock 폴백이라 무해, 필요 시 대시보드에서 추가.
+- **검증**: `pluslotto.vercel.app/login` → `admin01@pluslotto.local` 로그인 → 대시보드 KPI 가 신규 Supabase 시드와 일치(미아웃콜 75·결제대기 5건 ₩165,000) 확인.
+- **미완 env(등록 필요 시 크론/문자/통화분석 활성화)**: `SUPABASE_SERVICE_ROLE_KEY`(sb_secret — weekly-reco·weekly-lotto-sync 크론 필수), `SOLAPI_API_KEY/SECRET`(문자 발송), `OPENAI_API_KEY`(통화 전사/분석). 등록 전까지 해당 서버 함수만 비활성, 콘솔 본체는 정상.
+- **커스텀 도메인**: 미정 — 도메인 구매/연결은 운영진 결정 대기.
