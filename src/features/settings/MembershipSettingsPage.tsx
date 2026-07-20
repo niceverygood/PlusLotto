@@ -53,7 +53,7 @@ export function MembershipSettingsPage() {
 
   const tabs: TabItem[] = TIER_GRADES.map((g) => {
     const t = draft.find((x) => x.grade === g)
-    return { key: g, label: (t?.label || g) + (t?.featured ? ' ★' : '') }
+    return { key: g, label: (t?.label || g) + (t?.featured ? ' ★' : '') + (t?.hidden ? ' (숨김)' : '') }
   })
 
   return (
@@ -109,6 +109,18 @@ export function MembershipSettingsPage() {
               onChange={(e) => update({ featured: e.target.checked })}
             />
             이 등급 카드에 '인기' 강조 표시
+          </label>
+        </FieldRow>
+
+        <FieldRow label="고객 페이지 노출" hint="끄면 이 등급 카드가 고객 홈페이지(멤버십 미리보기·전체 카드·비교표)에서 숨겨집니다. 전산 편집은 계속 가능합니다.">
+          <label className="inline-flex items-center gap-2 text-[13px] text-gray-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300"
+              checked={!cur.hidden}
+              onChange={(e) => update({ hidden: !e.target.checked })}
+            />
+            고객 홈페이지에 이 등급 표시
           </label>
         </FieldRow>
 

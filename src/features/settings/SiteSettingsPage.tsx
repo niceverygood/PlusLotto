@@ -68,6 +68,14 @@ const formSchema = z.object({
   call_keywords: z.string(), // 통화 녹음 자동탐지 특정 단어(쉼표 구분) — 현장 피드백 7/3
   call_volume_alert_threshold: z.string(), // 월 통화량(상담상태 변경 건수) 경고 기준
   call_script: z.string(), // AI 통화분석 기준 스크립트(선택) — 현장 피드백 7/10
+  business: z.object({
+    name: z.string(),
+    reg_no: z.string(),
+    address: z.string(),
+    support_phone: z.string(),
+  }),
+  winnerEnabled: z.boolean(),
+  winnerCount: z.string(),
 })
 type FormValues = z.infer<typeof formSchema>
 
@@ -95,6 +103,14 @@ function toForm(s: SiteSettings): FormValues {
     call_keywords: (s.call_keywords ?? ['보장']).join(', '),
     call_volume_alert_threshold: String(s.call_volume_alert_threshold ?? 1000),
     call_script: s.call_script ?? '',
+    business: {
+      name: s.business?.name ?? '',
+      reg_no: s.business?.reg_no ?? '',
+      address: s.business?.address ?? '',
+      support_phone: s.business?.support_phone ?? '',
+    },
+    winnerEnabled: s.winner_stats?.enabled ?? false,
+    winnerCount: String(s.winner_stats?.count ?? 0),
   }
 }
 
@@ -128,6 +144,13 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
       ad_optout: v.sms.ad_optout.trim(),
     },
     win_messages: v.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
+    business: {
+      name: v.business.name.trim(),
+      reg_no: v.business.reg_no.trim(),
+      address: v.business.address.trim(),
+      support_phone: v.business.support_phone.trim(),
+    },
+    winner_stats: { enabled: v.winnerEnabled, count: Math.max(0, Number(v.winnerCount) || 0) },
     report: prev.report,
     lotto_exclude: prev.lotto_exclude,
     lotto_exclude_history: prev.lotto_exclude_history,
@@ -188,7 +211,10 @@ export function SiteSettingsPage() {
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
       {/* ── 무통장 입금 설정 ─────────────────────────── */}
-      <SectionCard title="무통장 입금 설정" desc="무통장 결제 안내에 노출되는 입금 계좌 정보입니다.">
+      <SectionCard
+        title="무통장 입금 설정"
+        desc="무통장 결제 안내에 노출되는 입금 계좌 정보입니다. 고객 홈페이지(멤버십 안내)에도 함께 노출됩니다."
+      >
         <FieldRow label="은행" htmlFor="bank_name">
           <input id="bank_name" className={inputCls} {...register('bank.bank_name')} />
           {errors.bank?.bank_name && <p className={errCls}>{errors.bank.bank_name.message}</p>}
@@ -203,6 +229,46 @@ export function SiteSettingsPage() {
         </FieldRow>
         <FieldRow label="입금 안내문" htmlFor="bank_guide" align="start">
           <textarea id="bank_guide" rows={2} className={textareaCls} {...register('bank.guide')} />
+        </FieldRow>
+      </SectionCard>
+
+      {/* ── 사업자 정보(고객 홈페이지 하단) ────────────── */}
+      <SectionCard
+        title="사업자 정보"
+        desc="고객 홈페이지 하단(푸터)에 노출되는 사업자 정보입니다."
+      >
+        <FieldRow label="상호" htmlFor="biz_name">
+          <input id="biz_name" className={inputCls} {...register('business.name')} />
+        </FieldRow>
+        <FieldRow label="사업자등록번호" htmlFor="biz_reg_no">
+          <input id="biz_reg_no" className={cn(inputCls, 'font-mono')} {...register('business.reg_no')} />
+        </FieldRow>
+        <FieldRow label="주소" htmlFor="biz_address">
+          <input id="biz_address" className={inputCls} {...register('business.address')} />
+        </FieldRow>
+        <FieldRow label="고객센터 번호" htmlFor="biz_support_phone">
+          <input id="biz_support_phone" className={cn(inputCls, 'max-w-[220px] font-mono')} {...register('business.support_phone')} />
+        </FieldRow>
+      </SectionCard>
+
+      {/* ── 고객 홈페이지 실적 표시(당첨자 수) ────────── */}
+      <SectionCard
+        title="고객 홈페이지 실적 표시"
+        desc="누적 당첨자 수를 고객 홈페이지에 직접 입력한 값으로 노출합니다(자동 집계 아님)."
+      >
+        <FieldRow label="노출 여부" align="start">
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" {...register('winnerEnabled')} /> 누적 당첨자 수 노출
+          </label>
+        </FieldRow>
+        <FieldRow label="누적 당첨자 수" htmlFor="winner_count">
+          <input
+            id="winner_count"
+            inputMode="numeric"
+            className={cn(inputCls, 'max-w-[160px] font-mono tnum')}
+            {...register('winnerCount')}
+          />
+          <span className="ml-2 text-[12.5px] text-gray-500">명</span>
         </FieldRow>
       </SectionCard>
 

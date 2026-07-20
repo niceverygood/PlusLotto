@@ -304,6 +304,7 @@ export interface MembershipTier {
   highlights: string[] // 카드 혜택 목록
   featured: boolean // '인기' 뱃지 강조
   terms: string // 등급별 개별약관(개별약관서) — 비우면 미노출
+  hidden?: boolean // true 면 고객 홈페이지(멤버십 카드·비교표)에서 숨김. 전산 편집은 계속 가능(현장 7/20)
 }
 
 // 조합 생성 과정 기록(현장 피드백 7/3 "녹화기능") — 제외수 세팅 검토 중 [추천번호] 미리보기에서
@@ -365,4 +366,19 @@ export interface SiteSettings {
   terms_by_grade?: Partial<Record<Grade, string>> // 등급별 약관(현장 피드백 6/11) — 미설정 등급은 공통 폴백
   membership_tiers?: MembershipTier[] // 멤버십 등급 카드(전산 편집 → 고객 연동, 6/30) — 미설정 시 코드 기본값 폴백
   generation_records?: GenerationRecord[] // 조합 생성 과정 기록(현장 피드백 7/3) — 미설정 시 빈 배열
+  business?: BusinessInfo // 사업자 정보(고객 홈페이지 하단 노출, 현장 피드백 7/20) — 미설정 시 공란
+  winner_stats?: WinnerStats // 누적 당첨자 수 수동 표시(고객 홈페이지, 현장 피드백 7/20) — 미설정 시 미노출
+}
+
+// 공개 안전 필드 — security-definer RPC portal_site_public() 로 anon 공개(bank·winner_stats 와 동행).
+export interface BusinessInfo {
+  name: string // 상호(회사명)
+  reg_no: string // 사업자등록번호
+  address: string // 주소
+  support_phone: string // 고객센터 번호(표시용 — 실제 문자 발신번호와 별개)
+}
+
+export interface WinnerStats {
+  enabled: boolean // 고객 홈페이지 노출 여부
+  count: number // 누적 당첨자 수(운영자 수동 입력)
 }

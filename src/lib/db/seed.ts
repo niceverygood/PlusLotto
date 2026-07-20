@@ -545,6 +545,13 @@ function buildSiteSettings(): SiteSettings {
       holder: '(주)플러스로또',
       guide: '입금자명을 주문자명과 동일하게 입력해 주세요. 미입금 시 24시간 후 자동 취소됩니다.',
     },
+    business: {
+      name: '(주)플러스로또',
+      reg_no: '000-00-00000',
+      address: '서울특별시 강남구 테헤란로 000',
+      support_phone: '1522-6385',
+    },
+    winner_stats: { enabled: true, count: 1284 },
     grade_colors: {
       free: { fg: '#94a3b8', bg: '#eef1f5' },
       simple: { fg: '#64748b', bg: '#eaedf2' },

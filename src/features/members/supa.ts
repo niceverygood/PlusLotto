@@ -776,7 +776,7 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
         const meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
         await sb().from('members').update({ meta }).eq('id', m.id)
       }
-      body = recoSmsBody(issue.round_no, issue.sets)
+      body = recoSmsBody(m.name, issue.sets)
     } else {
       body = tpl ? renderSms(tpl.body, m) : ''
       if (type === 'marketing' && adOptout) body = `(광고)${body}\n무료거부 ${adOptout}`
@@ -856,8 +856,8 @@ export async function manualIssueReco(
   v: ManualIssueInput,
   actor: string | null,
 ): Promise<{ round_no: number; sets: number[][] }> {
-  const { data: mData } = await sb().from('members').select('id, grade, phone, meta').eq('id', v.memberId).maybeSingle()
-  const member = mData as { id: string; grade: Member['grade']; phone: string; meta: Record<string, unknown> | null } | null
+  const { data: mData } = await sb().from('members').select('id, name, grade, phone, meta').eq('id', v.memberId).maybeSingle()
+  const member = mData as { id: string; name: string; grade: Member['grade']; phone: string; meta: Record<string, unknown> | null } | null
   if (!member) throw new Error('회원을 찾을 수 없습니다.')
   const { data: sData, error: se } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
   if (se) throw se
@@ -875,7 +875,7 @@ export async function manualIssueReco(
   if (ue) throw ue
 
   if (v.alsoSms) {
-    const body = recoSmsBody(targetRound, res.sets)
+    const body = recoSmsBody(member.name, res.sets)
     const { realSend, sender_no } = await fetchSmsConfig()
     let status = '미발송'
     if (realSend) {

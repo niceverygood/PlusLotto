@@ -17,6 +17,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LogIn, LogOut, Menu, User, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useMemberAuth } from './auth'
+import { usePublicSiteInfo } from './api'
 
 export interface SiteNavItem {
   to: string
@@ -56,6 +57,8 @@ export function SiteLayout() {
   const { member, logout } = useMemberAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { data: publicInfo } = usePublicSiteInfo()
+  const business = publicInfo?.business
 
   function handleLogout() {
     logout()
@@ -211,11 +214,11 @@ export function SiteLayout() {
               </p>
             </div>
             <div className="text-[12.5px] leading-relaxed text-gray-400">
-              {/* TODO(live-verify): 실제 상호/대표/사업자번호/주소/고객센터 번호로 교체 */}
-              <p>상호: {BRAND.name} · 대표: -</p>
-              <p>사업자등록번호: ----- -----</p>
-              <p>주소: -</p>
-              <p>고객센터: -</p>
+              {/* 전산(설정 > 사이트 설정 > 사업자 정보)에서 편집 → RPC portal_site_public 로 연동(현장 7/20) */}
+              <p>상호: {business?.name || BRAND.name}</p>
+              {business?.reg_no && <p>사업자등록번호: {business.reg_no}</p>}
+              {business?.address && <p>주소: {business.address}</p>}
+              {business?.support_phone && <p>고객센터: {business.support_phone}</p>}
             </div>
           </div>
           <div className="mt-8 border-t border-gray-100 pt-5">

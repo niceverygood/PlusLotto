@@ -493,13 +493,19 @@ export const MODE_OPTIONS: ExclusionMode[] = [10, 15, 20]
 // 유료 등급(골드/골드+/VIP/로얄)만 대상. 무료는 발급만(문자 X).
 const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
 
-// 멀티테넌트 브랜드(배포별 VITE_BRAND). 서버함수라 process.env 사용(클라 lib/brand 와 동일 값).
+// 멀티테넌트 브랜드(배포별 VITE_BRAND/VITE_BRAND_SHORT). 서버함수라 process.env 사용
+// (클라 lib/brand.ts 와 동일 로직 — api/ 밖 모듈 import 불가라 인라인 복제, DECISIONS 참조).
 const BRAND_NAME = process.env.VITE_BRAND || '플러스로또'
+const BRAND_SHORT =
+  process.env.VITE_BRAND_SHORT || (BRAND_NAME.endsWith('로또') ? BRAND_NAME.slice(0, -2) : BRAND_NAME)
 
-/** 조합 목록 → SMS 본문(LMS). */
-function formatComboSms(name: string, round: number, sets: number[][]): string {
-  const lines = sets.map((s, i) => `${String(i + 1).padStart(2, '0')}. ${s.join(', ')}`)
-  return `[${BRAND_NAME}] ${name || '회원'}님 ${round}회 추천번호 ${sets.length}조합\n\n${lines.join('\n')}\n\n홈페이지에서도 확인 가능합니다.`
+/**
+ * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 포맷(자급자족 중복, 상단 참조).
+ * 포맷 확정(현장 피드백 7/20, 정의현 차장): "[플러스]\n(이름)님\n[1] 1,2,3,4,5,6\n[2] ...".
+ */
+function formatComboSms(name: string, sets: number[][]): string {
+  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
+  return `[${BRAND_SHORT}]\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
@@ -722,7 +728,7 @@ export default async function handler(req: any, res: any) {
 
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
-        const smsBody = formatComboSms(r.name ?? '', targetRound, sets)
+        const smsBody = formatComboSms(r.name ?? '', sets)
         const sres = await sendComboSms(selfBase, r.phone, smsBody, sender)
         await sb.from('sms_sends').insert({
           // 병렬 동시삽입 PK 충돌 방지: 시간+난수+회원 꼬리.

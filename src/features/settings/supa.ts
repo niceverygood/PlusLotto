@@ -25,16 +25,20 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     call_keywords: next.call_keywords ?? ['보장'],
     call_volume_alert_threshold: next.call_volume_alert_threshold ?? 1000,
     call_script: next.call_script ?? '',
+    business: next.business ?? { name: '', reg_no: '', address: '', support_phone: '' },
+    winner_stats: next.winner_stats ?? { enabled: false, count: 0 },
   }
   // 신규 컬럼(membership_tiers 0008 · generation_records 0009 · call_keywords/call_volume_alert_threshold
-  // 0010 · call_script 0012) 마이그레이션 전이면 PGRST204 → 그 키만 빼고 재시도해 다른 설정 저장
-  // (무통장·약관 등)이 통째로 막히지 않게 한다(D68 방어구조).
+  // 0010 · call_script 0012 · business/winner_stats 0013) 마이그레이션 전이면 PGRST204 → 그 키만 빼고
+  // 재시도해 다른 설정 저장(무통장·약관 등)이 통째로 막히지 않게 한다(D68 방어구조).
   const OPTIONAL_COLUMNS = [
     'membership_tiers',
     'generation_records',
     'call_keywords',
     'call_volume_alert_threshold',
     'call_script',
+    'business',
+    'winner_stats',
   ] as const
   let attempt: Record<string, unknown> = payload
   for (let i = 0; i <= OPTIONAL_COLUMNS.length; i++) {

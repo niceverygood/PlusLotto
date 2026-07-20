@@ -23,6 +23,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
     highlights: ['주간 추천 조합 1세트', '기본 회차 정보 열람', '마이페이지 발급내역 확인'],
     featured: false,
     terms: '',
+    hidden: true, // 고객 홈페이지 등급 3종만 노출(현장 피드백 7/20) — 전산 편집은 계속 가능
   },
   {
     grade: 'gold',
@@ -38,6 +39,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
     ],
     featured: false,
     terms: '',
+    hidden: true, // 고객 홈페이지 등급 3종만 노출(현장 피드백 7/20) — 전산 편집은 계속 가능
   },
   {
     grade: 'goldp',
@@ -105,8 +107,14 @@ export function resolveTiers(raw: MembershipTier[] | null | undefined): Membersh
         Array.isArray(r.highlights) && r.highlights.length ? r.highlights : def.highlights,
       featured: !!r.featured,
       terms: r.terms ?? '',
+      hidden: r.hidden ?? def.hidden ?? false,
     }
   })
+}
+
+/** 고객 홈페이지 노출 대상만(§등급 3종 표현, 현장 피드백 7/20) — 카드·비교표 렌더 전 필터. */
+export function visibleTiers(tiers: MembershipTier[]): MembershipTier[] {
+  return tiers.filter((t) => !t.hidden)
 }
 
 /** 정규화된 등급 배열 → grade→label 맵(전산 GRADE_LABEL 전파용). */

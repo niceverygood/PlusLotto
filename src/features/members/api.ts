@@ -1154,7 +1154,7 @@ export function useSendSms() {
             }
             freshIssues[m.id] = issue
           }
-          body = recoSmsBody(issue.round_no, issue.sets)
+          body = recoSmsBody(m.name, issue.sets)
         } else {
           body = tpl ? renderSms(tpl.body, m) : ''
           if (type === 'marketing' && sms?.ad_optout) body = `(광고)${body}\n무료거부 ${sms.ad_optout}`
@@ -1298,7 +1298,7 @@ export function useManualIssueReco() {
         if (realSend) {
           const r = await sendOneShot({
             dest_phone: member.phone,
-            msg_body: recoSmsBody(targetRound, res.sets),
+            msg_body: recoSmsBody(member.name, res.sets),
             send_phone: sms.sender_no,
           })
           smsStatus = r.ok ? '발송완료' : '실패'
@@ -1316,7 +1316,7 @@ export function useManualIssueReco() {
             member_id: m.id,
             template_key: 'recommend',
             phone: m.phone,
-            body: recoSmsBody(targetRound, res.sets),
+            body: recoSmsBody(member.name, res.sets),
             type: 'recommend',
             status: smsStatus,
             sent_at: ts,

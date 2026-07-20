@@ -25,9 +25,9 @@ import {
 import { Badge, LottoBalls } from '@/design-system/components'
 import { date } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { DEFAULT_MEMBERSHIP_TIERS } from '@/lib/membership'
+import { DEFAULT_MEMBERSHIP_TIERS, visibleTiers } from '@/lib/membership'
 import { useMemberAuth } from './auth'
-import { useMembershipTiers, useRecentRounds } from './api'
+import { useMembershipTiers, usePublicSiteInfo, useRecentRounds } from './api'
 
 // ── 3대 강점 정의 ──────────────────────────────────────────────────────────
 interface Strength {
@@ -94,7 +94,9 @@ export function HomePage() {
   const roundsQuery = useRecentRounds(1)
   const latest = roundsQuery.data?.[0]
   const { data: tierData } = useMembershipTiers()
-  const tiers = tierData ?? DEFAULT_MEMBERSHIP_TIERS
+  const tiers = visibleTiers(tierData ?? DEFAULT_MEMBERSHIP_TIERS)
+  const { data: publicInfo } = usePublicSiteInfo()
+  const winnerStats = publicInfo?.winner_stats
 
   return (
     <div className="font-sans">
@@ -237,10 +239,10 @@ export function HomePage() {
               등급에 따라 더 강력하게
             </>
           }
-          desc="무료 체험부터 전담 관리까지. 나에게 맞는 등급으로 시작하세요."
+          desc="회원님께 맞는 등급으로 시작하세요."
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tiers.map((t) => (
             <div
               key={t.grade}
@@ -272,6 +274,21 @@ export function HomePage() {
       {/* ── 신뢰 요소 ──────────────────────────────────────────── */}
       <section className="bg-ink-900 py-16 sm:py-20">
         <div className="mx-auto max-w-[1120px] px-4 sm:px-6">
+          {/* 누적 당첨자 수(운영자 수동 입력, 현장 피드백 7/20) */}
+          {winnerStats?.enabled && winnerStats.count > 0 && (
+            <div className="mb-10 text-center">
+              <div className="text-[12.5px] font-bold uppercase tracking-[0.5px] text-accent-500">
+                Track Record
+              </div>
+              <p className="mt-2 text-[22px] font-extrabold text-white sm:text-[26px]">
+                누적 당첨자{' '}
+                <span className="font-mono text-accent-500 tabular-nums">
+                  {winnerStats.count.toLocaleString()}
+                </span>
+                명과 함께한 {BRAND.name}
+              </p>
+            </div>
+          )}
           <div className="grid gap-6 sm:grid-cols-3">
             {[
               {

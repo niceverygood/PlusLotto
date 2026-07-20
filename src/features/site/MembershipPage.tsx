@@ -11,13 +11,13 @@
 import { useMemo } from 'react'
 import { BRAND } from '@/lib/brand'
 import { Link } from 'react-router-dom'
-import { Check, Crown, FileText, Headphones, Minus, Sparkles } from 'lucide-react'
+import { Banknote, Check, Crown, FileText, Headphones, Minus, Sparkles } from 'lucide-react'
 import type { Grade, MembershipTier } from '@/types/db'
 import { Badge } from '@/design-system/components'
 import { cn } from '@/lib/cn'
-import { DEFAULT_MEMBERSHIP_TIERS, TIER_GRADES, type TierGrade } from '@/lib/membership'
+import { DEFAULT_MEMBERSHIP_TIERS, type TierGrade, visibleTiers } from '@/lib/membership'
 import { useMemberAuth } from './auth'
-import { useMembershipTiers } from './api'
+import { useMembershipTiers, usePublicSiteInfo } from './api'
 
 // ── 등급별 색 토큰 매핑 (Badge 와 동일한 grade-* 토큰만 사용) ───────────────
 const GRADE_TONE: Record<
@@ -140,12 +140,18 @@ export function MembershipPage() {
   const { member } = useMemberAuth()
   const currentGrade = member?.grade ?? null
   const { data } = useMembershipTiers()
-  const tiers = data ?? DEFAULT_MEMBERSHIP_TIERS
+  const { data: publicInfo } = usePublicSiteInfo()
+  const bank = publicInfo?.bank
+  const allTiers = data ?? DEFAULT_MEMBERSHIP_TIERS
+  // 고객 홈페이지는 등급 3종만 노출(현장 피드백 7/20) — 회원 본인의 실제 등급 라벨은 숨김 등급이어도
+  // 정확히 표시해야 하므로 labelOf 는 allTiers(비필터) 기준으로 만든다.
+  const tiers = visibleTiers(allTiers)
+  const visibleGrades = useMemo(() => tiers.map((t) => t.grade as TierGrade), [tiers])
 
   const labelOf = useMemo(() => {
-    const m = new Map(tiers.map((t) => [t.grade, t.label]))
+    const m = new Map(allTiers.map((t) => [t.grade, t.label]))
     return (g: Grade): string | undefined => m.get(g)
-  }, [tiers])
+  }, [allTiers])
   const tiersWithTerms = tiers.filter((t) => t.terms.trim())
 
   return (
@@ -162,7 +168,7 @@ export function MembershipPage() {
             <br className="hidden sm:block" /> 더 똑똑하게 시작하세요
           </h1>
           <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-gray-300 sm:text-[15px]">
-            무료부터 로얄까지, 원하는 만큼의 추천 조합과 전용 분석을 제공합니다.
+            회원님께 맞는 등급으로, 원하는 만큼의 추천 조합과 전용 분석을 제공합니다.
             등급은 언제든 상향할 수 있어요.
           </p>
 
@@ -204,7 +210,7 @@ export function MembershipPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {tiers.map((t) => (
             <TierCard key={t.grade} tier={t} isCurrent={currentGrade === t.grade} />
           ))}
@@ -222,7 +228,7 @@ export function MembershipPage() {
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="px-4 py-3 text-[12.5px] font-bold text-gray-600">혜택 항목</th>
-                  {TIER_GRADES.map((g) => {
+                  {visibleGrades.map((g) => {
                     const tone = GRADE_TONE[g]
                     const isCurrent = currentGrade === g
                     return (
@@ -250,7 +256,7 @@ export function MembershipPage() {
                     className={cn('border-b border-gray-100', i % 2 === 1 && 'bg-gray-50/40')}
                   >
                     <td className="px-4 py-3 text-[13px] font-semibold text-gray-700">{row.label}</td>
-                    {TIER_GRADES.map((g) => {
+                    {visibleGrades.map((g) => {
                       const tone = GRADE_TONE[g]
                       const isCurrent = currentGrade === g
                       return (
@@ -300,6 +306,32 @@ export function MembershipPage() {
                   </details>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ── 결제 안내(무통장 입금) ─────────────────────────── */}
+        {bank && bank.account_no && (
+          <div className="mt-14 rounded-lg border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent-50 text-accent-600">
+                <Banknote className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-[17px] font-extrabold text-ink-900">결제 안내(무통장 입금)</h3>
+                <p className="mt-1 text-[13.5px] leading-relaxed text-gray-500">
+                  아래 계좌로 입금해 주시면 담당자 확인 후 등급이 적용됩니다.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[14px]">
+                  <span className="font-bold text-ink-900">
+                    {bank.bank_name} <span className="font-mono tabular-nums">{bank.account_no}</span>
+                  </span>
+                  <span className="text-gray-500">예금주 {bank.holder}</span>
+                </div>
+                {bank.guide && (
+                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-gray-400">{bank.guide}</p>
+                )}
+              </div>
             </div>
           </div>
         )}

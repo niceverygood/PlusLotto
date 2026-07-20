@@ -18,7 +18,7 @@
 //   InquiryInput = { name:string; phone?:string; category?:string; title:string; body:string }
 // ─────────────────────────────────────────────────────────────────────────
 import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query'
-import type { Faq, LottoRound, MembershipTier, Notice } from '@/types/db'
+import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTier, Notice, WinnerStats } from '@/types/db'
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
@@ -30,6 +30,44 @@ export const siteKeys = {
   notices: () => ['site', 'notices'] as const,
   faqs: () => ['site', 'faqs'] as const,
   tiers: () => ['site', 'membership-tiers'] as const,
+  publicInfo: () => ['site', 'public-info'] as const,
+}
+
+export interface PublicSiteInfo {
+  bank: BankTransferSettings
+  business: BusinessInfo
+  winner_stats: WinnerStats
+}
+
+const EMPTY_BANK: BankTransferSettings = { bank_name: '', account_no: '', holder: '', guide: '' }
+const EMPTY_BUSINESS: BusinessInfo = { name: '', reg_no: '', address: '', support_phone: '' }
+const EMPTY_WINNER_STATS: WinnerStats = { enabled: false, count: 0 }
+
+// ── 사업자 정보 · 무통장 계좌 · 당첨자 수(전산 편집 → 고객 홈페이지 노출, 현장 7/20) ────────
+// site_settings 에는 PG api_key 비밀이 같이 있어 anon 직접 읽기 금지 → security-definer
+// RPC portal_site_public() 이 bank/business/winner_stats 3개 컬럼만 반환(0013 마이그레이션).
+export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
+  return useQuery({
+    queryKey: siteKeys.publicInfo(),
+    queryFn: async (): Promise<PublicSiteInfo> => {
+      if (dataSource === 'supabase' && supabase) {
+        const { data, error } = await supabase.rpc('portal_site_public')
+        const d = (!error && data ? data : {}) as Partial<PublicSiteInfo> // RPC 미생성/차단 → 빈 값 폴백
+        return {
+          bank: { ...EMPTY_BANK, ...d.bank },
+          business: { ...EMPTY_BUSINESS, ...d.business },
+          winner_stats: { ...EMPTY_WINNER_STATS, ...d.winner_stats },
+        }
+      }
+      const s = readDb().site_settings
+      return {
+        bank: { ...EMPTY_BANK, ...s.bank },
+        business: { ...EMPTY_BUSINESS, ...s.business },
+        winner_stats: { ...EMPTY_WINNER_STATS, ...s.winner_stats },
+      }
+    },
+    staleTime: 10 * 60 * 1000,
+  })
 }
 
 // ── 멤버십 등급(전산 편집 → 고객 연동) ─────────────────────────────────────
