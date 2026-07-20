@@ -33,8 +33,9 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // 기본 랜딩은 '/'(RoleHome) — 역할별 분기(팀장=/members)를 한 곳에서 처리(현장 피드백 6/11).
-  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/'
+  // 기본 랜딩은 '/admin'(RoleHome) — 역할별 분기(팀장=/admin/members)를 한 곳에서 처리(현장 피드백 6/11).
+  // 루트(/)는 7/20부터 고객 홈페이지이므로 직원 로그인 후 랜딩은 반드시 /admin 하위여야 한다.
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/admin'
 
   if (user) return <Navigate to={from} replace />
 

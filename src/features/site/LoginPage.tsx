@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 로그인 페이지 (/portal/login) · Phase 2
+// 플러스로또 고객 홈페이지 — 로그인 페이지 (/login) · Phase 2
 // ─────────────────────────────────────────────────────────────────────────
 // SiteLayout 의 <Outlet/> 안에 렌더되므로 '본문 콘텐츠'만 반환한다(헤더/푸터 X).
-// 전화번호 + 비밀번호(기본=전화 뒷4자리) → useMemberAuth().login → 성공 시 /portal/mypage.
+// 전화번호 + 비밀번호(기본=전화 뒷4자리) → useMemberAuth().login → 성공 시 /mypage.
 // 라우트 등록은 Phase3(routes.tsx)가 담당 — 여기서는 등록하지 않는다.
 // 브랜드 토큰만 사용(임의 hex 금지), TS strict, UI 한국어, 모바일 반응형.
 // ─────────────────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ export function LoginPage() {
     try {
       const res = await login(phone, pw)
       if (res.ok) {
-        navigate('/portal/mypage')
+        navigate('/mypage')
       } else {
         setError(res.error ?? '전화번호 또는 비밀번호가 일치하지 않습니다.')
       }
@@ -158,7 +158,7 @@ export function LoginPage() {
         <div className="mt-5 text-center text-[14px] text-gray-500">
           아직 회원이 아니신가요?{' '}
           <Link
-            to="/portal/signup"
+            to="/signup"
             className="font-bold text-primary-600 underline-offset-2 hover:text-primary-700 hover:underline"
           >
             회원가입

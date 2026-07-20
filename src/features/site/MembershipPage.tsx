@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 88멤버십 (등급 안내) 페이지 (/portal/membership)
+// 플러스로또 고객 홈페이지 — 88멤버십 (등급 안내) 페이지 (/membership)
 // ─────────────────────────────────────────────────────────────────────────
 // 무료/골드/골드플러스/VIP/로얄 등급의 혜택을 비교하는 마케팅·안내 페이지.
 // 등급 카드(명칭·가격·태그라인·혜택·개별약관)는 전산(설정 > 멤버십 등급)에서 편집 →
@@ -122,7 +122,7 @@ function TierCard({ tier, isCurrent }: { tier: MembershipTier; isCurrent: boolea
 
       {/* CTA */}
       <Link
-        to="/portal/support"
+        to="/support"
         className={cn(
           'mt-auto inline-flex items-center justify-center gap-1.5 rounded-[7px] px-3.5 py-2.5 text-[13px] font-bold transition',
           tier.featured
@@ -176,14 +176,14 @@ export function MembershipPage() {
           ) : (
             <div className="mt-6 flex flex-wrap gap-2.5">
               <Link
-                to="/portal/signup"
+                to="/signup"
                 className="inline-flex items-center justify-center gap-1.5 rounded-[7px] bg-accent-500 px-5 py-2.5 text-[14px] font-bold text-white transition hover:bg-accent-600"
               >
                 <Sparkles className="h-4 w-4" />
                 회원가입하고 시작
               </Link>
               <Link
-                to="/portal/login"
+                to="/login"
                 className="inline-flex items-center justify-center rounded-[7px] border border-white/30 px-5 py-2.5 text-[14px] font-bold text-white transition hover:bg-white/10"
               >
                 로그인
@@ -322,7 +322,7 @@ export function MembershipPage() {
             </div>
             <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
               <Link
-                to="/portal/support"
+                to="/support"
                 className="inline-flex items-center justify-center gap-1.5 rounded-[7px] bg-primary-600 px-5 py-2.5 text-[14px] font-bold text-white transition hover:bg-primary-700"
               >
                 <Headphones className="h-4 w-4" />
@@ -330,7 +330,7 @@ export function MembershipPage() {
               </Link>
               {!member && (
                 <Link
-                  to="/portal/signup"
+                  to="/signup"
                   className="inline-flex items-center justify-center gap-1.5 rounded-[7px] border border-gray-300 bg-white px-5 py-2.5 text-[14px] font-bold text-gray-700 transition hover:bg-gray-50 hover:border-gray-400"
                 >
                   회원가입

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 회원가입(가입 신청) 페이지 (/portal/signup)
+// 플러스로또 고객 홈페이지 — 회원가입(가입 신청) 페이지 (/signup)
 // ─────────────────────────────────────────────────────────────────────────
 // signupApproach = "가입문의(inquiry) 폼".
 //   고객 사이트는 anon 키 → members 셀프 INSERT 불가(RLS+트리거). 그래서 셀프 가입이 아니라
@@ -12,7 +12,7 @@
 //   운영자 가입 처리 후 로그인 시 사용). 그래서 폼은 이름·전화·(선택)메모만 받는다.
 //
 // 이 파일은 <Outlet/> 안에서 렌더되므로 SiteLayout 을 import 하지 않고 '본문 콘텐츠'만 반환한다.
-// 라우트 등록(/portal/signup)은 Phase3 가 담당.
+// 라우트 등록(/signup)은 Phase3 가 담당.
 // ─────────────────────────────────────────────────────────────────────────
 import { useMemo, useState, type FormEvent } from 'react'
 import { BRAND } from '@/lib/brand'
@@ -227,7 +227,7 @@ export function SignupPage() {
                 <p className="mt-5 text-center text-[13px] text-gray-500">
                   이미 회원이신가요?{' '}
                   <Link
-                    to="/portal/login"
+                    to="/login"
                     className="font-bold text-primary-600 underline-offset-2 hover:underline"
                   >
                     로그인
@@ -257,13 +257,13 @@ function SignupDone() {
 
       <div className="mt-6 flex flex-col gap-2.5">
         <Link
-          to="/portal/login"
+          to="/login"
           className="flex h-12 w-full items-center justify-center rounded-md bg-primary-600 text-[15px] font-bold text-white transition-colors hover:bg-primary-700"
         >
           로그인하러 가기
         </Link>
         <Link
-          to="/portal"
+          to="/"
           className="flex h-12 w-full items-center justify-center rounded-md border border-gray-300 text-[15px] font-semibold text-gray-700 transition-colors hover:bg-gray-50"
         >
           홈으로

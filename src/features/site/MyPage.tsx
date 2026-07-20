@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 마이페이지 (/portal/mypage)
+// 플러스로또 고객 홈페이지 — 마이페이지 (/mypage)
 // ─────────────────────────────────────────────────────────────────────────
 // 회원 본인의 등급·발급번호(주간 추천조합)·이용 안내를 확인하는 핵심 화면.
-//   - 미로그인  → 로그인 유도(CTA → /portal/login).
+//   - 미로그인  → 로그인 유도(CTA → /login).
 //   - 로딩 중   → 스켈레톤(세션 복원 동안).
 //   - 로그인 시 → 상단 프로필 카드(이름 + 등급 Badge + 이용/종료일 안내)
 //                + 회차별 발급번호 카드(recos: round_no 내림차순, 최근 회차 강조).
@@ -51,7 +51,7 @@ function LoginPrompt() {
         <span className="font-semibold text-gray-700"> 발급 번호</span>를 확인하실 수 있습니다.
       </p>
       <Link
-        to="/portal/login"
+        to="/login"
         className="mt-7 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary-600 px-6 py-3 text-[15px] font-bold text-white transition-colors hover:bg-primary-700"
       >
         <LogIn className="h-4 w-4" />
@@ -59,7 +59,7 @@ function LoginPrompt() {
       </Link>
       <p className="mt-4 text-[13px] text-gray-400">
         아직 회원이 아니신가요?{' '}
-        <Link to="/portal/signup" className="font-semibold text-primary-600 hover:underline">
+        <Link to="/signup" className="font-semibold text-primary-600 hover:underline">
           회원가입
         </Link>
       </p>
@@ -185,7 +185,7 @@ function NoRecos({ grade }: { grade: Grade }) {
       </p>
       {!paid && (
         <Link
-          to="/portal/membership"
+          to="/membership"
           className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent-500 px-5 py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-accent-600"
         >
           멤버십 보러가기
@@ -271,7 +271,7 @@ export function MyPage() {
                   <br />
                   정확한 이용 종료일은{' '}
                   <Link
-                    to="/portal/support"
+                    to="/support"
                     className="font-semibold text-primary-600 hover:underline"
                   >
                     고객센터
@@ -288,7 +288,7 @@ export function MyPage() {
                   멤버십을 시작하시면 회차별 추천 번호를 받아보실 수 있습니다.
                 </p>
                 <Link
-                  to="/portal/membership"
+                  to="/membership"
                   className="mt-2 inline-flex text-[12.5px] font-bold text-accent-600 hover:underline"
                 >
                   멤버십 안내 보기 →
@@ -339,7 +339,7 @@ export function MyPage() {
       {/* ── 하단 안내 ───────────────────────────────────────────── */}
       <p className="mt-8 text-[12px] leading-relaxed text-gray-400">
         본 번호는 추천 정보이며 당첨을 보장하지 않습니다. 회차·발급 내역에 대한 문의는{' '}
-        <Link to="/portal/support" className="font-semibold text-gray-500 hover:underline">
+        <Link to="/support" className="font-semibold text-gray-500 hover:underline">
           고객센터
         </Link>
         를 이용해 주세요.

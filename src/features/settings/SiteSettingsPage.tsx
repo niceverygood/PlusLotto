@@ -415,7 +415,7 @@ export function SiteSettingsPage() {
       {/* ── FAQ · 공지 설정(기존 모듈 연결) ───────────── */}
       <SectionCard title="FAQ · 공지 설정" desc="FAQ 와 공지사항은 고객센터 · 커뮤니티에서 관리합니다.">
         <div className="flex flex-wrap gap-2">
-          <Button variant="sec" icon={<ExternalLink className="h-3.5 w-3.5" />} onClick={() => navigate('/support')}>
+          <Button variant="sec" icon={<ExternalLink className="h-3.5 w-3.5" />} onClick={() => navigate('/admin/support')}>
             FAQ 관리(고객센터)
           </Button>
           <Button variant="sec" icon={<ExternalLink className="h-3.5 w-3.5" />} onClick={() => navigate('/community')}>

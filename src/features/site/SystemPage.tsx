@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 88시스템 (/portal/system)
+// 플러스로또 고객 홈페이지 — 88시스템 (/system)
 // ─────────────────────────────────────────────────────────────────────────
 // 서비스 동작 방식 소개 페이지. SiteLayout 의 <Outlet/> 안에 렌더되므로
 // "본문 콘텐츠"만 반환한다(레이아웃/헤더/푸터는 SiteLayout 담당, import 금지).
@@ -9,7 +9,7 @@
 //  2) 추천번호 생성 개요(제외수 기반 선별 / 매주 자동발급)
 //  3) 발급 → 문자 → 당첨집계 흐름 다이어그램(텍스트/박스)
 //  4) ⚠️ 확률 정직성 문구(6/45 모든 조합 1등확률 동일 — 선별일 뿐 확률 안 높임)
-//  5) 로그인 유도 CTA(/portal/login·/portal/mypage)
+//  5) 로그인 유도 CTA(/login·/mypage)
 //
 // 데이터 훅 불필요(정적 소개). 라우트 등록은 Phase3 담당.
 // 브랜드 토큰만 사용(임의 hex/px 금지). UI 한국어, 모바일 반응형.
@@ -118,7 +118,7 @@ export function SystemPage() {
             <div className="mt-7 flex flex-wrap items-center gap-3">
               {member ? (
                 <Link
-                  to="/portal/mypage"
+                  to="/mypage"
                   className="inline-flex items-center gap-2 rounded-md bg-accent-500 px-5 py-3 text-[15px] font-bold text-white transition-colors hover:bg-accent-600"
                 >
                   내 추천번호 보기
@@ -127,14 +127,14 @@ export function SystemPage() {
               ) : (
                 <>
                   <Link
-                    to="/portal/login"
+                    to="/login"
                     className="inline-flex items-center gap-2 rounded-md bg-accent-500 px-5 py-3 text-[15px] font-bold text-white transition-colors hover:bg-accent-600"
                   >
                     내 번호 확인하기
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                   <Link
-                    to="/portal/signup"
+                    to="/signup"
                     className="inline-flex items-center gap-2 rounded-md border border-white/25 px-5 py-3 text-[15px] font-bold text-white transition-colors hover:bg-white/10"
                   >
                     회원가입
@@ -318,7 +318,7 @@ export function SystemPage() {
           <div className="flex flex-wrap items-center justify-center gap-3">
             {member ? (
               <Link
-                to="/portal/mypage"
+                to="/mypage"
                 className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-5 py-3 text-[15px] font-bold text-white transition-colors hover:bg-primary-700"
               >
                 마이페이지로 이동
@@ -327,14 +327,14 @@ export function SystemPage() {
             ) : (
               <>
                 <Link
-                  to="/portal/login"
+                  to="/login"
                   className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-5 py-3 text-[15px] font-bold text-white transition-colors hover:bg-primary-700"
                 >
                   로그인하고 확인하기
                   <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
-                  to="/portal/support"
+                  to="/support"
                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-5 py-3 text-[15px] font-bold text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   고객센터 문의

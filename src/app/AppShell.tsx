@@ -27,36 +27,36 @@ const NAV: NavGroup[] = [
   {
     title: '운영',
     items: [
-      { key: 'dashboard', label: '대시보드', to: '/dashboard' },
-      { key: 'members', label: '이용자', to: '/members' },
-      { key: 'payments', label: '결제', to: '/payments' },
-      { key: 'revenue', label: '매출', to: '/revenue' },
+      { key: 'dashboard', label: '대시보드', to: '/admin/dashboard' },
+      { key: 'members', label: '이용자', to: '/admin/members' },
+      { key: 'payments', label: '결제', to: '/admin/payments' },
+      { key: 'revenue', label: '매출', to: '/admin/revenue' },
     ],
   },
   {
     title: '고객 · 세일즈',
     items: [
-      { key: 'myCustomers', label: '나의고객', to: '/my/customers' },
-      { key: 'community', label: '커뮤니티', to: '/community' },
-      { key: 'support', label: '고객센터', to: '/support' },
+      { key: 'myCustomers', label: '나의고객', to: '/admin/my/customers' },
+      { key: 'community', label: '커뮤니티', to: '/admin/community' },
+      { key: 'support', label: '고객센터', to: '/admin/support' },
     ],
   },
   {
     title: '로또',
     items: [
-      { key: 'lotto', label: '로또기록', to: '/lotto/results' },
-      { key: 'lotto', label: '추천번호', to: '/lotto/recommend' },
-      { key: 'bets', label: '베팅', to: '/bets' },
+      { key: 'lotto', label: '로또기록', to: '/admin/lotto/results' },
+      { key: 'lotto', label: '추천번호', to: '/admin/lotto/recommend' },
+      { key: 'bets', label: '베팅', to: '/admin/bets' },
     ],
   },
   {
     title: '시스템',
     items: [
-      { key: 'admins', label: '관리자', to: '/admins' },
-      { key: 'logs', label: '로그', to: '/logs/admin', adminOnly: true },
-      { key: 'stats', label: '통계', to: '/stats' },
-      { key: 'payroll', label: '급여', to: '/payroll' },
-      { key: 'settings', label: '설정', to: '/settings' },
+      { key: 'admins', label: '관리자', to: '/admin/admins' },
+      { key: 'logs', label: '로그', to: '/admin/logs/admin', adminOnly: true },
+      { key: 'stats', label: '통계', to: '/admin/stats' },
+      { key: 'payroll', label: '급여', to: '/admin/payroll' },
+      { key: 'settings', label: '설정', to: '/admin/settings' },
     ],
   },
 ]
@@ -85,7 +85,7 @@ export function AppShell() {
   async function handleLogout() {
     setMenuOpen(false)
     await signOut()
-    navigate('/login', { replace: true })
+    navigate('/admin/login', { replace: true })
   }
 
   return (

@@ -6,6 +6,6 @@ import { useCurrentUser } from '@/lib/auth'
 export function RequireAuth({ children }: { children: ReactNode }) {
   const user = useCurrentUser()
   const location = useLocation()
-  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  if (!user) return <Navigate to="/admin/login" replace state={{ from: location }} />
   return <>{children}</>
 }

@@ -25,12 +25,12 @@ export interface SiteNavItem {
 
 /** 데스크탑/모바일 공통 네비 정의. */
 export const SITE_NAV: SiteNavItem[] = [
-  { to: '/portal', label: '홈' },
-  { to: '/portal/system', label: `${BRAND.short}시스템` },
-  { to: '/portal/data', label: `${BRAND.name}자료` },
-  { to: '/portal/membership', label: `${BRAND.short}멤버십` },
-  { to: '/portal/mypage', label: '마이페이지' },
-  { to: '/portal/support', label: '고객센터' },
+  { to: '/', label: '홈' },
+  { to: '/system', label: `${BRAND.short}시스템` },
+  { to: '/data', label: `${BRAND.name}자료` },
+  { to: '/membership', label: `${BRAND.short}멤버십` },
+  { to: '/mypage', label: '마이페이지' },
+  { to: '/support', label: '고객센터' },
 ]
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
@@ -44,7 +44,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 
 function BrandLogo() {
   return (
-    <Link to="/portal" className="flex shrink-0 items-center gap-1.5" aria-label={`${BRAND.name} 홈`}>
+    <Link to="/" className="flex shrink-0 items-center gap-1.5" aria-label={`${BRAND.name} 홈`}>
       <span className="text-[20px] font-extrabold leading-none tracking-tight text-ink-900">
         {BRAND.short}<span className="text-accent-500">{BRAND.rest}</span>
       </span>
@@ -60,7 +60,7 @@ export function SiteLayout() {
   function handleLogout() {
     logout()
     setMenuOpen(false)
-    navigate('/portal')
+    navigate('/')
   }
 
   return (
@@ -76,7 +76,7 @@ export function SiteLayout() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to === '/portal'}
+                end={item.to === '/'}
                 className={navLinkClass}
               >
                 {item.label}
@@ -89,7 +89,7 @@ export function SiteLayout() {
             {member ? (
               <>
                 <Link
-                  to="/portal/mypage"
+                  to="/mypage"
                   className="flex items-center gap-1.5 rounded-md px-3 py-2 text-[14px] font-semibold text-gray-700 hover:bg-gray-100"
                 >
                   <User className="h-4 w-4" />
@@ -107,14 +107,14 @@ export function SiteLayout() {
             ) : (
               <>
                 <Link
-                  to="/portal/login"
+                  to="/login"
                   className="flex items-center gap-1.5 rounded-md px-3 py-2 text-[14px] font-semibold text-gray-700 hover:bg-gray-100"
                 >
                   <LogIn className="h-4 w-4" />
                   로그인
                 </Link>
                 <Link
-                  to="/portal/signup"
+                  to="/signup"
                   className="rounded-md bg-primary-600 px-4 py-2 text-[14px] font-bold text-white transition-colors hover:bg-primary-700"
                 >
                   회원가입
@@ -143,7 +143,7 @@ export function SiteLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === '/portal'}
+                  end={item.to === '/'}
                   onClick={() => setMenuOpen(false)}
                   className={({ isActive }) =>
                     cn(
@@ -170,7 +170,7 @@ export function SiteLayout() {
               ) : (
                 <div className="flex flex-col gap-2 px-1 pt-1">
                   <Link
-                    to="/portal/login"
+                    to="/login"
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center justify-center gap-1.5 rounded-md border border-gray-300 py-2.5 text-[15px] font-semibold text-gray-700 hover:bg-gray-50"
                   >
@@ -178,7 +178,7 @@ export function SiteLayout() {
                     로그인
                   </Link>
                   <Link
-                    to="/portal/signup"
+                    to="/signup"
                     onClick={() => setMenuOpen(false)}
                     className="rounded-md bg-primary-600 py-2.5 text-center text-[15px] font-bold text-white hover:bg-primary-700"
                   >

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// 플러스로또 고객 홈페이지 — 홈/랜딩 (Phase 2, 라우트 /portal)
+// 플러스로또 고객 홈페이지 — 홈/랜딩 (Phase 2, 라우트 /)
 // ─────────────────────────────────────────────────────────────────────────
 // SiteLayout 의 <Outlet/> 안에 렌더되는 "본문 콘텐츠"만 반환한다(레이아웃·헤더·푸터 X).
 // 구성: 히어로 → 3대 강점 → 회차 미리보기(graceful) → 등급 미리보기 → 신뢰요소 → 마무리 CTA.
@@ -83,8 +83,8 @@ function SectionHeading({
 function usePrimaryCta(): { to: string; label: string } {
   const { member } = useMemberAuth()
   return member
-    ? { to: '/portal/mypage', label: '내 추천번호 확인하기' }
-    : { to: '/portal/signup', label: '무료로 시작하기' }
+    ? { to: '/mypage', label: '내 추천번호 확인하기' }
+    : { to: '/signup', label: '무료로 시작하기' }
 }
 
 // ── 페이지 ─────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export function HomePage() {
               </Link>
               {!member && (
                 <Link
-                  to="/portal/login"
+                  to="/login"
                   className="inline-flex h-12 w-full items-center justify-center rounded-lg border border-white/25 px-7 text-[15px] font-bold text-white transition-colors hover:bg-white/10 sm:w-auto"
                 >
                   로그인
@@ -260,7 +260,7 @@ export function HomePage() {
 
         <div className="mt-8 text-center">
           <Link
-            to="/portal/membership"
+            to="/membership"
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-[14px] font-bold text-gray-700 transition-colors hover:bg-gray-50"
           >
             멤버십 전체 보기
@@ -342,7 +342,7 @@ export function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                to="/portal/support"
+                to="/support"
                 className="inline-flex h-12 w-full items-center justify-center rounded-lg border border-white/30 px-7 text-[15px] font-bold text-white transition-colors hover:bg-white/10 sm:w-auto"
               >
                 고객센터 문의

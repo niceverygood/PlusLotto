@@ -13,7 +13,7 @@ export function RequireNav({ navKey, children }: { navKey: NavKey; children: Rea
   const role = useRole()
   const { data: navMap } = useNavAccess()
   if (!canAccessWith(navMap, role, navKey)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/admin/dashboard" replace />
   }
   return <>{children}</>
 }
