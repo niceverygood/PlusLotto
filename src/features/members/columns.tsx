@@ -20,6 +20,7 @@ export interface MemberColumnsCtx {
   pageOffset: number // 현재 페이지 시작 인덱스(No 표시용)
   staffOptions: InlineSelectOption[] // 담당 인라인 셀렉트 옵션([미지정] 포함)
   canEditStaff: boolean // 담당 변경 권한(rep 은 비활성)
+  role: Role | null // 유입 컬럼 하드 차단(admin/manager 외 컬럼 자체 제거, 현장 피드백 7/21)
   onChangeStatus: (id: string, status: MemberStatus) => void
   onChangeStaff: (id: string, staffId: string) => void // '' = 미지정(리셋)
   onChangeConsult: (id: string, consult: string) => void // 상담상태 인라인 변경
@@ -33,7 +34,7 @@ const TEND_TONE: Record<string, string> = {
 }
 
 export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
-  return [
+  const cols: ColumnDef<Member>[] = [
     {
       id: 'no',
       header: 'No',
@@ -193,14 +194,16 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
       cell: (info) => <NumCell>{datetime(info.row.original.registered_at)}</NumCell>,
     },
   ]
+  // 유입(유입코드/유입구분)은 최고관리자·관리자만 열람 — 컬럼 자체를 제거해 컬럼토글로도 켤 수 없게 한다(현장 피드백 7/21).
+  const canSeeInflow = ctx.role === 'admin' || ctx.role === 'manager'
+  return canSeeInflow ? cols : cols.filter((c) => c.id !== 'inflow')
 }
 
 /** 역할별 기본 컬럼 노출(현장 피드백).
- * - 유입(유입코드/유입구분)은 최고관리자(admin)만 노출 → 그 외 숨김.
+ * - 유입(유입코드/유입구분)은 memberColumns() 에서 최고관리자·관리자 외엔 컬럼 자체를 제거(하드 차단).
  * - 팀장(rep)은 본인 담당만 보므로 '담당' 컬럼 숨김. */
 export function memberColumnVisibility(role: Role | null): VisibilityState {
   const v: VisibilityState = {}
-  if (role !== 'admin') v.inflow = false // 유입코드/유입구분 숨김
   if (role === 'rep') v.staff = false
   return v
 }

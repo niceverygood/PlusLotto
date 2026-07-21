@@ -395,8 +395,8 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
           </Row>
           <Row label="상담상태">{member.consult_status ?? '-'}</Row>
           <Row label="아웃콜">{member.outcall_done ? '완료' : '미처리'}</Row>
-          {/* 유입코드/유입구분은 최고관리자만(현장 피드백) */}
-          {role === 'admin' && (
+          {/* 유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21) */}
+          {(role === 'admin' || role === 'manager') && (
             <>
               <Row label="유입코드" mono>
                 {member.inflow_code ?? '-'}

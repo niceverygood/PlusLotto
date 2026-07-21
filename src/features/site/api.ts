@@ -41,7 +41,7 @@ export interface PublicSiteInfo {
 
 const EMPTY_BANK: BankTransferSettings = { bank_name: '', account_no: '', holder: '', guide: '' }
 const EMPTY_BUSINESS: BusinessInfo = { name: '', reg_no: '', address: '', support_phone: '' }
-const EMPTY_WINNER_STATS: WinnerStats = { enabled: false, count: 0 }
+const EMPTY_WINNER_STATS: WinnerStats = { enabled: false, rank1: 0, rank2: 0, rank3: 0, rank4: 0, rank5: 0 }
 
 // ── 사업자 정보 · 무통장 계좌 · 당첨자 수(전산 편집 → 고객 홈페이지 노출, 현장 7/20) ────────
 // site_settings 에는 PG api_key 비밀이 같이 있어 anon 직접 읽기 금지 → security-definer

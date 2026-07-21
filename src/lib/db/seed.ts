@@ -551,7 +551,7 @@ function buildSiteSettings(): SiteSettings {
       address: '서울특별시 강남구 테헤란로 000',
       support_phone: '1522-6385',
     },
-    winner_stats: { enabled: true, count: 1284 },
+    winner_stats: { enabled: true, rank1: 2, rank2: 11, rank3: 187, rank4: 4230, rank5: 51840 },
     grade_colors: {
       free: { fg: '#94a3b8', bg: '#eef1f5' },
       simple: { fg: '#64748b', bg: '#eaedf2' },

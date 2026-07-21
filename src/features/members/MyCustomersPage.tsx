@@ -70,6 +70,7 @@ export function MyCustomersPage() {
       memberColumns({
         pageOffset,
         staffOptions,
+        role,
         canEditStaff: role !== 'rep',
         onChangeStatus: (id, status) => updateMember.mutate({ id, patch: { status } }),
         onChangeStaff: (id, staffId) =>

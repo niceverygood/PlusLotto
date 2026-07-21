@@ -124,6 +124,7 @@ export function MembersPage() {
       memberColumns({
         pageOffset,
         staffOptions,
+        role,
         canEditStaff: role === 'admin', // 담당자 변경은 최고관리자만(현장 피드백)
         onChangeStatus: (id, status) => updateMember.mutate({ id, patch: { status } }),
         onChangeStaff: (id, staffId) =>

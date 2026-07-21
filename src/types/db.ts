@@ -378,7 +378,13 @@ export interface BusinessInfo {
   support_phone: string // 고객센터 번호(표시용 — 실제 문자 발신번호와 별개)
 }
 
+// 누적이 아니라 "직전 확정 회차"의 등수별 당첨자 수(운영자 수동 입력, 현장 피드백 7/20 재확정).
+// 회차 라벨(제N회)은 lotto_rounds 최신 확정 회차를 자동 사용 — 등수별 인원만 운영자가 채운다.
 export interface WinnerStats {
   enabled: boolean // 고객 홈페이지 노출 여부
-  count: number // 누적 당첨자 수(운영자 수동 입력)
+  rank1: number
+  rank2: number
+  rank3: number
+  rank4: number
+  rank5: number
 }

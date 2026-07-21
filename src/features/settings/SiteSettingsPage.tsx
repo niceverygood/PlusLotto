@@ -75,7 +75,11 @@ const formSchema = z.object({
     support_phone: z.string(),
   }),
   winnerEnabled: z.boolean(),
-  winnerCount: z.string(),
+  winnerRank1: z.string(),
+  winnerRank2: z.string(),
+  winnerRank3: z.string(),
+  winnerRank4: z.string(),
+  winnerRank5: z.string(),
 })
 type FormValues = z.infer<typeof formSchema>
 
@@ -110,7 +114,11 @@ function toForm(s: SiteSettings): FormValues {
       support_phone: s.business?.support_phone ?? '',
     },
     winnerEnabled: s.winner_stats?.enabled ?? false,
-    winnerCount: String(s.winner_stats?.count ?? 0),
+    winnerRank1: String(s.winner_stats?.rank1 ?? 0),
+    winnerRank2: String(s.winner_stats?.rank2 ?? 0),
+    winnerRank3: String(s.winner_stats?.rank3 ?? 0),
+    winnerRank4: String(s.winner_stats?.rank4 ?? 0),
+    winnerRank5: String(s.winner_stats?.rank5 ?? 0),
   }
 }
 
@@ -150,7 +158,14 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
       address: v.business.address.trim(),
       support_phone: v.business.support_phone.trim(),
     },
-    winner_stats: { enabled: v.winnerEnabled, count: Math.max(0, Number(v.winnerCount) || 0) },
+    winner_stats: {
+      enabled: v.winnerEnabled,
+      rank1: Math.max(0, Number(v.winnerRank1) || 0),
+      rank2: Math.max(0, Number(v.winnerRank2) || 0),
+      rank3: Math.max(0, Number(v.winnerRank3) || 0),
+      rank4: Math.max(0, Number(v.winnerRank4) || 0),
+      rank5: Math.max(0, Number(v.winnerRank5) || 0),
+    },
     report: prev.report,
     lotto_exclude: prev.lotto_exclude,
     lotto_exclude_history: prev.lotto_exclude_history,
@@ -254,21 +269,29 @@ export function SiteSettingsPage() {
       {/* ── 고객 홈페이지 실적 표시(당첨자 수) ────────── */}
       <SectionCard
         title="고객 홈페이지 실적 표시"
-        desc="누적 당첨자 수를 고객 홈페이지에 직접 입력한 값으로 노출합니다(자동 집계 아님)."
+        desc="누적이 아니라 직전 확정 회차의 등수별 당첨자 수를 직접 입력한 값으로 노출합니다(자동 집계 아님). 회차 번호(제N회)는 로또기록 최신 확정 회차를 자동 표시합니다."
       >
         <FieldRow label="노출 여부" align="start">
           <label className="flex items-center gap-2 text-[13px] text-gray-700">
-            <input type="checkbox" {...register('winnerEnabled')} /> 누적 당첨자 수 노출
+            <input type="checkbox" {...register('winnerEnabled')} /> 당첨자 수 노출
           </label>
         </FieldRow>
-        <FieldRow label="누적 당첨자 수" htmlFor="winner_count">
-          <input
-            id="winner_count"
-            inputMode="numeric"
-            className={cn(inputCls, 'max-w-[160px] font-mono tnum')}
-            {...register('winnerCount')}
-          />
-          <span className="ml-2 text-[12.5px] text-gray-500">명</span>
+        <FieldRow label="등수별 당첨자 수" align="start">
+          <div className="flex flex-wrap gap-3">
+            {(['winnerRank1', 'winnerRank2', 'winnerRank3', 'winnerRank4', 'winnerRank5'] as const).map(
+              (field, i) => (
+                <label key={field} className="flex items-center gap-1.5 text-[12.5px] text-gray-600">
+                  {i + 1}등
+                  <input
+                    inputMode="numeric"
+                    className={cn(inputCls, 'h-9 w-[92px] font-mono tnum')}
+                    {...register(field)}
+                  />
+                  명
+                </label>
+              ),
+            )}
+          </div>
         </FieldRow>
       </SectionCard>
 
