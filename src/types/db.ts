@@ -307,8 +307,23 @@ export interface MembershipTier {
   hidden?: boolean // true 면 고객 홈페이지(멤버십 카드·비교표)에서 숨김. 전산 편집은 계속 가능(현장 7/20)
 }
 
-// 조합 생성 과정 기록(현장 피드백 7/3 "녹화기능") — 제외수 세팅 검토 중 [추천번호] 미리보기에서
-// 저장하면, 규칙 스냅샷·번호별 제외사유·남은 풀·최종 조합을 통째로 남긴다(특허·불기소이유서 근거자료).
+// 회차·등급별 생성 로직 기록(현장 피드백 7/21) — 특정 추천 조합이 아니라 해당 회차에서
+// 어떤 규칙 후보가 어떤 제외수로 압축됐는지 전체 흐름을 남긴다.
+export interface GenerationStage {
+  rule: string
+  candidates: number[] // 해당 규칙이 추린 최초 후보
+  selected: number[] // 이 규칙 후보 중 최종 제외수에 포함된 번호(규칙 간 중복 가능)
+}
+
+export interface GenerationBasisSnapshot {
+  roundsUsed: number
+  prevRound: number | null
+  prevNumbers: number[] | null
+  prevBonus: number | null
+  sumBand: [number, number]
+  relaxed: boolean
+}
+
 export interface GenerationRecord {
   id: string
   created_at: string
@@ -316,11 +331,17 @@ export interface GenerationRecord {
   grade: Grade | null // 대상 등급(null=공통)
   target_round: number
   mode: number // 제외수 개수
+  source?: 'preview' | 'grade_issue' | 'weekly_auto' // 미설정은 7/21 이전 미리보기 기록
   fixed: number[]
   excluded: number[]
   reasons: { number: number; rule: string }[] // 번호별 제외 사유(규칙 키)
+  stages?: GenerationStage[] // 규칙별 최초 후보 → 최종 적용 흐름
   pool: number[] // 남은 풀
-  sets: number[][] // 생성된 추천 조합
+  basis?: GenerationBasisSnapshot // 산정에 사용한 회차·직전번호·합 범위
+  set_count?: number // 발급 시 회원당 기본 조합 수(기록용, 조합 자체는 저장하지 않음)
+  logic_ratio?: number // 통계 로직 적용 비율
+  issued_count?: number // 이 기록과 함께 실제 발급된 회원 수
+  sets?: number[][] // 7/21 이전 기록 호환용. 신규 기록에는 특정 조합을 저장하지 않는다.
   note?: string // 운영자 메모(선택)
 }
 
@@ -367,7 +388,7 @@ export interface SiteSettings {
   membership_tiers?: MembershipTier[] // 멤버십 등급 카드(전산 편집 → 고객 연동, 6/30) — 미설정 시 코드 기본값 폴백
   generation_records?: GenerationRecord[] // 조합 생성 과정 기록(현장 피드백 7/3) — 미설정 시 빈 배열
   business?: BusinessInfo // 사업자 정보(고객 홈페이지 하단 노출, 현장 피드백 7/20) — 미설정 시 공란
-  winner_stats?: WinnerStats // 누적 당첨자 수 수동 표시(고객 홈페이지, 현장 피드백 7/20) — 미설정 시 미노출
+  winner_stats?: WinnerStats // 회차별 당첨자 수 수동 기록(고객 홈페이지에는 최신 회차만 노출)
 }
 
 // 공개 안전 필드 — security-definer RPC portal_site_public() 로 anon 공개(bank·winner_stats 와 동행).
@@ -378,13 +399,19 @@ export interface BusinessInfo {
   support_phone: string // 고객센터 번호(표시용 — 실제 문자 발신번호와 별개)
 }
 
-// 누적이 아니라 "직전 확정 회차"의 등수별 당첨자 수(운영자 수동 입력, 현장 피드백 7/20 재확정).
-// 회차 라벨(제N회)은 lotto_rounds 최신 확정 회차를 자동 사용 — 등수별 인원만 운영자가 채운다.
-export interface WinnerStats {
-  enabled: boolean // 고객 홈페이지 노출 여부
+export interface WinnerRoundStats {
+  round_no: number
   rank1: number
   rank2: number
   rank3: number
   rank4: number
   rank5: number
+  updated_at: string
+}
+
+// 고객 홈페이지에 공개할 현재 회차 1건. 과거 회차는 admin 전용 logs 에 별도 적재해
+// 기존 portal_site_public() 이 이력을 노출할 여지 자체를 없앤다(현장 피드백 7/21).
+export interface WinnerStats {
+  enabled: boolean // 고객 홈페이지 노출 여부
+  current: WinnerRoundStats | null
 }

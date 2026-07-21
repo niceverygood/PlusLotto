@@ -6,9 +6,10 @@
 // TODO(live-verify): 회차 베팅 채점은 행 단위 update — 대량 회차는 RPC(set-based)로 이관 권장.
 import type { Bet, Grade, LottoRound, Member, SiteSettings, WeeklyRecoIssue } from '@/types/db'
 import { nowIso } from '@/lib/db/store'
-import { insertLog, fetchSiteSettings, sb, selectAll } from '@/lib/db/remote'
+import { insertLog, fetchSiteSettings, patchSiteSettings, sb, selectAll } from '@/lib/db/remote'
 import { gradeRank, lottoSum, oddEven, prizeForRank } from '@/lib/lotto'
-import { generateIssueSets } from '@/lib/lottoGenerator'
+import { makeGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
+import { generateIssueSets, generateRecommendation } from '@/lib/lottoGenerator'
 import {
   resolveExcludeForGrade,
   WEEKLY_FREE_RECO_DEFAULT,
@@ -177,6 +178,11 @@ export async function issueGradeReco(grade: Grade, actor: string | null): Promis
   const rounds = await selectAll<LottoRound>('lotto_rounds') // 1000행 캡 회피(페이지네이션)
   const exclude = resolveExcludeForGrade(settings, grade)
   const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
+  const trace = generateRecommendation(rounds, exclude, {
+    mode: 20,
+    setCount: 1,
+    seed: seedFor(grade, targetRound),
+  })
 
   const { data: mdata, error: me } = await sb()
     .from('members')
@@ -204,6 +210,20 @@ export async function issueGradeReco(grade: Grade, actor: string | null): Promis
     const { error } = await sb().from('members').update({ meta }).eq('id', r.id)
     if (error) throw error
     issued++
+  }
+  if (issued > 0) {
+    const record = makeGenerationRecord(trace, {
+      createdBy: actor,
+      grade,
+      source: 'grade_issue',
+      setCount,
+      logicRatio: ratio,
+      issuedCount: issued,
+    })
+    await patchSiteSettings(
+      { generation_records: upsertGenerationRecord(settings.generation_records, record) },
+      actor,
+    )
   }
   await insertLog({
     kind: 'admin',

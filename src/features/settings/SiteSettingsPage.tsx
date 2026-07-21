@@ -14,6 +14,8 @@ import { GRADE_LABEL } from '@/design-system/labels'
 import { usePageMeta } from '@/app/uiStore'
 import { genId } from '@/lib/db/store'
 import { cn } from '@/lib/cn'
+import { datetime, num } from '@/lib/format'
+import { normalizeWinnerStats, upsertWinnerRound, winnerTotal, WINNER_RANKS } from '@/lib/winnerStats'
 import {
   FieldRow,
   SaveBar,
@@ -23,7 +25,7 @@ import {
   inputCls,
   textareaCls,
 } from './ui'
-import { useSaveSiteSettings, useSiteSettings } from './api'
+import { useSaveSiteSettings, useSiteSettings, useWinnerHistory } from './api'
 import { TemplatesCard } from './TemplatesCard'
 
 const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
@@ -75,6 +77,7 @@ const formSchema = z.object({
     support_phone: z.string(),
   }),
   winnerEnabled: z.boolean(),
+  winnerRound: z.string(),
   winnerRank1: z.string(),
   winnerRank2: z.string(),
   winnerRank3: z.string(),
@@ -84,6 +87,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>
 
 function toForm(s: SiteSettings): FormValues {
+  const winner = normalizeWinnerStats(s.winner_stats)
   return {
     bank: { ...s.bank },
     grade_colors: structuredClone(s.grade_colors),
@@ -113,12 +117,13 @@ function toForm(s: SiteSettings): FormValues {
       address: s.business?.address ?? '',
       support_phone: s.business?.support_phone ?? '',
     },
-    winnerEnabled: s.winner_stats?.enabled ?? false,
-    winnerRank1: String(s.winner_stats?.rank1 ?? 0),
-    winnerRank2: String(s.winner_stats?.rank2 ?? 0),
-    winnerRank3: String(s.winner_stats?.rank3 ?? 0),
-    winnerRank4: String(s.winner_stats?.rank4 ?? 0),
-    winnerRank5: String(s.winner_stats?.rank5 ?? 0),
+    winnerEnabled: winner.enabled,
+    winnerRound: winner.current ? String(winner.current.round_no) : '',
+    winnerRank1: String(winner.current?.rank1 ?? 0),
+    winnerRank2: String(winner.current?.rank2 ?? 0),
+    winnerRank3: String(winner.current?.rank3 ?? 0),
+    winnerRank4: String(winner.current?.rank4 ?? 0),
+    winnerRank5: String(winner.current?.rank5 ?? 0),
   }
 }
 
@@ -132,6 +137,20 @@ function parseTids(text: string): string[] {
 function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
   const prevPg: Record<string, PgProvider> = {}
   for (const p of prev.pg_providers) prevPg[p.id] = p
+  const roundNo = Math.max(0, Math.round(Number(v.winnerRound) || 0))
+  let winnerStats = normalizeWinnerStats(prev.winner_stats)
+  if (roundNo > 0) {
+    winnerStats = upsertWinnerRound(winnerStats, {
+      round_no: roundNo,
+      rank1: Math.max(0, Math.round(Number(v.winnerRank1) || 0)),
+      rank2: Math.max(0, Math.round(Number(v.winnerRank2) || 0)),
+      rank3: Math.max(0, Math.round(Number(v.winnerRank3) || 0)),
+      rank4: Math.max(0, Math.round(Number(v.winnerRank4) || 0)),
+      rank5: Math.max(0, Math.round(Number(v.winnerRank5) || 0)),
+    })
+  }
+  winnerStats = { ...winnerStats, enabled: v.winnerEnabled }
+
   return {
     bank: { ...v.bank },
     grade_colors: v.grade_colors,
@@ -158,14 +177,7 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
       address: v.business.address.trim(),
       support_phone: v.business.support_phone.trim(),
     },
-    winner_stats: {
-      enabled: v.winnerEnabled,
-      rank1: Math.max(0, Number(v.winnerRank1) || 0),
-      rank2: Math.max(0, Number(v.winnerRank2) || 0),
-      rank3: Math.max(0, Number(v.winnerRank3) || 0),
-      rank4: Math.max(0, Number(v.winnerRank4) || 0),
-      rank5: Math.max(0, Number(v.winnerRank5) || 0),
-    },
+    winner_stats: winnerStats,
     report: prev.report,
     lotto_exclude: prev.lotto_exclude,
     lotto_exclude_history: prev.lotto_exclude_history,
@@ -186,6 +198,7 @@ export function SiteSettingsPage() {
   usePageMeta('설정', '사이트 · 등급색 · PG · 문자 · 당첨문자')
   const navigate = useNavigate()
   const { data: settings, isLoading } = useSiteSettings()
+  const { data: winnerHistory = [] } = useWinnerHistory()
   const save = useSaveSiteSettings()
   const [resetKey, setResetKey] = useState(0)
 
@@ -210,7 +223,7 @@ export function SiteSettingsPage() {
   }, [settings, reset])
 
   const gradeColors = watch('grade_colors')
-
+  const winnerCurrentRound = normalizeWinnerStats(settings?.winner_stats).current?.round_no
   async function onSubmit(v: FormValues) {
     if (!settings) return
     await save.mutateAsync(toSettings(v, settings))
@@ -269,12 +282,25 @@ export function SiteSettingsPage() {
       {/* ── 고객 홈페이지 실적 표시(당첨자 수) ────────── */}
       <SectionCard
         title="고객 홈페이지 실적 표시"
-        desc="누적이 아니라 직전 확정 회차의 등수별 당첨자 수를 직접 입력한 값으로 노출합니다(자동 집계 아님). 회차 번호(제N회)는 로또기록 최신 확정 회차를 자동 표시합니다."
+        desc="매 회차 등수별 당첨자 수를 수동 입력합니다. 가장 최신 회차 한 건만 고객 홈페이지에 노출되고, 지난 회차는 이 관리자 화면에 기록으로 남습니다."
       >
         <FieldRow label="노출 여부" align="start">
           <label className="flex items-center gap-2 text-[13px] text-gray-700">
             <input type="checkbox" {...register('winnerEnabled')} /> 당첨자 수 노출
           </label>
+        </FieldRow>
+        <FieldRow label="회차" htmlFor="winner_round">
+          <input
+            id="winner_round"
+            inputMode="numeric"
+            placeholder="예: 1233"
+            className={cn(inputCls, 'max-w-[160px] font-mono tnum')}
+            {...register('winnerRound')}
+          />
+          <span className="ml-2 text-[12.5px] text-gray-500">회</span>
+          <p className="mt-1 text-[11.5px] text-gray-400">
+            새 회차 번호와 인원을 입력해 저장하면 기존 회차는 지우지 않고 아래 기록에 보관됩니다.
+          </p>
         </FieldRow>
         <FieldRow label="등수별 당첨자 수" align="start">
           <div className="flex flex-wrap gap-3">
@@ -292,6 +318,51 @@ export function SiteSettingsPage() {
               ),
             )}
           </div>
+        </FieldRow>
+        <FieldRow label="과거 기록" align="start">
+          {winnerHistory.length === 0 ? (
+            <p className="py-2 text-[12.5px] text-gray-400">저장된 회차별 당첨자 기록이 없습니다.</p>
+          ) : (
+            <div className="w-full overflow-x-auto rounded-md border border-gray-200">
+              <table className="min-w-[720px] w-full text-[12px]">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">회차</th>
+                    {WINNER_RANKS.map((rank) => (
+                      <th key={rank.key} className="px-3 py-2 text-right font-semibold">{rank.label}</th>
+                    ))}
+                    <th className="px-3 py-2 text-right font-semibold">합계</th>
+                    <th className="px-3 py-2 text-right font-semibold">저장일시</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {winnerHistory.map((row) => (
+                    <tr key={row.round_no}>
+                      <td className="px-3 py-2 font-mono font-semibold text-ink-800 tnum">
+                        {row.round_no}회
+                        {row.round_no === winnerCurrentRound && (
+                          <span className="ml-2 rounded bg-primary-50 px-1.5 py-0.5 font-sans text-[10px] font-bold text-primary-700">
+                            홈페이지 노출
+                          </span>
+                        )}
+                      </td>
+                      {WINNER_RANKS.map((rank) => (
+                        <td key={rank.key} className="px-3 py-2 text-right font-mono text-gray-600 tnum">
+                          {num(row[rank.key])}명
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-right font-mono font-semibold text-ink-800 tnum">
+                        {num(winnerTotal(row))}명
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-400 tnum">
+                        {row.updated_at === new Date(0).toISOString() ? '-' : datetime(row.updated_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </FieldRow>
       </SectionCard>
 

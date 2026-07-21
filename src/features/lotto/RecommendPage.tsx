@@ -105,7 +105,7 @@ export function RecommendPage() {
   const [result, setResult] = useState<GenerateResult | null>(null)
   const [showMethod, setShowMethod] = useState(false)
 
-  // 생성 과정 기록(현장 피드백 7/3 "녹화기능") — 미리보기 결과를 증빙으로 저장/열람.
+  // 회차·등급별 생성 로직 기록 — 특정 조합이 아닌 제외 후보→최종 적용 흐름을 저장/열람.
   const { data: staff = [] } = useStaff()
   const staffName = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s.name])), [staff])
   const records = settings?.generation_records ?? []
@@ -396,7 +396,7 @@ export function RecommendPage() {
         >
           {result ? '다시 생성' : '번호 생성'}
         </Button>
-        {/* 생성 과정 기록(현장 피드백 7/3) — 미리보기 결과를 증빙으로 저장 */}
+        {/* 미리보기의 회차·등급 공통 로직만 저장(추천 조합 자체는 기록하지 않음). */}
         {result && canIssue && (
           <Button
             variant="sec"
@@ -408,11 +408,15 @@ export function RecommendPage() {
                   grade,
                   target_round: result.targetRound,
                   mode: result.mode,
+                  source: 'preview',
                   fixed: result.fixed,
                   excluded: result.excluded,
                   reasons: result.reasons,
+                  stages: result.stages,
                   pool: result.pool,
-                  sets: result.sets,
+                  basis: result.basis,
+                  set_count: result.sets.length,
+                  logic_ratio: 100,
                 },
                 {
                   onSuccess: () => {
@@ -423,7 +427,7 @@ export function RecommendPage() {
               )
             }
           >
-            기록 저장
+            로직 기록 저장
           </Button>
         )}
         {!ready && (
@@ -436,7 +440,7 @@ export function RecommendPage() {
 
       {result && <ResultView result={result} ruleByNumber={ruleByNumber} />}
 
-      {/* 생성 기록(현장 피드백 7/3 "녹화기능") — 화면 녹화 대신 생성 과정 자체를 증빙으로 남긴다 */}
+      {/* 회차·등급별 생성 기록 — 특정 조합이 아닌 번호 추림 과정 전체를 남긴다. */}
       <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
         <button
           type="button"
@@ -446,7 +450,8 @@ export function RecommendPage() {
         >
           <FileDown className="h-4 w-4 shrink-0 text-primary-600" />
           <span className="text-[13px] font-bold text-ink-900">
-            생성 기록 <span className="font-mono tnum text-gray-400">({records.length})</span>
+            회차·등급별 생성 로직{' '}
+            <span className="font-mono tnum text-gray-400">({records.length})</span>
           </span>
           <span className="ml-auto text-[11.5px] text-gray-400">{showRecords ? '접기' : '펼치기'}</span>
           <ChevronDown
@@ -456,12 +461,13 @@ export function RecommendPage() {
         {showRecords && (
           <div className="border-t border-gray-100 px-4 py-3.5">
             <p className="mb-3 text-[11.5px] text-gray-500">
-              제외수 세팅 검토 중 저장한 생성 과정 기록입니다. 규칙 스냅샷·번호별 제외사유·남은
-              풀·최종 조합을 그대로 보관해 증빙(특허·불기소이유서 근거자료)으로 쓸 수 있습니다.
+              회차와 등급마다 적용된 제외수 개수와 번호 추림 과정을 보관합니다. 규칙별 최초 후보,
+              중복·우선순위 압축 결과, 최종 제외수와 남은 풀을 확인할 수 있으며 특정 회원의 추천 조합은
+              저장하지 않습니다. 등급 일괄 발급 시 자동 기록됩니다.
             </p>
             {records.length === 0 ? (
               <p className="py-6 text-center text-[12.5px] text-gray-400">
-                저장된 생성 기록이 없습니다. 위에서 번호 생성 후 ‘기록 저장’을 눌러주세요.
+                저장된 로직 기록이 없습니다. 등급 일괄 발급을 실행하거나 위에서 ‘로직 기록 저장’을 눌러주세요.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -484,8 +490,8 @@ export function RecommendPage() {
         open={deleteRecId != null}
         onClose={() => setDeleteRecId(null)}
         onConfirm={() => deleteRecId && deleteRecord.mutate(deleteRecId, { onSuccess: () => setDeleteRecId(null) })}
-        title="생성 기록 삭제"
-        description="이 생성 기록을 삭제합니다. 증빙 자료이므로 신중히 진행하세요. 되돌릴 수 없습니다."
+        title="생성 로직 기록 삭제"
+        description="이 회차·등급의 생성 로직 기록을 삭제합니다. 되돌릴 수 없습니다."
         confirmText="삭제"
         tone="danger"
         loading={deleteRecord.isPending}
@@ -635,7 +641,7 @@ function ResultView({
   )
 }
 
-// 생성 기록 1건 — 요약 행 + 펼치면 번호별 제외사유·풀·조합 전체, JSON 내보내기(증빙용).
+// 회차·등급 로직 1건 — 규칙별 최초 후보부터 최종 제외·남은 풀까지 전체 관점으로 표시한다.
 function GenerationRecordRow({
   record,
   staffName,
@@ -648,6 +654,15 @@ function GenerationRecordRow({
   onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const stages = record.stages ?? []
+  const sourceLabel =
+    record.source === 'grade_issue'
+      ? '등급 일괄발급'
+      : record.source === 'weekly_auto'
+        ? '주간 자동발급'
+        : record.source === 'preview'
+          ? '수동 분석'
+          : '이전 기록'
 
   function download() {
     const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' })
@@ -673,7 +688,11 @@ function GenerationRecordRow({
             {record.grade == null ? '공통(전체)' : GRADE_LABEL[record.grade]}
           </span>
           <span className="text-[11.5px] text-gray-500">
-            제외 {record.excluded.length} · 풀 {record.pool.length} · {record.sets.length}세트
+            제외 <b className="font-mono tnum text-danger">{record.excluded.length}</b>개 · 남은 풀{' '}
+            <b className="font-mono tnum text-ink-700">{record.pool.length}</b>개
+          </span>
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-gray-500">
+            {sourceLabel}
           </span>
         </button>
         <span className="font-mono text-[10.5px] tnum text-gray-400">{datetime(record.created_at)}</span>
@@ -702,39 +721,107 @@ function GenerationRecordRow({
         )}
       </div>
       {open && (
-        <div className="space-y-2 border-t border-gray-200 px-3 py-2.5 text-[11.5px] text-gray-600">
-          <div>
-            <span className="font-semibold text-gray-500">고정수</span>{' '}
-            <span className="font-mono tnum">{record.fixed.length ? record.fixed.join(', ') : '—'}</span>
+        <div className="space-y-3 border-t border-gray-200 px-3 py-3 text-[11.5px] text-gray-600">
+          <div className="grid gap-2 rounded-md bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
+            <RecordMetric label="대상 회차" value={`${record.target_round}회`} />
+            <RecordMetric label="적용 등급" value={record.grade == null ? '공통(전체)' : GRADE_LABEL[record.grade]} />
+            <RecordMetric label="제외수" value={`${record.excluded.length}개 (설정 ${record.mode})`} />
+            <RecordMetric
+              label="발급 범위"
+              value={
+                record.issued_count != null
+                  ? `${num(record.issued_count)}명 · 기본 ${record.set_count ?? '-'}세트 · 로직 ${record.logic_ratio ?? 100}%`
+                  : '로직 분석 기록'
+              }
+            />
           </div>
-          <div>
-            <span className="font-semibold text-gray-500">제외수({record.mode})</span>{' '}
-            <span className="font-mono tnum">{record.excluded.join(', ')}</span>
+
+          {record.basis && (
+            <div className="rounded-md border border-gray-200 bg-white p-3">
+              <div className="mb-2 font-bold text-ink-800">1. 산정 기준</div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <span>
+                  사용 회차 <b className="font-mono tnum text-ink-800">{num(record.basis.roundsUsed)}회</b>
+                </span>
+                <span>
+                  합 권장 <b className="font-mono tnum text-ink-800">{record.basis.sumBand[0]}–{record.basis.sumBand[1]}</b>
+                </span>
+                {record.basis.prevNumbers && (
+                  <span className="flex items-center gap-2">
+                    직전 {record.basis.prevRound}회
+                    <LottoBalls numbers={record.basis.prevNumbers} bonus={record.basis.prevBonus} size="sm" />
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-md border border-gray-200 bg-white p-3">
+            <div className="mb-2 font-bold text-ink-800">2. 규칙별 번호 추림 과정</div>
+            {stages.length > 0 ? (
+              <ol className="space-y-2">
+                {stages.map((stage, index) => (
+                  <li key={stage.rule} className="grid gap-1 rounded-md bg-gray-50 px-2.5 py-2 sm:grid-cols-[150px_1fr]">
+                    <div className="font-semibold text-gray-700">
+                      <span className="mr-1.5 font-mono text-gray-400 tnum">{index + 1}</span>
+                      {EXCLUSION_RULE_LABEL[stage.rule as ExclusionRuleKey] ?? stage.rule}
+                    </div>
+                    <div className="space-y-1">
+                      <div>
+                        <span className="mr-1.5 text-gray-400">최초 후보</span>
+                        <span className="font-mono tnum">{stage.candidates.length ? stage.candidates.join(', ') : '—'}</span>
+                      </div>
+                      <div>
+                        <span className="mr-1.5 text-gray-400">최종 제외 포함</span>
+                        <span className="font-mono font-semibold text-danger tnum">
+                          {stage.selected.length ? stage.selected.join(', ') : '없음 (우선순위 압축에서 제외)'}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-gray-400">이전 형식의 기록이라 규칙별 최초 후보 데이터가 없습니다.</p>
+            )}
           </div>
-          <div>
-            <span className="font-semibold text-gray-500">번호별 사유</span>{' '}
-            <span className="font-mono tnum">
-              {record.reasons.map((r) => `${r.number}(${EXCLUSION_RULE_LABEL[r.rule as ExclusionRuleKey] ?? r.rule})`).join(', ')}
-            </span>
+
+          <div className="rounded-md border border-gray-200 bg-white p-3">
+            <div className="mb-2 font-bold text-ink-800">3. 최종 압축 결과</div>
+            <div className="space-y-1.5">
+              <div>
+                <span className="mr-2 font-semibold text-gray-500">고정수</span>
+                <span className="font-mono tnum">{record.fixed.length ? record.fixed.join(', ') : '—'}</span>
+              </div>
+              <div>
+                <span className="mr-2 font-semibold text-gray-500">최종 제외수 ({record.excluded.length}개)</span>
+                <span className="font-mono text-danger tnum">{record.excluded.join(', ')}</span>
+              </div>
+              <div>
+                <span className="mr-2 font-semibold text-gray-500">남은 번호 ({record.pool.length}개)</span>
+                <span className="font-mono tnum">{record.pool.join(', ')}</span>
+              </div>
+            </div>
           </div>
-          <div>
-            <span className="font-semibold text-gray-500">남은 풀</span>{' '}
-            <span className="font-mono tnum">{record.pool.join(', ')}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="font-semibold text-gray-500">조합</span>
-            <ul className="space-y-1 pl-1">
-              {record.sets.map((s, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <span className="w-4 shrink-0 font-mono tnum">{i + 1}</span>
-                  <LottoBalls numbers={s} size="sm" />
-                </li>
-              ))}
-            </ul>
-          </div>
+
+          {(record.sets?.length ?? 0) > 0 && (
+            <p className="rounded-md bg-warning-bg px-3 py-2 text-warning">
+              이 기록은 이전 저장 형식으로 만들어져 조합 {record.sets?.length ?? 0}세트가 포함되어 있습니다.
+              신규 기록부터는 특정 조합을 저장하지 않습니다.
+            </p>
+          )}
         </div>
       )}
     </li>
+  )
+}
+
+function RecordMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10.5px] font-semibold text-gray-400">{label}</div>
+      <div className="mt-0.5 font-semibold text-ink-800">{value}</div>
+    </div>
   )
 }
 

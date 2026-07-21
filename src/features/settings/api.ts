@@ -3,12 +3,13 @@
 // gradeTheme(useGradeColorSync)가 재적용 → 전 화면 <Badge grade> 토큰이 즉시 바뀐다(§3 검수).
 // sms_templates 는 members(드로어·일괄·나의문자)와 공유 키 → 저장 시 그쪽도 함께 갱신(§8).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LogEntry, LottoRound, SiteSettings, SmsTemplate } from '@/types/db'
+import type { LogEntry, LottoRound, SiteSettings, SmsTemplate, WinnerRoundStats } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
-import { fetchSiteSettings, fetchTables, selectAll } from '@/lib/db/remote'
+import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
 import { lottoKeys, settingsKeys, smsTemplateKeys } from '@/lib/queryKeys'
+import { mergeWinnerHistory, normalizeWinnerRoundStats, normalizeWinnerStats } from '@/lib/winnerStats'
 import * as supa from './supa'
 
 function adminLog(
@@ -43,6 +44,35 @@ export function useSiteSettings() {
   })
 }
 
+/** 회차별 당첨자 수 과거 이력. logs 는 RLS 로 최고관리자에게만 열리고 anon 공개 RPC에는 포함되지 않는다. */
+export function useWinnerHistory() {
+  return useQuery({
+    queryKey: settingsKeys.winnerHistory(),
+    queryFn: async (): Promise<WinnerRoundStats[]> => {
+      if (dataSource === 'supabase') {
+        const settings = await fetchSiteSettings()
+        const { data, error } = await sb()
+          .from('logs')
+          .select('meta, created_at')
+          .eq('action', 'settings.winner_stats.upsert')
+          .order('created_at', { ascending: false })
+        const logged = error
+          ? []
+          : ((data ?? []) as { meta: Record<string, unknown>; created_at: string }[]).map((log) => {
+              const row = normalizeWinnerRoundStats(log.meta.winner_stats)
+              return row ? { ...row, updated_at: row.updated_at || log.created_at } : null
+            })
+        return mergeWinnerHistory([normalizeWinnerStats(settings.winner_stats).current, ...logged])
+      }
+      const db = readDb()
+      const logged = db.logs
+        .filter((log) => log.action === 'settings.winner_stats.upsert')
+        .map((log) => normalizeWinnerRoundStats(log.meta.winner_stats))
+      return mergeWinnerHistory([normalizeWinnerStats(db.site_settings.winner_stats).current, ...logged])
+    },
+  })
+}
+
 /** 사이트 설정 전체 저장(무통장·등급색·PG·문자·당첨문자). 등급색 변경은 토큰으로 전파(§3). */
 export function useSaveSiteSettings() {
   const user = useCurrentUser()
@@ -52,7 +82,16 @@ export function useSaveSiteSettings() {
       if (dataSource === 'supabase') return supa.saveSiteSettings(next, user?.id ?? null)
       const value = jsonClone(next)
       mutateDb((db) => {
+        const before = normalizeWinnerStats(db.site_settings.winner_stats).current
+        const after = normalizeWinnerStats(value.winner_stats).current
         db.site_settings = value
+        if (after && after.updated_at !== before?.updated_at) {
+          db.logs.push(
+            adminLog(user?.id ?? null, 'settings.winner_stats.upsert', 'winner_stats', String(after.round_no), {
+              winner_stats: after,
+            }),
+          )
+        }
         db.logs.push(
           adminLog(user?.id ?? null, 'settings.update', 'site_settings', null, {
             pg: value.pg_providers.length,

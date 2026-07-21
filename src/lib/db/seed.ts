@@ -551,7 +551,18 @@ function buildSiteSettings(): SiteSettings {
       address: '서울특별시 강남구 테헤란로 000',
       support_phone: '1522-6385',
     },
-    winner_stats: { enabled: true, rank1: 2, rank2: 11, rank3: 187, rank4: 4230, rank5: 51840 },
+    winner_stats: {
+      enabled: true,
+      current: {
+        round_no: 1180,
+        rank1: 2,
+        rank2: 11,
+        rank3: 187,
+        rank4: 4230,
+        rank5: 51840,
+        updated_at: '2026-05-31T00:00:00.000Z',
+      },
+    },
     grade_colors: {
       free: { fg: '#94a3b8', bg: '#eef1f5' },
       simple: { fg: '#64748b', bg: '#eaedf2' },
@@ -643,6 +654,32 @@ export function buildSeed(): DbShape {
     { id: 'staff-rep2', login_id: 'rep02', name: '담당 최', role: 'rep', team_id: 'team-2', is_active: true, auto_assign_enabled: true, last_login_at: isoOffset(now, 2, 1) },
   ]
   const logs = genLogs(rng, now, { staff, members, payments, sms_sends })
+  logs.push(
+    {
+      id: 'log_winner_1180',
+      kind: 'admin',
+      actor: 'staff-admin',
+      action: 'settings.winner_stats.upsert',
+      target_type: 'winner_stats',
+      target_id: '1180',
+      meta: {
+        winner_stats: { round_no: 1180, rank1: 2, rank2: 11, rank3: 187, rank4: 4230, rank5: 51840, updated_at: '2026-05-31T00:00:00.000Z' },
+      },
+      created_at: '2026-05-31T00:00:00.000Z',
+    },
+    {
+      id: 'log_winner_1179',
+      kind: 'admin',
+      actor: 'staff-admin',
+      action: 'settings.winner_stats.upsert',
+      target_type: 'winner_stats',
+      target_id: '1179',
+      meta: {
+        winner_stats: { round_no: 1179, rank1: 1, rank2: 8, rank3: 164, rank4: 3982, rank5: 50120, updated_at: '2026-05-24T00:00:00.000Z' },
+      },
+      created_at: '2026-05-24T00:00:00.000Z',
+    },
+  )
 
   return {
     teams: [

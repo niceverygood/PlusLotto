@@ -2,10 +2,13 @@
 // site_settings 는 단일행(id=1) 업데이트, sms_templates 는 key 기준 upsert.
 // 읽기는 api.ts 가 fetchSiteSettings/fetchTables 로 분기(여기선 쓰기만).
 import type { SiteSettings, SmsTemplate } from '@/types/db'
-import { insertLog, sb } from '@/lib/db/remote'
+import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
+import { normalizeWinnerStats } from '@/lib/winnerStats'
 
 /** 사이트 설정 전체 저장(단일행 id=1). 등급색 변경은 gradeTheme 가 토큰으로 전파(§3). */
 export async function saveSiteSettings(next: SiteSettings, actor: string | null): Promise<void> {
+  const beforeWinner = normalizeWinnerStats((await fetchSiteSettings()).winner_stats).current
+  const afterWinner = normalizeWinnerStats(next.winner_stats).current
   // 실 컬럼만 명시 picking(D68 #6). update({...next}) 는 폼이 실은 여분키(id 등)·신규 타입필드를
   // 그대로 PATCH 해 D60 처럼 마이그레이션 누락 시 PGRST204 로 전 설정 저장이 통째 실패하던 구조를 방지.
   const payload: Record<keyof SiteSettings, unknown> = {
@@ -26,7 +29,7 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     call_volume_alert_threshold: next.call_volume_alert_threshold ?? 1000,
     call_script: next.call_script ?? '',
     business: next.business ?? { name: '', reg_no: '', address: '', support_phone: '' },
-    winner_stats: next.winner_stats ?? { enabled: false, count: 0 },
+    winner_stats: next.winner_stats ?? { enabled: false, current: null },
   }
   // 신규 컬럼(membership_tiers 0008 · generation_records 0009 · call_keywords/call_volume_alert_threshold
   // 0010 · call_script 0012 · business/winner_stats 0013) 마이그레이션 전이면 PGRST204 → 그 키만 빼고
@@ -48,6 +51,16 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     if (!missing) throw error
     attempt = { ...attempt }
     delete attempt[missing]
+  }
+  if (afterWinner && afterWinner.updated_at !== beforeWinner?.updated_at) {
+    await insertLog({
+      kind: 'admin',
+      actor,
+      action: 'settings.winner_stats.upsert',
+      target_type: 'winner_stats',
+      target_id: String(afterWinner.round_no),
+      meta: { winner_stats: afterWinner },
+    })
   }
   await insertLog({
     kind: 'admin',

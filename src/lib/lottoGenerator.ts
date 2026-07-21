@@ -48,12 +48,19 @@ export interface ExclusionReason {
 
 export type ExclusionRuleKey = 'prev' | 'bonus' | 'month' | 'freq' | 'forties' | 'manual'
 
+export interface ExclusionStage {
+  rule: ExclusionRuleKey
+  candidates: number[] // 규칙이 최초로 추린 후보(중복 제거 전 흐름 확인용)
+  selected: number[] // 이 규칙 후보 중 최종 제외수에 포함된 번호(규칙 간 중복 가능)
+}
+
 export interface GenerateResult {
   targetRound: number
   drawMonth: number // 1..12
   mode: ExclusionMode
   excluded: number[] // 최종 제외수(오름차순)
   reasons: ExclusionReason[] // 번호별 제외 사유(중복 번호는 최상위 규칙 1개)
+  stages: ExclusionStage[] // 규칙별 후보 → 최종 적용 과정
   fixed: number[] // 적용된 수동 고정수
   pool: number[] // 남은 풀(오름차순)
   sets: number[][] // 추천 조합(각 6개 오름차순)
@@ -187,7 +194,7 @@ export function computeExclusions(
   targetRound: number,
   mode: ExclusionMode,
   manual: LottoExcludeSettings,
-): { excluded: number[]; reasons: ExclusionReason[] } {
+): { excluded: number[]; reasons: ExclusionReason[]; stages: ExclusionStage[] } {
   const desc = sortedRoundsDesc(rounds)
   const prev = desc[0] ?? null
   const fixedSet = new Set(manual.fixed)
@@ -264,7 +271,18 @@ export function computeExclusions(
     seen.add(n)
   }
   const excluded = [...seen].sort((a, b) => a - b)
-  return { excluded, reasons }
+  const stageOrder: ExclusionRuleKey[] = ['prev', 'bonus', 'month', 'freq', 'forties', 'manual']
+  const stages = stageOrder.map((rule) => {
+    const candidates = [
+      ...new Set(
+        rule === 'manual'
+          ? manual.excluded.filter((n) => !fixedSet.has(n))
+          : cands.filter((candidate) => candidate.rule === rule).map((candidate) => candidate.number),
+      ),
+    ].sort((a, b) => a - b)
+    return { rule, candidates, selected: candidates.filter((number) => seen.has(number)) }
+  })
+  return { excluded, reasons, stages }
 }
 
 // ── 조합 품질 필터 ──────────────────────────────────────────────────────
@@ -373,7 +391,7 @@ export function generateRecommendation(
   const band = sumBand(rounds)
   const rng = makeRng(opts.seed ?? (Date.now() & 0xffffffff))
 
-  const { excluded, reasons } = computeExclusions(rounds, drawMonth, targetRound, opts.mode, manual)
+  const { excluded, reasons, stages } = computeExclusions(rounds, drawMonth, targetRound, opts.mode, manual)
 
   // 고정수는 항상 포함(제외수와 상호배타 — 설정 UI 보장, 여기서도 방어).
   const fixed = manual.fixed.filter((n) => n >= LOTTO_MIN && n <= LOTTO_MAX).slice(0, LOTTO_PICK)
@@ -405,6 +423,10 @@ export function generateRecommendation(
     mode: opts.mode,
     excluded: finalExcluded,
     reasons: reasons.filter((r) => finalExcluded.includes(r.number)),
+    stages: stages.map((stage) => ({
+      ...stage,
+      selected: stage.selected.filter((number) => finalExcluded.includes(number)),
+    })),
     fixed,
     pool,
     sets,

@@ -39,6 +39,26 @@ interface SiteSettingsLite {
   lotto_exclude_history?: LottoExcludeRule[]
   weekly_free_reco?: { enabled: boolean; set_count: number; logic_ratio?: number; paid_sms?: boolean }
   sms?: { oneshot_enabled?: boolean; sender_no?: string }
+  generation_records?: GenerationRecordLite[]
+}
+
+interface GenerationRecordLite {
+  id: string
+  created_at: string
+  created_by: string | null
+  grade: string | null
+  target_round: number
+  mode: number
+  source?: 'preview' | 'grade_issue' | 'weekly_auto'
+  fixed: number[]
+  excluded: number[]
+  reasons: ExclusionReason[]
+  stages: ExclusionStage[]
+  pool: number[]
+  basis: GenerateBasis
+  set_count: number
+  logic_ratio: number
+  issued_count: number
 }
 
 const LOTTO_MIN = 1
@@ -107,12 +127,19 @@ export interface ExclusionReason {
 
 export type ExclusionRuleKey = 'prev' | 'bonus' | 'month' | 'freq' | 'forties' | 'manual'
 
+export interface ExclusionStage {
+  rule: ExclusionRuleKey
+  candidates: number[]
+  selected: number[]
+}
+
 export interface GenerateResult {
   targetRound: number
   drawMonth: number // 1..12
   mode: ExclusionMode
   excluded: number[] // 최종 제외수(오름차순)
   reasons: ExclusionReason[] // 번호별 제외 사유(중복 번호는 최상위 규칙 1개)
+  stages: ExclusionStage[] // 규칙별 후보 → 최종 적용 과정
   fixed: number[] // 적용된 수동 고정수
   pool: number[] // 남은 풀(오름차순)
   sets: number[][] // 추천 조합(각 6개 오름차순)
@@ -246,7 +273,7 @@ export function computeExclusions(
   targetRound: number,
   mode: ExclusionMode,
   manual: LottoExcludeSettings,
-): { excluded: number[]; reasons: ExclusionReason[] } {
+): { excluded: number[]; reasons: ExclusionReason[]; stages: ExclusionStage[] } {
   const desc = sortedRoundsDesc(rounds)
   const prev = desc[0] ?? null
   const fixedSet = new Set(manual.fixed)
@@ -323,7 +350,18 @@ export function computeExclusions(
     seen.add(n)
   }
   const excluded = [...seen].sort((a, b) => a - b)
-  return { excluded, reasons }
+  const stageOrder: ExclusionRuleKey[] = ['prev', 'bonus', 'month', 'freq', 'forties', 'manual']
+  const stages = stageOrder.map((rule) => {
+    const candidates = [
+      ...new Set(
+        rule === 'manual'
+          ? manual.excluded.filter((n) => !fixedSet.has(n))
+          : cands.filter((candidate) => candidate.rule === rule).map((candidate) => candidate.number),
+      ),
+    ].sort((a, b) => a - b)
+    return { rule, candidates, selected: candidates.filter((number) => seen.has(number)) }
+  })
+  return { excluded, reasons, stages }
 }
 
 // ── 조합 품질 필터 ──────────────────────────────────────────────────────
@@ -432,7 +470,7 @@ export function generateRecommendation(
   const band = sumBand(rounds)
   const rng = makeRng(opts.seed ?? (Date.now() & 0xffffffff))
 
-  const { excluded, reasons } = computeExclusions(rounds, drawMonth, targetRound, opts.mode, manual)
+  const { excluded, reasons, stages } = computeExclusions(rounds, drawMonth, targetRound, opts.mode, manual)
 
   // 고정수는 항상 포함(제외수와 상호배타 — 설정 UI 보장, 여기서도 방어).
   const fixed = manual.fixed.filter((n) => n >= LOTTO_MIN && n <= LOTTO_MAX).slice(0, LOTTO_PICK)
@@ -464,6 +502,10 @@ export function generateRecommendation(
     mode: opts.mode,
     excluded: finalExcluded,
     reasons: reasons.filter((r) => finalExcluded.includes(r.number)),
+    stages: stages.map((stage) => ({
+      ...stage,
+      selected: stage.selected.filter((number) => finalExcluded.includes(number)),
+    })),
     fixed,
     pool,
     sets,
@@ -650,6 +692,7 @@ export default async function handler(req: any, res: any) {
     let smsSent = 0
     let smsFail = 0
     let errCount = 0
+    const issuedByGrade = new Map<string, number>()
     // 1) 적격 회원 선별(게이트) — CPU만, 빠름. 발급/발송은 2)에서 병렬.
     const eligible: {
       r: (typeof rows)[number]
@@ -725,6 +768,7 @@ export default async function handler(req: any, res: any) {
         return
       }
       issued++
+      issuedByGrade.set(r.grade, (issuedByGrade.get(r.grade) ?? 0) + 1)
 
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
@@ -747,6 +791,51 @@ export default async function handler(req: any, res: any) {
     }
     for (let i = 0; i < eligible.length; i += CONC) {
       await Promise.all(eligible.slice(i, i + CONC).map(processOne))
+    }
+
+    // 회차·등급별 로직 스냅샷 — 특정 회원 조합은 저장하지 않고 공통 제외 과정만 1건씩 기록한다.
+    if (issuedByGrade.size > 0) {
+      let generationRecords = [...(settings.generation_records ?? [])]
+      for (const [grade, gradeIssued] of issuedByGrade) {
+        const trace = generateRecommendation(rounds, excludeFor(grade), {
+          mode: 20,
+          setCount: 1,
+          seed: targetRound,
+        })
+        const record: GenerationRecordLite = {
+          id: `genrec_cron_${targetRound}_${grade}_${Date.now().toString(36)}`,
+          created_at: ts,
+          created_by: null,
+          grade,
+          target_round: targetRound,
+          mode: trace.mode,
+          source: 'weekly_auto',
+          fixed: trace.fixed,
+          excluded: trace.excluded,
+          reasons: trace.reasons,
+          stages: trace.stages,
+          pool: trace.pool,
+          basis: trace.basis,
+          set_count: baseCount,
+          logic_ratio: ratio,
+          issued_count: gradeIssued,
+        }
+        generationRecords = [
+          record,
+          ...generationRecords.filter(
+            (existing) =>
+              existing.target_round !== targetRound || (existing.grade ?? null) !== grade,
+          ),
+        ]
+      }
+      generationRecords.sort(
+        (a, b) => b.target_round - a.target_round || b.created_at.localeCompare(a.created_at),
+      )
+      const { error: ge } = await sb
+        .from('site_settings')
+        .update({ generation_records: generationRecords })
+        .eq('id', 1)
+      if (ge) throw ge
     }
 
     await sb.from('logs').insert({

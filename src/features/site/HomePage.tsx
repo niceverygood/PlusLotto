@@ -26,6 +26,7 @@ import { Badge, LottoBalls } from '@/design-system/components'
 import { date } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { DEFAULT_MEMBERSHIP_TIERS, visibleTiers } from '@/lib/membership'
+import { WINNER_RANKS } from '@/lib/winnerStats'
 import { useMemberAuth } from './auth'
 import { useMembershipTiers, usePublicSiteInfo, useRecentRounds } from './api'
 
@@ -52,15 +53,6 @@ const STRENGTHS: Strength[] = [
     title: '카톡 / 문자 발송',
     desc: '발급된 번호와 당첨 소식을 카카오톡·문자로 받아보세요. 놓치지 않고 한눈에 확인.',
   },
-]
-
-// 당첨자 발표 — 직전 확정 회차 등수별 인원(누적 아님, 현장 피드백 7/20 재확정).
-const WINNER_RANKS: { key: 'rank1' | 'rank2' | 'rank3' | 'rank4' | 'rank5'; label: string }[] = [
-  { key: 'rank1', label: '1등' },
-  { key: 'rank2', label: '2등' },
-  { key: 'rank3', label: '3등' },
-  { key: 'rank4', label: '4등' },
-  { key: 'rank5', label: '5등' },
 ]
 
 // 등급 미리보기는 전산 편집 멤버십 등급(useMembershipTiers)에서 가져온다(명칭·소개 연동).
@@ -106,6 +98,7 @@ export function HomePage() {
   const tiers = visibleTiers(tierData ?? DEFAULT_MEMBERSHIP_TIERS)
   const { data: publicInfo } = usePublicSiteInfo()
   const winnerStats = publicInfo?.winner_stats
+  const winnerCurrent = winnerStats?.current
 
   return (
     <div className="font-sans">
@@ -283,21 +276,21 @@ export function HomePage() {
       {/* ── 신뢰 요소 ──────────────────────────────────────────── */}
       <section className="bg-ink-900 py-16 sm:py-20">
         <div className="mx-auto max-w-[1120px] px-4 sm:px-6">
-          {/* 당첨자 수(누적 아님 — 직전 확정 회차 등수별, 운영자 수동 입력, 현장 피드백 7/20 재확정) */}
-          {winnerStats?.enabled && (
+          {/* 회차별 수동 기록 중 current 한 건만 공개. 과거 기록은 admin 전용 logs 에만 있다. */}
+          {winnerStats?.enabled && winnerCurrent && (
             <div className="mb-10 text-center">
               <div className="text-[12.5px] font-bold uppercase tracking-[0.5px] text-accent-500">
                 Winners
               </div>
               <p className="mt-2 text-[20px] font-extrabold text-white sm:text-[22px]">
-                {latest ? `제 ${latest.round_no}회` : ''} 당첨자 발표
+                제 {winnerCurrent.round_no}회 당첨자 발표
               </p>
               <div className="mt-5 flex flex-wrap items-start justify-center gap-x-8 gap-y-4">
                 {WINNER_RANKS.map((r) => (
                   <div key={r.key}>
                     <div className="text-[12px] font-semibold text-gray-400">{r.label}</div>
                     <div className="mt-0.5 font-mono text-[22px] font-extrabold text-accent-500 tabular-nums">
-                      {winnerStats[r.key].toLocaleString()}
+                      {winnerCurrent[r.key].toLocaleString()}
                       <span className="ml-1 text-[13px] font-semibold text-gray-300">명</span>
                     </div>
                   </div>

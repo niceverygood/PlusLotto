@@ -9,7 +9,8 @@ import { fetchSiteSettings, fetchTables, patchSiteSettings } from '@/lib/db/remo
 import { useCurrentUser } from '@/lib/auth'
 import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
-import { generateIssueSets } from '@/lib/lottoGenerator'
+import { makeGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
+import { generateIssueSets, generateRecommendation } from '@/lib/lottoGenerator'
 import * as supa from './supa'
 
 export const WEEKLY_FREE_RECO_DEFAULT: import('@/types/db').WeeklyFreeRecoSettings = {
@@ -93,9 +94,8 @@ export function useLottoExclude() {
   })
 }
 
-// ── 생성 과정 기록(현장 피드백 7/3 "녹화기능") ─────────────────────────────────
-// 제외수 세팅 검토 중 [추천번호] 미리보기 결과를 증빙(규칙 스냅샷·번호별 제외사유·남은 풀·조합)으로
-// 남긴다. 화면 녹화 대신 생성 과정 자체를 빠짐없이 기록해 특허·불기소이유서 근거자료로 쓸 수 있게 한다.
+// ── 회차·등급별 생성 로직 기록(현장 피드백 7/21) ───────────────────────────────
+// 특정 조합은 저장하지 않고, 규칙별 후보 → 최종 제외 → 남은 풀의 전체 흐름만 보관한다.
 export function useSaveGenerationRecord() {
   const user = useCurrentUser()
   const qc = useQueryClient()
@@ -104,14 +104,11 @@ export function useSaveGenerationRecord() {
       const full: GenerationRecord = { ...rec, id: genId('genrec'), created_at: nowIso(), created_by: user?.id ?? null }
       if (dataSource === 'supabase') {
         const cur = await fetchSiteSettings()
-        await patchSiteSettings(
-          { generation_records: [full, ...(cur.generation_records ?? [])] },
-          user?.id ?? null,
-        )
+        await patchSiteSettings({ generation_records: upsertGenerationRecord(cur.generation_records, full) }, user?.id ?? null)
         return full
       }
       mutateDb((db) => {
-        db.site_settings.generation_records = [full, ...(db.site_settings.generation_records ?? [])]
+        db.site_settings.generation_records = upsertGenerationRecord(db.site_settings.generation_records, full)
       })
       return full
     },
@@ -297,6 +294,11 @@ export function useIssueGradeReco() {
       const rounds = cur.lotto_rounds
       const exclude = resolveExcludeForGrade(cur.site_settings, v.grade)
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
+      const trace = generateRecommendation(rounds, exclude, {
+        mode: 20,
+        setCount: 1,
+        seed: memberSeed(v.grade, targetRound),
+      })
       let issued = 0
       let skipped = 0
       const ts = nowIso()
@@ -317,6 +319,19 @@ export function useIssueGradeReco() {
           m.meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, WEEKLY_RECO_KEEP) }
           issued++
         }
+        if (issued > 0) {
+          db.site_settings.generation_records = upsertGenerationRecord(
+            db.site_settings.generation_records,
+            makeGenerationRecord(trace, {
+              createdBy: user?.id ?? null,
+              grade: v.grade,
+              source: 'grade_issue',
+              setCount,
+              logicRatio: ratio,
+              issuedCount: issued,
+            }),
+          )
+        }
         db.logs.push({
           id: genId('log'),
           kind: 'admin',
@@ -333,6 +348,7 @@ export function useIssueGradeReco() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: ['weekly-reco-status'] })
+      qc.invalidateQueries({ queryKey: settingsKeys.site() })
     },
   })
 }

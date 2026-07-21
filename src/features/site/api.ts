@@ -22,6 +22,7 @@ import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTie
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
+import { normalizeWinnerStats } from '@/lib/winnerStats'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
@@ -41,7 +42,6 @@ export interface PublicSiteInfo {
 
 const EMPTY_BANK: BankTransferSettings = { bank_name: '', account_no: '', holder: '', guide: '' }
 const EMPTY_BUSINESS: BusinessInfo = { name: '', reg_no: '', address: '', support_phone: '' }
-const EMPTY_WINNER_STATS: WinnerStats = { enabled: false, rank1: 0, rank2: 0, rank3: 0, rank4: 0, rank5: 0 }
 
 // ── 사업자 정보 · 무통장 계좌 · 당첨자 수(전산 편집 → 고객 홈페이지 노출, 현장 7/20) ────────
 // site_settings 에는 PG api_key 비밀이 같이 있어 anon 직접 읽기 금지 → security-definer
@@ -56,14 +56,14 @@ export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
         return {
           bank: { ...EMPTY_BANK, ...d.bank },
           business: { ...EMPTY_BUSINESS, ...d.business },
-          winner_stats: { ...EMPTY_WINNER_STATS, ...d.winner_stats },
+          winner_stats: normalizeWinnerStats(d.winner_stats),
         }
       }
       const s = readDb().site_settings
       return {
         bank: { ...EMPTY_BANK, ...s.bank },
         business: { ...EMPTY_BUSINESS, ...s.business },
-        winner_stats: { ...EMPTY_WINNER_STATS, ...s.winner_stats },
+        winner_stats: normalizeWinnerStats(s.winner_stats),
       }
     },
     staleTime: 10 * 60 * 1000,

@@ -57,6 +57,7 @@ export const supportKeys = {
 export const settingsKeys = {
   all: ['settings'] as const,
   site: () => ['settings', 'site'] as const,
+  winnerHistory: () => ['settings', 'winner-history'] as const,
 }
 
 // SMS 템플릿: members(드로어·일괄·나의문자)와 settings(편집)가 공유 → lib 단일 출처(§2·§8).
