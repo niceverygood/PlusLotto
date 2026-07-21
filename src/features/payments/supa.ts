@@ -108,6 +108,27 @@ export async function cancelPayment(id: string, actor: string | null): Promise<s
   return p.member_id
 }
 
+/** 결제내역 수정(금액·결제수단·PG사·입금자명) — 실장 이상 전용(현장 피드백 7/21). 반환=대상 회원 id. */
+export async function updatePayment(
+  id: string,
+  patch: Partial<Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name'>>,
+  actor: string | null,
+): Promise<string | null> {
+  const p = await fetchPayment(id)
+  if (!p) return null
+  const { error } = await sb().from('payments').update(patch).eq('id', id)
+  if (error) throw error
+  await insertLog({
+    kind: 'payment',
+    actor,
+    action: 'payment.update',
+    target_type: 'payment',
+    target_id: id,
+    meta: { member_id: p.member_id, patch },
+  })
+  return p.member_id
+}
+
 /** 수기결제 등록. approveNow 면 승인 §8 흐름까지 즉시 적용. 반환=대상 회원 id. */
 export async function createManualPayment(v: ManualPaymentInput, actor: string | null): Promise<string> {
   const id = genId('pay')
@@ -124,7 +145,8 @@ export async function createManualPayment(v: ManualPaymentInput, actor: string |
     period_start: null,
     period_end: null,
     depositor_name: v.depositorName || (member?.name ?? null),
-    staff_id: member?.assigned_staff_id ?? actor,
+    // 매출 귀속은 "결제를 요청/등록한 담당자" 기준(현장 피드백 7/21) — 회원의 현재 담당자보다 우선.
+    staff_id: actor ?? member?.assigned_staff_id ?? null,
     paid_at: null,
     created_at: nowIso(),
   }

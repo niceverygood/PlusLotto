@@ -343,6 +343,37 @@ export function useCancelPayment() {
   })
 }
 
+export interface UpdatePaymentInput {
+  id: string
+  patch: Partial<Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name'>>
+}
+
+/** 결제내역 수정(금액·결제수단·PG사·입금자명) — 실장 이상 전용(현장 피드백 7/21). UI 가드는 PaymentDrawer. */
+export function useUpdatePayment() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: UpdatePaymentInput) => {
+      if (dataSource === 'supabase') return supa.updatePayment(v.id, v.patch, user?.id ?? null)
+      let memberId: string | null = null
+      mutateDb((db) => {
+        const p = db.payments.find((x) => x.id === v.id)
+        if (!p) return
+        memberId = p.member_id
+        Object.assign(p, v.patch)
+        db.logs.push(paymentLog(user?.id ?? null, 'payment.update', p.id, { member_id: p.member_id, patch: v.patch }))
+      })
+      return memberId
+    },
+    onSuccess: (memberId, v) => {
+      qc.invalidateQueries({ queryKey: paymentKeys.all })
+      qc.invalidateQueries({ queryKey: paymentKeys.detail(v.id) })
+      qc.invalidateQueries({ queryKey: revenueKeys.all })
+      if (memberId) qc.invalidateQueries({ queryKey: memberKeys.detail(memberId) })
+    },
+  })
+}
+
 // ── 수기결제 폼용 참조 데이터 (cross-feature import 회피: 스토어 직접 조회) ──
 export function useActiveProducts() {
   return useQuery({
@@ -423,7 +454,9 @@ export function useCreateManualPayment() {
           period_start: null,
           period_end: null,
           depositor_name: v.depositorName || (member?.name ?? null),
-          staff_id: member?.assigned_staff_id ?? user?.id ?? null,
+          // 매출 귀속은 "결제를 요청/등록한 담당자" 기준 — 회원의 현재 담당자가 아니라 이 결제를
+          // 실제로 처리한 로그인 사용자를 우선한다(현장 피드백 7/21, D93 이전 로직은 반대였음).
+          staff_id: user?.id ?? member?.assigned_staff_id ?? null,
           paid_at: null,
           created_at: ts,
         }

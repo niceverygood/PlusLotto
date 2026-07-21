@@ -690,9 +690,10 @@ export function buildSeed(): DbShape {
     staff,
     products: [
       { id: 'prod-gold', name: '골드 1개월', price: 33000, duration_months: 1, grade_granted: 'gold', is_active: true },
-      { id: 'prod-goldp', name: '골드플러스 1개월', price: 55000, duration_months: 1, grade_granted: 'goldp', is_active: true },
-      { id: 'prod-vip', name: 'VIP 3개월', price: 132000, duration_months: 3, grade_granted: 'vip', is_active: true },
-      { id: 'prod-royal', name: '로얄 6개월', price: 264000, duration_months: 6, grade_granted: 'royal', is_active: true },
+      // 상품명 = 실사용 고객 홈페이지 등급명(현장 피드백 7/21) — goldp→실버·vip→골드·royal→다이아.
+      { id: 'prod-goldp', name: '실버', price: 55000, duration_months: 1, grade_granted: 'goldp', is_active: true },
+      { id: 'prod-vip', name: '골드', price: 132000, duration_months: 3, grade_granted: 'vip', is_active: true },
+      { id: 'prod-royal', name: '다이아', price: 264000, duration_months: 6, grade_granted: 'royal', is_active: true },
     ],
     sms_templates: [
       { key: 'join', title: '가입 환영', body: '[플러스로또] $name님 가입을 환영합니다. 아이디: $id / 임시비밀번호: $pw', category: 'join' },

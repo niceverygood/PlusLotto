@@ -581,7 +581,8 @@ export function useRequestPayment() {
           period_start: null,
           period_end: null,
           depositor_name: v.depositorName?.trim() || member?.name || null,
-          staff_id: member?.assigned_staff_id ?? user?.id ?? null,
+          // 매출 귀속은 "결제를 요청/등록한 담당자" 기준(현장 피드백 7/21) — payments/api.ts 와 동일 원칙.
+          staff_id: user?.id ?? member?.assigned_staff_id ?? null,
           paid_at: null,
           created_at: ts,
         }

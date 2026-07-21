@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { Check, Search } from 'lucide-react'
 import { Badge, Button, PageHeader } from '@/design-system/components'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
-import { krw, phone } from '@/lib/format'
+import { phone } from '@/lib/format'
 import type { PaymentMethod } from '@/types/db'
 import {
   useActiveProducts,
@@ -173,7 +173,7 @@ export function ManualPaymentPage() {
               <option value="">상품 선택</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} · {krw(p.price)} · {p.duration_months}개월
+                  {p.name}
                 </option>
               ))}
             </select>
