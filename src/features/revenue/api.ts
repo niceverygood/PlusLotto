@@ -66,17 +66,15 @@ function indexMembers(members: readonly Member[]): Record<string, Member> {
   return out
 }
 
-// RLS 에뮬레이션: 매출은 rep 제외(admin/manager=전체, leader=본인 팀). 라우트 가드와 이중.
+// RLS 에뮬레이션: 최고관리자·관리자·실장=전체, 팀장(rep)=매출 메뉴 제외.
+// D51에서 실장(leader)의 회원 조회 범위를 전체로 확정했으므로 집계도 동일해야 한다.
 function scopeApproved(
   payments: readonly Payment[],
-  members: Record<string, Member>,
   user: CurrentUser | null,
 ): Payment[] {
   const approved = payments.filter((p) => p.status === 'approved')
   if (!user) return []
-  if (user.role === 'admin' || user.role === 'manager') return approved
-  if (user.role === 'leader')
-    return approved.filter((p) => members[p.member_id]?.team_id === user.teamId)
+  if (user.role === 'admin' || user.role === 'manager' || user.role === 'leader') return approved
   return []
 }
 
@@ -158,7 +156,7 @@ export function useRevenue(q: RevenueQuery) {
       const productNames: Record<string, string> = {}
       for (const pr of db.products) productNames[pr.id] = pr.name
 
-      const scoped = scopeApproved(db.payments, members, user)
+      const scoped = scopeApproved(db.payments, user)
       const convIds = conversionIds(scoped)
 
       // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환.

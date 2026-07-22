@@ -68,11 +68,10 @@ export interface StatsQuery {
   to: string
 }
 
-// ── RLS 에뮬레이션 (매출 모듈과 동일 기준): admin/manager=전체, leader=본인 팀, rep=본인 담당. ──
+// ── RLS 에뮬레이션: 최고관리자·관리자·실장=전체, 팀장(rep)=본인 담당. ──
 function scopeMembers(all: readonly Member[], user: CurrentUser | null): Member[] {
   if (!user) return []
-  if (user.role === 'admin' || user.role === 'manager') return [...all]
-  if (user.role === 'leader') return all.filter((m) => m.team_id === user.teamId)
+  if (user.role === 'admin' || user.role === 'manager' || user.role === 'leader') return [...all]
   return all.filter((m) => m.assigned_staff_id === user.id)
 }
 function scopePayments(
@@ -81,9 +80,7 @@ function scopePayments(
   user: CurrentUser | null,
 ): Payment[] {
   if (!user) return []
-  if (user.role === 'admin' || user.role === 'manager') return [...payments]
-  if (user.role === 'leader')
-    return payments.filter((p) => members[p.member_id]?.team_id === user.teamId)
+  if (user.role === 'admin' || user.role === 'manager' || user.role === 'leader') return [...payments]
   return payments.filter((p) => members[p.member_id]?.assigned_staff_id === user.id)
 }
 

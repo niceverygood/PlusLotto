@@ -14,11 +14,9 @@ import type { NavKey } from './permissions'
 // 결제대기 건수 — 매출과 달리 rep 도 본인 담당분을 본다(개인 처리대기 신호).
 function scopedWaitCount(user: CurrentUser, db: Pick<DbShape, 'members' | 'payments'>): number {
   const wait = db.payments.filter((p) => p.status === 'wait')
-  if (user.role === 'admin' || user.role === 'manager') return wait.length
+  if (user.role === 'admin' || user.role === 'manager' || user.role === 'leader') return wait.length
   const byId: Record<string, Member> = {}
   for (const m of db.members) byId[m.id] = m
-  if (user.role === 'leader')
-    return wait.filter((p) => byId[p.member_id]?.team_id === user.teamId).length
   return wait.filter((p) => byId[p.member_id]?.assigned_staff_id === user.id).length
 }
 
