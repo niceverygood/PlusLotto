@@ -1,7 +1,7 @@
 // 수기결제 등록 (/payments/manual, CLAUDE §10 폼=react-hook-form+zod).
 // 회원 검색→선택, 상품 선택(금액 자동), 결제수단·입금자명, 즉시승인 옵션.
 // 즉시승인 시 §8(회원 등급↑·매출 반영)까지 적용된다.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -44,8 +44,14 @@ export function ManualPaymentPage() {
   const createPayment = useCreateManualPayment()
 
   const [term, setTerm] = useState('')
+  const [queryTerm, setQueryTerm] = useState('')
   const [picked, setPicked] = useState<MemberOption | null>(null)
-  const { data: results = [] } = useMemberSearch(term)
+  const { data: results = [] } = useMemberSearch(queryTerm)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQueryTerm(term.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [term])
 
   const {
     register,

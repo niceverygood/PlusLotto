@@ -1,8 +1,7 @@
 // 라이브 Supabase 읽기/쓰기 공용 헬퍼 (M7). dataSource==='supabase' 일 때 mock readDb() 를
-// 대체하는 비동기 스냅샷을 제공한다. RLS 가 역할 스코프를 적용하므로, 호출측 순수 변환
-// (필터/정렬/집계)은 mock 과 동일 코드로 재사용된다(동작 동등성 보장 — 스코프 재적용은 멱등).
+// 대체하는 공용 호출을 제공한다. 핵심 목록/집계는 feature별 서버 RPC를 사용하고,
+// 이 파일의 전량 helper는 참조 테이블 또는 실제로 전량 처리가 필요한 배치 작업에만 쓴다.
 // nav_access(맵)·site_settings(단일행)는 mock 형태로 재구성한다.
-// TODO(live-verify): 대량(15만)에서는 목록 조회를 server-side 필터/페이지네이션으로 이관해야 함.
 import { type SupabaseClient } from '@supabase/supabase-js'
 import type { LogKind, Role, SiteSettings } from '@/types/db'
 import { supabase } from '@/lib/supabase'
@@ -20,7 +19,7 @@ type ArrayKey = Exclude<keyof DbShape, 'nav_access' | 'site_settings'>
 // range 페이지네이션 코어. PostgREST 는 응답을 기본 1000행으로 캡하므로, 1000행 초과 테이블은
 // 한 번의 select 로 전량을 못 가져온다(회차 1,227건·회원 1,985명 적재 후 발견 — 뒷부분이 잘림).
 // build(from,to) 는 .range 가 적용된 새 쿼리를 반환해야 한다(필터·정렬은 build 안에서 부여).
-// TODO(scale): 수만건+ 규모에선 server-side 필터/페이지네이션으로 이관 필요(현재는 클라 필터 구조).
+// 대형 목록 화면에는 사용 금지 — 서버 필터/페이지 RPC를 추가한다.
 export async function paginateAll<T>(
   build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
 ): Promise<T[]> {

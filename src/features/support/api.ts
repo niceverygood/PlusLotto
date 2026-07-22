@@ -7,7 +7,7 @@ import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
-import { communityKeys, supportKeys } from '@/lib/queryKeys'
+import { communityKeys, operationalKeys, supportKeys } from '@/lib/queryKeys'
 import * as supa from './supa'
 
 function adminLog(
@@ -59,7 +59,10 @@ export function useAnswerInquiry() {
       })
       return v.id
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: supportKeys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: supportKeys.all })
+      qc.invalidateQueries({ queryKey: operationalKeys.all })
+    },
   })
 }
 

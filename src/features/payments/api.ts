@@ -15,7 +15,7 @@ import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
-import { memberKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
+import { memberKeys, operationalKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
 import * as supa from './supa'
 
 export { paymentKeys }
@@ -150,10 +150,8 @@ export function usePayments(q: PaymentsQuery) {
   return useQuery({
     queryKey: paymentKeys.list({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
     queryFn: async (): Promise<PaymentsResult> => {
-      const db =
-        dataSource === 'supabase'
-          ? await fetchTables(['members', 'products', 'payments'])
-          : readDb()
+      if (dataSource === 'supabase') return supa.fetchPaymentsPage(q)
+      const db = readDb()
       const members = indexBy(db.members)
       const products = indexBy(db.products)
       const scoped = scopePayments(db.payments, members, user)
@@ -179,8 +177,8 @@ export function usePaymentCounts() {
   return useQuery({
     queryKey: paymentKeys.counts(`${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<Record<PaymentStatusTab, number>> => {
-      const db =
-        dataSource === 'supabase' ? await fetchTables(['members', 'payments']) : readDb()
+      if (dataSource === 'supabase') return supa.fetchPaymentCounts()
+      const db = readDb()
       const members = indexBy(db.members)
       const scoped = scopePayments(db.payments, members, user)
       const out: Record<PaymentStatusTab, number> = {
@@ -200,10 +198,8 @@ export function usePayment(id: string | null) {
   return useQuery({
     queryKey: paymentKeys.detail(id ?? ''),
     queryFn: async (): Promise<PaymentRow | null> => {
-      const db =
-        dataSource === 'supabase'
-          ? await fetchTables(['members', 'products', 'payments'])
-          : readDb()
+      if (dataSource === 'supabase') return supa.fetchPaymentDetail(id ?? '')
+      const db = readDb()
       const p = db.payments.find((x) => x.id === id)
       if (!p) return null
       return enrich(p, indexBy(db.members), indexBy(db.products))
@@ -285,6 +281,7 @@ export function useApprovePayment() {
       qc.invalidateQueries({ queryKey: paymentKeys.detail(v.id) })
       qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: operationalKeys.all })
       if (memberId) qc.invalidateQueries({ queryKey: memberKeys.detail(memberId) })
     },
   })
@@ -338,6 +335,7 @@ export function useCancelPayment() {
       qc.invalidateQueries({ queryKey: paymentKeys.detail(v.id) })
       qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: operationalKeys.all })
       if (memberId) qc.invalidateQueries({ queryKey: memberKeys.detail(memberId) })
     },
   })
@@ -369,6 +367,7 @@ export function useUpdatePayment() {
       qc.invalidateQueries({ queryKey: paymentKeys.all })
       qc.invalidateQueries({ queryKey: paymentKeys.detail(v.id) })
       qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: operationalKeys.all })
       if (memberId) qc.invalidateQueries({ queryKey: memberKeys.detail(memberId) })
     },
   })
@@ -393,13 +392,14 @@ export interface MemberOption {
   grade: Grade
 }
 
-/** 수기결제 대상 회원 검색(스코프 적용, 최대 20건). 빈 검색어면 앞에서부터 노출. */
+/** 수기결제 대상 회원 검색(스코프 적용, 최대 20건). 입력은 화면에서 250ms debounce한다. */
 export function useMemberSearch(term: string) {
   const user = useCurrentUser()
   return useQuery({
     queryKey: ['payments', 'member-search', term, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<MemberOption[]> => {
-      const db = dataSource === 'supabase' ? await fetchTables(['members']) : readDb()
+      if (dataSource === 'supabase') return supa.searchMembers(term)
+      const db = readDb()
       let scoped: Member[]
       if (!user) scoped = []
       else if (user.role === 'rep') scoped = db.members.filter((m) => m.assigned_staff_id === user.id)
@@ -418,6 +418,7 @@ export function useMemberSearch(term: string) {
         grade: m.grade,
       }))
     },
+    enabled: term.trim().length > 0,
   })
 }
 
@@ -477,6 +478,7 @@ export function useCreateManualPayment() {
       qc.invalidateQueries({ queryKey: paymentKeys.all })
       qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: operationalKeys.all })
       if (memberId) qc.invalidateQueries({ queryKey: memberKeys.detail(memberId) })
     },
   })

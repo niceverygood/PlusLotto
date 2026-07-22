@@ -3,13 +3,20 @@
 //   승인 → 결제상태=승인·이용기간·회원 등급↑/정상화·매출 반영(파생)·로그
 //   취소 → 결제상태=취소·등급 롤백 검토(다른 승인결제 없으면 free)·매출 차감(파생)·로그
 //   수기등록 → 대기 또는 즉시승인(§8 동일 흐름)
-// 읽기는 fetchTables 스냅샷으로 api.ts 가 순수 변환을 재사용(별도 fetch 불필요).
+// 읽기는 서버 RPC가 회원·상품 조인과 필터·집계·페이지네이션을 처리한다.
 // TODO(live-verify): 다중 테이블 갱신은 원자성 보장을 위해 RPC(트랜잭션)로 이관 권장.
 import { addMonths } from 'date-fns'
 import type { Grade, Member, Payment, Product } from '@/types/db'
 import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, sb } from '@/lib/db/remote'
-import type { ManualPaymentInput } from './api'
+import type {
+  ManualPaymentInput,
+  MemberOption,
+  PaymentRow,
+  PaymentsQuery,
+  PaymentsResult,
+  PaymentStatusTab,
+} from './api'
 
 async function fetchPayment(id: string): Promise<Payment | null> {
   const { data, error } = await sb().from('payments').select('*').eq('id', id).maybeSingle()
@@ -28,6 +35,59 @@ async function fetchProduct(id: string | null): Promise<Product | null> {
   const { data, error } = await sb().from('products').select('*').eq('id', id).maybeSingle()
   if (error) throw error
   return (data as Product | null) ?? null
+}
+
+/** 결제 목록은 회원·상품 조인과 필터·페이지네이션을 DB에서 끝낸다. */
+export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResult> {
+  const filter: Record<string, unknown> = {
+    status: q.status,
+    search: q.search,
+    method: q.method,
+    pg: q.pg,
+    staffId: q.staffId,
+    dateFrom: q.dateFrom,
+    dateTo: q.dateTo,
+  }
+  const { data, error } = await sb().rpc('admin_payments_page', {
+    p_filter: filter,
+    p_offset: Math.max(0, q.page - 1) * q.pageSize,
+    p_limit: q.pageSize,
+    p_sort_id: q.sortId ?? null,
+    p_sort_desc: q.sortDesc ?? false,
+  })
+  if (error) throw error
+  const result = data as { rows?: PaymentRow[]; total?: number } | null
+  const total = Number(result?.total ?? 0)
+  return {
+    rows: result?.rows ?? [],
+    total,
+    pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
+  }
+}
+
+export async function fetchPaymentCounts(): Promise<Record<PaymentStatusTab, number>> {
+  const { data, error } = await sb().rpc('admin_payment_counts')
+  if (error) throw error
+  const result = data as Partial<Record<PaymentStatusTab, number>> | null
+  return {
+    all: Number(result?.all ?? 0),
+    wait: Number(result?.wait ?? 0),
+    approved: Number(result?.approved ?? 0),
+    failed: Number(result?.failed ?? 0),
+    cancelled: Number(result?.cancelled ?? 0),
+  }
+}
+
+export async function fetchPaymentDetail(id: string): Promise<PaymentRow | null> {
+  const { data, error } = await sb().rpc('admin_payment_detail', { p_id: id })
+  if (error) throw error
+  return (data as PaymentRow | null) ?? null
+}
+
+export async function searchMembers(term: string): Promise<MemberOption[]> {
+  const { data, error } = await sb().rpc('admin_member_search', { p_term: term, p_limit: 20 })
+  if (error) throw error
+  return (data as MemberOption[] | null) ?? []
 }
 
 /** 회원을 정상·해당 유료등급으로 갱신(승인 §8 부수효과). */

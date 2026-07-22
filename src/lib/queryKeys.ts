@@ -4,7 +4,7 @@
 
 export const memberKeys = {
   all: ['members'] as const,
-  snapshot: (scope: string) => ['members', 'snapshot', scope] as const,
+  facets: (scope: string) => ['members', 'facets', scope] as const,
   list: (p: Record<string, unknown>) => ['members', 'list', p] as const,
   counts: (scope: string) => ['members', 'counts', scope] as const,
   detail: (id: string) => ['member', id] as const,
@@ -64,6 +64,13 @@ export const settingsKeys = {
 // SMS 템플릿: members(드로어·일괄·나의문자)와 settings(편집)가 공유 → lib 단일 출처(§2·§8).
 export const smsTemplateKeys = {
   all: ['sms_templates'] as const,
+}
+
+// 앱 진입 시 항상 보이는 서버 집계. 회원/결제/문의 뮤테이션이 함께 무효화한다.
+export const operationalKeys = {
+  all: ['operational'] as const,
+  dashboard: (scope: string) => ['operational', 'dashboard', scope] as const,
+  navBadges: (scope: string) => ['operational', 'nav-badges', scope] as const,
 }
 
 // 급여(커미션)·상담원 매칭분석 — payments(결제건별 담당자·차수) 파생 집계(현장 7/9).

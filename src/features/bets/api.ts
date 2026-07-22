@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { Bet } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
-import { fetchTables } from '@/lib/db/remote'
+import { fetchTables, sb } from '@/lib/db/remote'
 import { betKeys, lottoKeys } from '@/lib/queryKeys'
 
 export interface BetRow extends Bet {
@@ -48,10 +48,19 @@ export function useBets(q: BetsQuery) {
   return useQuery({
     queryKey: betKeys.list({ round: q.round, search: q.search, page: q.page, pageSize: q.pageSize }),
     queryFn: async (): Promise<BetsResult> => {
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_bets_page', {
+          p_round: q.round,
+          p_search: q.search,
+          p_offset: Math.max(0, q.page - 1) * q.pageSize,
+          p_limit: q.pageSize,
+        })
+        if (error) throw error
+        const result = data as BetsResult | null
+        return result ?? { rows: [], total: 0, summary: { count: 0, winners: 0, prizeSum: 0 } }
+      }
       const db =
-        dataSource === 'supabase'
-          ? await fetchTables(['members', 'lotto_rounds', 'bets'])
-          : readDb()
+        readDb()
       const memberName: Record<string, string> = {}
       for (const m of db.members) memberName[m.id] = m.name
       const roundById = new Map(db.lotto_rounds.map((r) => [r.round_no, r]))

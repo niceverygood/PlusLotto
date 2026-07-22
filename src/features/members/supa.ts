@@ -1,10 +1,8 @@
 // 이용자 모듈 — supabase 데이터 경로 (M6). dataSource==='supabase' 일 때 api.ts 가 호출.
-// 설계: 읽기는 RLS 가 역할 스코프를 처리하므로 "조회만" 하고, 뷰/필터/정렬/페이지는
-//       api.ts 의 공유 순수함수(listFrom/countsFrom)가 그대로 적용한다(=mock 과 동일 동작).
+// 설계: 읽기는 RLS 가 역할 스코프를 처리하고 목록/뷰/검색/정렬/페이지는 서버 RPC에서 끝낸다.
 //       쓰기는 mock 의 mutateDb 부수효과(§8)를 supabase 호출로 1:1 미러링한다.
-// TODO(live-verify): 대량(15만) 데이터에서는 목록을 server-side 필터/페이지네이션으로 이관해야 함.
 import { type SupabaseClient } from '@supabase/supabase-js'
-import type { Assignment, CallAiAnalysis, CallRecording, Grade, LottoRound, Member, MembershipTier, MemberStatus, Payment, Product, Role, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
+import type { Assignment, CallAiAnalysis, CallRecording, Grade, LottoRound, Member, MembershipTier, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
@@ -19,6 +17,7 @@ import { resolveExcludeForGrade } from '@/lib/lotto'
 import { resolveTiers } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
 import type { ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
+import type { MemberFilter } from './views'
 
 function sb(): SupabaseClient {
   if (!supabase) throw new Error('supabase 클라이언트가 초기화되지 않았습니다.')
@@ -60,42 +59,52 @@ async function pushLog(row: {
 }
 
 // ── 읽기 ──────────────────────────────────────────────────────────────────
-/** 역할 스코프된 전체 회원(RLS 적용). 뷰/필터/정렬/페이지는 호출측 listFrom 이 처리. */
-export async function fetchScopedMembers(): Promise<Member[]> {
-  // ★ 1000행 캡 우회: 회원 1,985명(→15만 예정)을 한 번의 select 로는 못 가져온다.
-  //   캡에 걸리면 1000번째 이후 회원이 목록·세그먼트·일괄작업에서 통째로 사라진다
-  //   (현장: "100건 전체선택 담당배정 시 일부만 배정" — 캡 너머 회원이 선택 자체가 안 됨 / D69).
-  return selectAll<Member>('members')
+export interface RemoteMembersResult {
+  rows: Member[]
+  total: number
+  pageCount: number
 }
 
-/** 내가 담당하는 회원만(나의고객). RLS 가시성 내에서 assigned_staff_id=uid 로 한정. */
-export async function fetchMineMembers(uid: string): Promise<Member[]> {
-  if (!uid) return []
-  // 담당 회원도 1000명 초과 가능 → range 로 전량(캡 우회).
-  return paginateAll<Member>((from, to) =>
-    sb().from('members').select('*').eq('assigned_staff_id', uid).range(from, to),
-  )
+export interface RemoteMemberFacets {
+  counts: Record<string, number>
+  inflowCodes: string[]
 }
 
-/** assigned_staff_id → role 매핑(필터 ctx 용). roleScope 뷰(실장/팀장담당)가 사용. */
-/** 실제 데이터의 유입코드 distinct 목록(필터 드롭다운용). RLS 로 역할 스코프 자동 적용. */
-export async function fetchInflowCodes(): Promise<string[]> {
-  // 전량(1000행 캡 우회) — 캡에 걸리면 1000번째 이후 회원의 유입코드가 드롭다운에서 누락.
-  const data = await paginateAll<{ inflow_code: string | null }>((from, to) =>
-    sb().from('members').select('inflow_code').not('inflow_code', 'is', null).range(from, to),
-  )
-  const codes = data
-    .map((r) => r.inflow_code)
-    .filter((c): c is string => !!c && c.trim().length > 0)
-  return Array.from(new Set(codes))
-}
-
-export async function fetchStaffRoleMap(): Promise<Record<string, Role>> {
-  const { data, error } = await sb().from('staff').select('id, role')
+/** 회원 목록은 DB에서 필터·정렬·페이지를 끝낸 뒤 현재 페이지 행만 받는다. */
+export async function fetchMembersPage(
+  filter: MemberFilter,
+  page: number,
+  pageSize: number,
+  sortId: string | undefined,
+  sortDesc: boolean,
+  assignedStaffId: string | null = null,
+): Promise<RemoteMembersResult> {
+  const { data, error } = await sb().rpc('admin_members_page', {
+    p_filter: filter,
+    p_offset: Math.max(0, page - 1) * pageSize,
+    p_limit: pageSize,
+    p_sort_id: sortId ?? null,
+    p_sort_desc: sortDesc,
+    p_assigned_staff_id: assignedStaffId,
+  })
   if (error) throw error
-  const out: Record<string, Role> = {}
-  for (const s of (data ?? []) as { id: string; role: Role }[]) out[s.id] = s.role
-  return out
+  const result = data as { rows?: Member[]; total?: number } | null
+  const total = Number(result?.total ?? 0)
+  return {
+    rows: result?.rows ?? [],
+    total,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}
+
+/** 26개 세그먼트 건수와 유입코드 distinct를 한 번의 서버 집계로 가져온다. */
+export async function fetchMemberFacets(assignedStaffId: string | null = null): Promise<RemoteMemberFacets> {
+  const { data, error } = await sb().rpc('admin_member_facets', {
+    p_assigned_staff_id: assignedStaffId,
+  })
+  if (error) throw error
+  const result = data as { counts?: Record<string, number>; inflowCodes?: string[] } | null
+  return { counts: result?.counts ?? {}, inflowCodes: result?.inflowCodes ?? [] }
 }
 
 export async function fetchMember(id: string): Promise<Member | null> {

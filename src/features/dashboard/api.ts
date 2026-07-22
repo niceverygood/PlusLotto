@@ -7,8 +7,9 @@ import { eachDayOfInterval, format, parseISO, subDays } from 'date-fns'
 import type { Grade, Member, Payment } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
-import { fetchTables } from '@/lib/db/remote'
+import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
+import { operationalKeys } from '@/lib/queryKeys'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 
 const TREND_DAYS = 14
@@ -80,9 +81,14 @@ function methodLabelOf(p: Payment): string {
 export function useDashboard() {
   const user = useCurrentUser()
   return useQuery({
-    queryKey: ['dashboard', user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: operationalKeys.dashboard(`${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<DashboardResult> => {
-      const db = dataSource === 'supabase' ? await fetchTables(['members', 'payments']) : readDb()
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_dashboard')
+        if (error) throw error
+        return data as DashboardResult
+      }
+      const db = readDb()
       const members = scopeMembers(db.members, user)
       const memberMap: Record<string, Member> = {}
       for (const m of db.members) memberMap[m.id] = m
@@ -171,7 +177,7 @@ export function useDashboard() {
         paymentMore: Math.max(0, waitAll.length - LIST_LIMIT),
       }
     },
-    staleTime: 0,
+    staleTime: 30_000,
     refetchOnMount: 'always',
     placeholderData: (prev) => prev,
   })

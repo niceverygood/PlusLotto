@@ -7,7 +7,7 @@ import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type { Grade, LogEntry, Member, Payment, PaymentStatus, Staff } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
-import { fetchTables } from '@/lib/db/remote'
+import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { GRADE_LABEL, PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import {
@@ -116,6 +116,135 @@ function toBreakdownRows(
 }
 
 const pct = (n: number, d: number): number => (d ? Math.round((n / d) * 1000) / 10 : 0)
+
+interface RemoteDay {
+  date: string
+  value: number
+}
+interface RemoteCount {
+  key: string
+  count: number
+  paid?: number
+  label?: string
+  value?: number
+}
+interface RemoteMemberStats {
+  kind: 'members'
+  total: number
+  paid: number
+  period: number
+  periodPaid: number
+  distinctTypes: number
+  days: RemoteDay[]
+  grades: RemoteCount[]
+  inflowTypes: RemoteCount[]
+  inflowCodes: RemoteCount[]
+}
+interface RemotePaymentStats {
+  kind: 'payments'
+  total: number
+  approvedCount: number
+  createdCount: number
+  days: RemoteDay[]
+  products: RemoteCount[]
+  methods: RemoteCount[]
+  statuses: RemoteCount[]
+}
+type RemoteStatsSnapshot = RemoteMemberStats | RemotePaymentStats
+
+function remoteMemberStats(s: RemoteMemberStats, view: 'signup' | 'inflow', from: string, to: string): StatsResult {
+  const byDay = new Map(s.days.map((d) => [d.date, Number(d.value)]))
+  const trend = trendFromMap(from, to, byDay)
+  if (view === 'signup') {
+    const gradeAcc = new Map<string, { label: string; value: number; count: number }>()
+    for (const row of s.grades) {
+      const grade = row.key as Grade
+      gradeAcc.set(row.key, {
+        label: GRADE_LABEL[grade] ?? row.key,
+        value: Number(row.count),
+        count: Number(row.count),
+      })
+    }
+    return {
+      kpis: [
+        { label: '기간 신규가입', value: `${Number(s.period).toLocaleString('ko-KR')}명`, sub: `일평균 ${Math.round(Number(s.period) / Math.max(1, trend.length)).toLocaleString('ko-KR')}명` },
+        { label: '누적 회원', value: `${Number(s.total).toLocaleString('ko-KR')}명` },
+        { label: '유료 회원', value: `${Number(s.paid).toLocaleString('ko-KR')}명`, sub: `전체의 ${pct(Number(s.paid), Number(s.total))}%` },
+        { label: '기간 유료전환율', value: `${pct(Number(s.periodPaid), Number(s.period))}%`, sub: `유료 ${Number(s.periodPaid)}명 / 가입 ${Number(s.period)}명` },
+      ],
+      trendTitle: '일별 신규가입 추이',
+      trendUnit: 'count',
+      trend,
+      breakdowns: [{ title: '등급별 회원 분포', unit: 'count', valueHeader: '회원수', rows: toBreakdownRows(gradeAcc) }],
+    }
+  }
+
+  const typeAcc = new Map<string, { label: string; value: number; count: number; sub?: string }>()
+  for (const row of s.inflowTypes) {
+    const count = Number(row.count)
+    typeAcc.set(row.key, {
+      label: row.key,
+      value: count,
+      count,
+      sub: `전환 ${pct(Number(row.paid ?? 0), count)}%`,
+    })
+  }
+  const typeRows = toBreakdownRows(typeAcc)
+  const codeAcc = new Map<string, { label: string; value: number; count: number }>()
+  for (const row of s.inflowCodes) {
+    const count = Number(row.count)
+    codeAcc.set(row.key, { label: row.key, value: count, count })
+  }
+  return {
+    kpis: [
+      { label: '기간 신규유입', value: `${Number(s.period).toLocaleString('ko-KR')}명` },
+      { label: '유입경로 수', value: `${Number(s.distinctTypes)}개` },
+      { label: '최다 유입경로', value: typeRows[0]?.label ?? '-', sub: typeRows[0] ? `${typeRows[0].count}명` : undefined },
+      { label: '평균 유료전환율', value: `${pct(Number(s.periodPaid), Number(s.period))}%`, sub: `유료 ${Number(s.periodPaid)}명` },
+    ],
+    trendTitle: '일별 신규유입 추이',
+    trendUnit: 'count',
+    trend,
+    breakdowns: [
+      { title: '유입경로별 유입(전환율)', unit: 'count', valueHeader: '유입수', rows: typeRows },
+      { title: '유입코드 상위', unit: 'count', valueHeader: '유입수', rows: toBreakdownRows(codeAcc) },
+    ],
+  }
+}
+
+function remotePaymentStats(s: RemotePaymentStats, from: string, to: string): StatsResult {
+  const rowsOf = (rows: RemoteCount[], labelOf?: (key: string) => string) => {
+    const acc = new Map<string, { label: string; value: number; count: number }>()
+    for (const row of rows) {
+      const count = Number(row.count)
+      acc.set(row.key, {
+        label: row.label ?? labelOf?.(row.key) ?? row.key,
+        value: Number(row.value ?? count),
+        count,
+      })
+    }
+    return toBreakdownRows(acc)
+  }
+  const total = Number(s.total)
+  const approved = Number(s.approvedCount)
+  const created = Number(s.createdCount)
+  return {
+    kpis: [
+      { label: '기간 매출', value: `₩ ${total.toLocaleString('ko-KR')}`, sub: `${approved.toLocaleString('ko-KR')}건 승인` },
+      { label: '결제 건수', value: `${approved.toLocaleString('ko-KR')}건` },
+      { label: '평균 결제액', value: `₩ ${(approved ? Math.round(total / approved) : 0).toLocaleString('ko-KR')}` },
+      { label: '승인율', value: `${pct(approved, created)}%`, sub: `기간 접수 ${created}건 기준` },
+    ],
+    trendTitle: '일별 매출 추이',
+    trendUnit: 'won',
+    trend: trendFromMap(from, to, new Map(s.days.map((d) => [d.date, Number(d.value)]))),
+    breakdowns: [
+      { title: '상품별 매출', unit: 'won', valueHeader: '매출', rows: rowsOf(s.products) },
+      { title: '결제수단·PG별 매출', unit: 'won', valueHeader: '매출', rows: rowsOf(s.methods) },
+      { title: '상태별 결제(기간 접수)', unit: 'count', valueHeader: '건수', rows: rowsOf(s.statuses, (key) => STATUS_LABEL[key as PaymentStatus] ?? key) },
+    ],
+  }
+}
 
 // ── 가입 통계 ─────────────────────────────────────────────────────────
 function signupStats(members: Member[], from: string, to: string): StatsResult {
@@ -286,8 +415,20 @@ export function useStats(q: StatsQuery) {
   return useQuery({
     queryKey: ['stats', q.view, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<StatsResult> => {
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_stats_snapshot', {
+          p_view: q.view,
+          p_from: q.from,
+          p_to: q.to,
+        })
+        if (error) throw error
+        const snapshot = data as RemoteStatsSnapshot
+        return snapshot.kind === 'members'
+          ? remoteMemberStats(snapshot, q.view === 'inflow' ? 'inflow' : 'signup', q.from, q.to)
+          : remotePaymentStats(snapshot, q.from, q.to)
+      }
       const db =
-        dataSource === 'supabase' ? await fetchTables(['members', 'payments', 'products']) : readDb()
+        readDb()
       const members = scopeMembers(db.members, user)
       if (q.view === 'signup') return signupStats(members, q.from, q.to)
       if (q.view === 'inflow') return inflowStats(members, q.from, q.to)
@@ -317,8 +458,18 @@ export function useConsultReport(q: ConsultReportQuery) {
   return useQuery({
     queryKey: ['stats', 'consult', q.dimension, q.period, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<ConsultReportRow[]> => {
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_consult_report', {
+          p_dimension: q.dimension,
+          p_period: q.period,
+          p_from: q.from,
+          p_to: q.to,
+        })
+        if (error) throw error
+        return (data as ConsultReportRow[] | null) ?? []
+      }
       const db =
-        dataSource === 'supabase' ? await fetchTables(['members', 'staff', 'logs']) : readDb()
+        readDb()
       const members = scopeMembers(db.members, user)
       // computeConsultReport 가 members 스코프 밖 이벤트를 자동 제외한다(팀장/담당 경계 보장).
       return computeConsultReport(db.logs as LogEntry[], members, db.staff as Staff[], {

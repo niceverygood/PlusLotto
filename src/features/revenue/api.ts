@@ -6,7 +6,7 @@ import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type { Member, Payment } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
-import { fetchTables } from '@/lib/db/remote'
+import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { revenueKeys } from '@/lib/queryKeys'
 import { recognitionIso } from '@/lib/revenueRules'
@@ -138,10 +138,18 @@ export function useRevenue(q: RevenueQuery) {
   return useQuery({
     queryKey: revenueKeys.summary({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
     queryFn: async (): Promise<RevenueResult> => {
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_revenue', {
+          p_view: q.view,
+          p_from: q.from,
+          p_to: q.to,
+          p_group: q.groupBy,
+        })
+        if (error) throw error
+        return data as RevenueResult
+      }
       const db =
-        dataSource === 'supabase'
-          ? await fetchTables(['members', 'staff', 'teams', 'products', 'payments'])
-          : readDb()
+        readDb()
       const members = indexMembers(db.members)
       const staffNames: Record<string, string> = {}
       for (const s of db.staff) staffNames[s.id] = s.name
