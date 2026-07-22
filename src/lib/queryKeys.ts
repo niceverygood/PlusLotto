@@ -61,6 +61,15 @@ export const settingsKeys = {
   winnerHistory: () => ['settings', 'winner-history'] as const,
 }
 
+// 고객 홈페이지 공개 데이터. 설정 저장 시 운영 콘솔과 고객 화면 캐시를 함께 무효화한다(§8).
+export const siteKeys = {
+  rounds: (n: number) => ['site', 'rounds', n] as const,
+  notices: () => ['site', 'notices'] as const,
+  faqs: () => ['site', 'faqs'] as const,
+  tiers: () => ['site', 'membership-tiers'] as const,
+  publicInfo: () => ['site', 'public-info'] as const,
+}
+
 // SMS 템플릿: members(드로어·일괄·나의문자)와 settings(편집)가 공유 → lib 단일 출처(§2·§8).
 export const smsTemplateKeys = {
   all: ['sms_templates'] as const,

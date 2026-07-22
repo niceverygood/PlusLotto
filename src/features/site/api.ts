@@ -22,17 +22,10 @@ import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTie
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
+import { siteKeys } from '@/lib/queryKeys'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
-
-export const siteKeys = {
-  rounds: (n: number) => ['site', 'rounds', n] as const,
-  notices: () => ['site', 'notices'] as const,
-  faqs: () => ['site', 'faqs'] as const,
-  tiers: () => ['site', 'membership-tiers'] as const,
-  publicInfo: () => ['site', 'public-info'] as const,
-}
 
 export interface PublicSiteInfo {
   bank: BankTransferSettings
@@ -84,7 +77,8 @@ export function useMembershipTiers(): UseQueryResult<MembershipTier[]> {
       }
       return resolveTiers(readDb().site_settings.membership_tiers)
     },
-    staleTime: 10 * 60 * 1000,
+    // 운영자가 다른 탭에서 약관을 저장한 뒤 홈페이지로 돌아오면 즉시 재조회한다.
+    staleTime: 0,
   })
 }
 

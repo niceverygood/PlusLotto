@@ -60,7 +60,7 @@ export function TermsSettingsPage() {
     <form onSubmit={onSubmit}>
       <SectionCard
         title="이용약관 (등급별)"
-        desc="등급 탭에서 등급 전용 약관을 입력합니다. 등급 약관이 비어 있으면 '공통(기본)' 약관이 적용됩니다. ● 표시 = 등급 전용 약관 있음."
+        desc="등급 탭에서 등급 전용 약관을 입력합니다. 저장하면 고객 홈페이지 약관보기와 문자 약관 링크에 즉시 반영됩니다. 비어 있으면 '공통(기본)' 약관이 적용됩니다. ● 표시 = 등급 전용 약관 있음."
       >
         <Tabs tabs={tabs} value={tab} onChange={(k) => setTab(k as TermsTab)} className="mb-3" />
         <textarea

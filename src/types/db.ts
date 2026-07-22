@@ -303,7 +303,7 @@ export interface MembershipTier {
   weekly_sets: string // 주간 조합 수 표시(예: '주 5조합')
   highlights: string[] // 카드 혜택 목록
   featured: boolean // '인기' 뱃지 강조
-  terms: string // 등급별 개별약관(개별약관서) — 비우면 미노출
+  terms: string // 공개 RPC가 terms_by_grade(없으면 공통 약관)를 병합하는 고객 표시용 필드
   hidden?: boolean // true 면 고객 홈페이지(멤버십 카드·비교표)에서 숨김. 전산 편집은 계속 가능(현장 7/20)
 }
 

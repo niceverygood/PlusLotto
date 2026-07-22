@@ -8,7 +8,7 @@ import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
-import { lottoKeys, settingsKeys, smsTemplateKeys } from '@/lib/queryKeys'
+import { lottoKeys, settingsKeys, siteKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { mergeWinnerHistory, normalizeWinnerRoundStats, normalizeWinnerStats } from '@/lib/winnerStats'
 import * as supa from './supa'
 
@@ -99,7 +99,12 @@ export function useSaveSiteSettings() {
         )
       })
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: settingsKeys.all }),
+        qc.invalidateQueries({ queryKey: siteKeys.tiers() }),
+      ])
+    },
   })
 }
 

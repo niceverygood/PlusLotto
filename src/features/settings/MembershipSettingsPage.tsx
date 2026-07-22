@@ -1,13 +1,14 @@
 // 멤버십 등급 편집 (/settings/membership) — 현장 6/30, 정의현 차장.
-// 등급별 명칭·월 이용료·한 줄 소개·주간 조합·인기뱃지·핵심 혜택·개별 약관을 운영자가 직접 수정.
+// 등급별 명칭·월 이용료·한 줄 소개·주간 조합·인기뱃지·핵심 혜택을 운영자가 직접 수정.
 // 저장 → site_settings.membership_tiers → 고객 멤버십 페이지(RPC) 연동 + 명칭은 전산 전역 GRADE_LABEL 로 전파.
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { usePageMeta } from '@/app/uiStore'
 import { cn } from '@/lib/cn'
 import { Tabs, type TabItem } from '@/design-system/components'
 import type { MembershipTier, SiteSettings } from '@/types/db'
 import { TIER_GRADES, resolveTiers } from '@/lib/membership'
-import { FieldRow, SaveBar, SectionCard, hintCls, inputCls, labelCls, textareaCls } from './ui'
+import { FieldRow, SaveBar, SectionCard, inputCls, textareaCls } from './ui'
 import { useSaveSiteSettings, useSiteSettings } from './api'
 
 /** 저장 시 혜택 목록 정리(빈 줄·공백 제거). */
@@ -60,7 +61,7 @@ export function MembershipSettingsPage() {
     <form onSubmit={onSubmit}>
       <SectionCard
         title="멤버십 등급 (고객 페이지)"
-        desc="등급별 명칭·가격·혜택·약관을 직접 편집합니다. 저장하면 고객 멤버십 페이지에 즉시 반영되고, 명칭은 전산 전역(회원목록 배지·필터·드롭다운)에도 적용됩니다. ★ = 인기 뱃지."
+        desc="등급별 명칭·가격·혜택을 직접 편집합니다. 저장하면 고객 멤버십 페이지에 즉시 반영되고, 명칭은 전산 전역(회원목록 배지·필터·드롭다운)에도 적용됩니다. ★ = 인기 뱃지."
       >
         <Tabs tabs={tabs} value={tab} onChange={setTab} className="mb-4" />
 
@@ -134,18 +135,13 @@ export function MembershipSettingsPage() {
           />
         </FieldRow>
 
-        <FieldRow label="개별 약관" hint="등급 개별약관서. 비우면 고객 페이지에 노출되지 않습니다." align="start">
-          <textarea
-            rows={8}
-            className={cn(textareaCls, 'text-[12.5px] leading-relaxed')}
-            value={cur.terms}
-            onChange={(e) => update({ terms: e.target.value })}
-            placeholder="비워두면 이 등급의 개별약관 섹션이 표시되지 않습니다."
-          />
-          <p className={cn(hintCls, 'mt-1.5')}>
-            <span className={labelCls + ' inline'}>{(cur.label || cur.grade)}</span> ·{' '}
-            {cur.terms.trim().length.toLocaleString()}자
-          </p>
+        <FieldRow label="등급별 이용약관" hint="약관은 한 곳에서 관리해 고객 홈페이지와 문자 링크가 항상 같은 내용을 표시합니다.">
+          <Link
+            to="/admin/settings/terms"
+            className="inline-flex h-9 items-center rounded-md border border-primary-100 bg-primary-50 px-3 text-[12.5px] font-semibold text-primary-700 hover:border-primary-500"
+          >
+            이용약관 편집으로 이동
+          </Link>
         </FieldRow>
       </SectionCard>
 
