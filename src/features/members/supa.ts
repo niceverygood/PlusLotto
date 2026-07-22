@@ -16,7 +16,7 @@ const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
-import type { ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
+import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
 function sb(): SupabaseClient {
@@ -808,7 +808,7 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
         const meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
         await sb().from('members').update({ meta }).eq('id', m.id)
       }
-      body = recoSmsBody(m.name, issue.sets)
+      body = recoSmsBody(m.name, issue.round_no, issue.sets)
     } else if (isTerms) {
       const link = membershipTermsUrl(m.grade)
       // 기존 라이브 템플릿의 $contents도 링크로 치환해 템플릿 저장 전후 모두 전문이 발송되지 않게 한다.
@@ -911,7 +911,7 @@ export async function manualIssueReco(
   if (ue) throw ue
 
   if (v.alsoSms) {
-    const body = recoSmsBody(member.name, res.sets)
+    const body = recoSmsBody(member.name, targetRound, res.sets)
     const { realSend, sender_no } = await fetchSmsConfig()
     let status = '미발송'
     if (realSend) {
@@ -936,4 +936,19 @@ export async function manualIssueReco(
   }
   await pushLog({ kind: 'admin', actor, action: 'reco.manual_issue', target_type: 'member', target_id: v.memberId, meta: { round_no: targetRound, set_count: res.sets.length, sms: v.alsoSms } })
   return { round_no: targetRound, sets: res.sets }
+}
+
+/** 잘못 발급·발송한 추천조합 1건을 원자적으로 삭제하고 당첨 집계 대상에서 제외한다. */
+export async function deleteRecoIssue(v: DeleteRecoInput): Promise<DeleteRecoResult> {
+  const { data, error } = await sb().rpc('admin_delete_member_reco', {
+    p_member_id: v.memberId,
+    p_round_no: v.roundNo,
+    p_issued_at: v.issuedAt,
+  })
+  if (error) throw error
+  const result = data as { deleted_issues?: number; deleted_sms?: number } | null
+  return {
+    deletedIssues: result?.deleted_issues ?? 0,
+    deletedSms: result?.deleted_sms ?? 0,
+  }
 }

@@ -21,7 +21,7 @@ import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
-import type { CallRecording, Grade, WeeklyRecoIssue } from '@/types/db'
+import type { CallRecording, Grade, SmsSend, WeeklyRecoIssue } from '@/types/db'
 import {
   readCallRecordings,
   readComplaints,
@@ -32,6 +32,7 @@ import {
   useAssignStaff,
   useCallRecordingUrl,
   useDeleteCallRecording,
+  useDeleteRecoIssue,
   useDeleteMemo,
   useManualIssueReco,
   useMember,
@@ -60,6 +61,17 @@ type DrawerTab = 'info' | 'payments' | 'sms' | 'assignments' | 'reco' | 'calls' 
 function readWeeklyRecos(meta: Record<string, unknown> | undefined): WeeklyRecoIssue[] {
   const list = meta?.weekly_recos as WeeklyRecoIssue[] | undefined
   return Array.isArray(list) ? list : []
+}
+
+function linkedRecoIssue(sms: SmsSend, issues: readonly WeeklyRecoIssue[]): WeeklyRecoIssue | null {
+  if (sms.type !== 'recommend') return null
+  const sentAt = sms.sent_at ? Date.parse(sms.sent_at) : Number.NaN
+  const exact = issues.find((issue) => Number.isFinite(sentAt) && Date.parse(issue.issued_at) === sentAt)
+  if (exact) return exact
+  const roundMatch = sms.body.match(/(?:^|\n)(\d+)\.(\d{2})회차(?:\n|$)/)
+  if (!roundMatch) return null
+  const roundNo = Number(`${roundMatch[1]}${roundMatch[2]}`)
+  return issues.find((issue) => issue.round_no === roundNo) ?? null
 }
 
 const selectCls =
@@ -99,6 +111,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   const sendSms = useSendSms()
   const sendCustomSms = useSendCustomSms()
   const manualIssue = useManualIssueReco()
+  const deleteRecoIssue = useDeleteRecoIssue()
   const requestPayment = useRequestPayment()
   const updatePaymentStaff = useUpdatePaymentStaff()
   const updateSettings = useUpdateMemberSettings()
@@ -120,6 +133,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   const [issueCount, setIssueCount] = useState('') // 수동 발급 세트 수
   const [issueSms, setIssueSms] = useState(false) // 수동 발급 시 문자 발송 여부
   const [confirmSuspend, setConfirmSuspend] = useState(false)
+  const [recoToDelete, setRecoToDelete] = useState<WeeklyRecoIssue | null>(null)
   // 회원 설정(조합발송요일/갯수/홈페이지 비번/종료일/일시정지)
   const [sendDay, setSendDay] = useState('')
   const [sendCount, setSendCount] = useState('')
@@ -151,6 +165,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     setSmsBody('')
     setIssueCount('')
     setIssueSms(false)
+    setRecoToDelete(null)
   }, [member?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (templates.length && !smsTpl) setSmsTpl(templates[0].key)
@@ -210,6 +225,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     )
   }
   const id = member.id
+  const canDeleteReco = role === 'admin' || role === 'manager'
 
   // 배정이력은 최고관리자만(현장 피드백 <회원정보창> 6). 메모는 기본정보 탭 하단에 통합(현장 피드백 7/3).
   const tabs: TabItem[] = [
@@ -723,32 +739,48 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
           <TabList
             rows={sms}
             empty="발송된 문자가 없습니다."
-            render={(s) => (
-              <div key={s.id} className="border-b border-gray-100 py-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <StatusChip tone="info" label={SMS_TYPE_LABEL[s.type]} />
-                    {/* 접수 결과(문자사 접수성공=발송완료) — 추후 회원 분쟁 대처용 증빙(현장 피드백) */}
-                    {s.status && (
-                      <span
-                        className={
-                          'rounded px-1.5 py-0.5 text-[10px] font-semibold ' +
-                          (s.status.includes('완료')
-                            ? 'bg-success/10 text-success'
-                            : s.status.includes('실패')
-                              ? 'bg-danger/10 text-danger'
-                              : 'bg-gray-100 text-gray-500')
-                        }
-                      >
-                        {s.status}
-                      </span>
-                    )}
+            render={(s) => {
+              const issue = canDeleteReco ? linkedRecoIssue(s, readWeeklyRecos(member.meta)) : null
+              return (
+                <div key={s.id} className="border-b border-gray-100 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <StatusChip tone="info" label={SMS_TYPE_LABEL[s.type]} />
+                      {/* 접수 결과(문자사 접수성공=발송완료) — 추후 회원 분쟁 대처용 증빙(현장 피드백) */}
+                      {s.status && (
+                        <span
+                          className={
+                            'rounded px-1.5 py-0.5 text-[10px] font-semibold ' +
+                            (s.status.includes('완료')
+                              ? 'bg-success/10 text-success'
+                              : s.status.includes('실패')
+                                ? 'bg-danger/10 text-danger'
+                                : 'bg-gray-100 text-gray-500')
+                          }
+                        >
+                          {s.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="font-mono text-[10.5px] tnum text-gray-400">{datetime(s.sent_at)}</span>
+                      {issue && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10.5px] font-semibold text-danger hover:bg-danger-bg disabled:opacity-50"
+                          disabled={deleteRecoIssue.isPending}
+                          onClick={() => setRecoToDelete(issue)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          삭제
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className="font-mono text-[10.5px] tnum text-gray-400">{datetime(s.sent_at)}</span>
+                  <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-gray-600">{s.body}</p>
                 </div>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-gray-600">{s.body}</p>
-              </div>
-            )}
+              )
+            }}
           />
         </div>
       )}
@@ -958,11 +990,24 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
               <div className="space-y-4">
                 {issues.map((iss) => (
                   <div key={`${iss.round_no}-${iss.issued_at}`} className="rounded-md border border-gray-200 p-3">
-                    <div className="mb-2 flex items-center justify-between">
+                    <div className="mb-2 flex items-start justify-between gap-3">
                       <span className="text-[12.5px] font-bold text-ink-800">
                         {iss.round_no}회 · {iss.sets.length}세트
                       </span>
-                      <span className="font-mono text-[10.5px] tnum text-gray-400">{datetime(iss.issued_at)}</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="font-mono text-[10.5px] tnum text-gray-400">{datetime(iss.issued_at)}</span>
+                        {canDeleteReco && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10.5px] font-semibold text-danger hover:bg-danger-bg disabled:opacity-50"
+                            disabled={deleteRecoIssue.isPending}
+                            onClick={() => setRecoToDelete(iss)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            삭제
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <ul className="space-y-1.5">
                       {iss.sets.map((set, i) => (
@@ -1130,6 +1175,29 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
         confirmText="정지"
         tone="danger"
         loading={updateMember.isPending}
+      />
+      <ConfirmModal
+        open={recoToDelete !== null}
+        onClose={() => setRecoToDelete(null)}
+        onConfirm={() => {
+          if (!recoToDelete) return
+          deleteRecoIssue.mutate(
+            { memberId: id, roundNo: recoToDelete.round_no, issuedAt: recoToDelete.issued_at },
+            {
+              onSuccess: () => setRecoToDelete(null),
+              onError: (error) => window.alert(error instanceof Error ? error.message : '조합 발급내역 삭제에 실패했습니다.'),
+            },
+          )
+        }}
+        title="조합 발급·발송내역 삭제"
+        description={
+          recoToDelete
+            ? `${recoToDelete.round_no}회차 ${recoToDelete.sets.length}세트와 연결된 문자내역을 삭제합니다. 해당 조합은 당첨 집계 대상에서도 제외되며 복구할 수 없습니다.`
+            : undefined
+        }
+        confirmText="삭제"
+        tone="danger"
+        loading={deleteRecoIssue.isPending}
       />
     </Drawer>
   )

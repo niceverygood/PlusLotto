@@ -26,11 +26,17 @@ export function renderSms(
 /**
  * 추천 조합 SMS 본문 — 회원정보창 조합발송·템플릿 '추천번호' 발송·수동발급이 모두 같은 포맷을 쓰도록
  * 통일(현장 피드백 6/22: "추천번호 발송 내용 = 회원정보창 번호 문자발송 내용 동일").
- * 포맷 확정(현장 피드백 7/20, 정의현 차장): "[플러스]\n(이름)님\n[1] 1,2,3,4,5,6\n[2] ...".
+ * 포맷 확정(현장 피드백 7/22, 정의현 차장): 회차 숫자는 통신사 스팸 필터 회피를 위해
+ * 1233 → 12.33회차처럼 마지막 두 자리 앞에 점을 넣는다.
  */
-export function recoSmsBody(name: string, sets: number[][]): string {
+export function spamSafeRound(roundNo: number): string {
+  const digits = String(Math.max(0, Math.trunc(roundNo)))
+  return digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
+}
+
+export function recoSmsBody(name: string, roundNo: number, sets: number[][]): string {
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
-  return `[${BRAND.short}]\n${name || '회원'}님\n${lines.join('\n')}`
+  return `[${BRAND.short}]\n${spamSafeRound(roundNo)}회차\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
 /** 템플릿 key → 발송유형(가입·추천·당첨·약관·마케팅). 미지정 템플릿은 마케팅으로 분류. */

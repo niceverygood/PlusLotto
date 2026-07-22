@@ -543,11 +543,13 @@ const BRAND_SHORT =
 
 /**
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 포맷(자급자족 중복, 상단 참조).
- * 포맷 확정(현장 피드백 7/20, 정의현 차장): "[플러스]\n(이름)님\n[1] 1,2,3,4,5,6\n[2] ...".
+ * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33회차로 표기한다(현장 7/22).
  */
-function formatComboSms(name: string, sets: number[][]): string {
+function formatComboSms(name: string, roundNo: number, sets: number[][]): string {
+  const digits = String(Math.max(0, Math.trunc(roundNo)))
+  const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
-  return `[${BRAND_SHORT}]\n${name || '회원'}님\n${lines.join('\n')}`
+  return `[${BRAND_SHORT}]\n${safeRound}회차\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
@@ -772,7 +774,7 @@ export default async function handler(req: any, res: any) {
 
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
-        const smsBody = formatComboSms(r.name ?? '', sets)
+        const smsBody = formatComboSms(r.name ?? '', targetRound, sets)
         const sres = await sendComboSms(selfBase, r.phone, smsBody, sender)
         await sb.from('sms_sends').insert({
           // 병렬 동시삽입 PK 충돌 방지: 시간+난수+회원 꼬리.

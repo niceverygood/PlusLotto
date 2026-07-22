@@ -8,7 +8,7 @@ import { dataSource } from '@/lib/supabase'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
-import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
+import { recoSmsBody, renderSms, smsTypeForTemplate, spamSafeRound } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
@@ -1157,7 +1157,7 @@ export function useSendSms() {
             }
             freshIssues[m.id] = issue
           }
-          body = recoSmsBody(m.name, issue.sets)
+          body = recoSmsBody(m.name, issue.round_no, issue.sets)
         } else if (isTerms) {
           const link = membershipTermsUrl(m.grade)
           body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
@@ -1276,6 +1276,17 @@ export interface ManualIssueInput {
   alsoSms: boolean // true 면 조합 본문을 문자로도 발송
 }
 
+export interface DeleteRecoInput {
+  memberId: string
+  roundNo: number
+  issuedAt: string
+}
+
+export interface DeleteRecoResult {
+  deletedIssues: number
+  deletedSms: number
+}
+
 export function useManualIssueReco() {
   const user = useCurrentUser()
   const qc = useQueryClient()
@@ -1304,7 +1315,7 @@ export function useManualIssueReco() {
         if (realSend) {
           const r = await sendOneShot({
             dest_phone: member.phone,
-            msg_body: recoSmsBody(member.name, res.sets),
+            msg_body: recoSmsBody(member.name, targetRound, res.sets),
             send_phone: sms.sender_no,
           })
           smsStatus = r.ok ? '발송완료' : '실패'
@@ -1322,7 +1333,7 @@ export function useManualIssueReco() {
             member_id: m.id,
             template_key: 'recommend',
             phone: m.phone,
-            body: recoSmsBody(member.name, res.sets),
+            body: recoSmsBody(member.name, targetRound, res.sets),
             type: 'recommend',
             status: smsStatus,
             sent_at: ts,
@@ -1340,6 +1351,76 @@ export function useManualIssueReco() {
       qc.invalidateQueries({ queryKey: memberKeys.detail(v.memberId) })
       qc.invalidateQueries({ queryKey: memberKeys.sms(v.memberId) })
       qc.invalidateQueries({ queryKey: ['weekly-free-reco-status'] })
+    },
+  })
+}
+
+/**
+ * 잘못 발급·발송한 조합 1건 삭제. weekly_recos에서 제거해야 추첨 후 당첨 집계 대상에서도 빠진다.
+ * 연결된 추천 SMS 이력과 해당 회차의 추천 당첨기록도 함께 정리하고 감사로그는 보존한다.
+ */
+export function useDeleteRecoIssue() {
+  const user = useCurrentUser()
+  const invalidate = useInvalidateMembers()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: DeleteRecoInput): Promise<DeleteRecoResult> => {
+      if (dataSource === 'supabase') return supa.deleteRecoIssue(v)
+
+      const current = readDb().members.find((m) => m.id === v.memberId)
+      const issueExists = current
+        ? ((current.meta?.weekly_recos as WeeklyRecoIssue[] | undefined) ?? []).some(
+            (issue) => issue.round_no === v.roundNo && issue.issued_at === v.issuedAt,
+          )
+        : false
+      if (!issueExists) throw new Error('삭제할 조합 발급내역을 찾을 수 없습니다.')
+
+      let deletedSms = 0
+      mutateDb((db) => {
+        const member = db.members.find((m) => m.id === v.memberId)
+        if (!member) return
+        const recos = Array.isArray(member.meta?.weekly_recos)
+          ? (member.meta.weekly_recos as WeeklyRecoIssue[])
+          : []
+        const remaining = recos.filter(
+          (issue) => !(issue.round_no === v.roundNo && issue.issued_at === v.issuedAt),
+        )
+        const hasSameRound = remaining.some((issue) => issue.round_no === v.roundNo)
+        const nextMeta: Record<string, unknown> = { ...member.meta, weekly_recos: remaining }
+        if (!hasSameRound && Array.isArray(member.meta?.win_records)) {
+          nextMeta.win_records = (member.meta.win_records as { round_no?: number; source?: string }[]).filter(
+            (win) => !(win.source === 'reco' && win.round_no === v.roundNo),
+          )
+          if (member.win_history?.startsWith(`${v.roundNo}회`)) member.win_history = null
+        }
+        member.meta = nextMeta
+
+        const roundLabel = `${spamSafeRound(v.roundNo)}회차`
+        for (let i = db.sms_sends.length - 1; i >= 0; i--) {
+          const sms = db.sms_sends[i]
+          if (
+            sms.member_id === v.memberId &&
+            sms.type === 'recommend' &&
+            (sms.sent_at === v.issuedAt || sms.body.includes(roundLabel))
+          ) {
+            db.sms_sends.splice(i, 1)
+            deletedSms++
+          }
+        }
+        db.logs.push(
+          adminLog(user?.id ?? null, 'reco.issue_delete', v.memberId, {
+            round_no: v.roundNo,
+            issued_at: v.issuedAt,
+            deleted_sms: deletedSms,
+          }),
+        )
+      })
+      return { deletedIssues: 1, deletedSms }
+    },
+    onSuccess: (_result, v) => {
+      invalidate([v.memberId])
+      qc.invalidateQueries({ queryKey: memberKeys.sms(v.memberId) })
+      qc.invalidateQueries({ queryKey: ['weekly-reco-status'] })
     },
   })
 }
