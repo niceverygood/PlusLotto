@@ -549,7 +549,7 @@ function buildSiteSettings(): SiteSettings {
       name: '(주)플러스로또',
       reg_no: '000-00-00000',
       address: '서울특별시 강남구 테헤란로 000',
-      support_phone: '1522-6385',
+      support_phone: '1660-0681',
     },
     winner_stats: {
       enabled: true,

@@ -13,11 +13,15 @@ export const staffKeys = {
 
 // staff/teams 는 RLS 상 전원 읽기 허용(0002_rls.sql staff_read/teams_read using(true)) —
 // 담당자명·팀명 표시와 배정 드롭다운에 필요하므로 supabase 모드에서 라이브 조회로 분기한다.
+// 모든 관리자 리스트(관리자 화면·담당 배정 드롭다운·자동할당 대상 등)는 로그인ID 기준 정렬(현장 피드백)
+// — 이 훅 한 곳에서 정렬해 전 화면이 동일 순서를 공유한다.
 export function useStaff() {
   return useQuery({
     queryKey: staffKeys.all,
-    queryFn: async () =>
-      dataSource === 'supabase' ? (await fetchTables(['staff'])).staff : readDb().staff,
+    queryFn: async (): Promise<Staff[]> => {
+      const staff = dataSource === 'supabase' ? (await fetchTables(['staff'])).staff : readDb().staff
+      return [...staff].sort((a, b) => a.login_id.localeCompare(b.login_id))
+    },
   })
 }
 

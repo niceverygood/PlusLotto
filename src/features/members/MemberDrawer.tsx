@@ -2,7 +2,7 @@
 // 액션(등급변경·담당변경·정지·아웃콜·문자발송). 모든 액션은 api 뮤테이션 →
 // 관련 쿼리 무효화 + 로그/배정/문자 부수효과를 만든다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CreditCard, Dices, Mic, MessageSquare, Play, Send, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react'
+import { CreditCard, Dices, Mic, MessageSquare, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -19,6 +19,7 @@ import { useStaff, useTeams } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { homepageId, homepagePw } from '@/lib/homepage'
+import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
 import type { CallRecording, Grade, WeeklyRecoIssue } from '@/types/db'
 import {
@@ -417,7 +418,6 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
           <Row label="최근접속" mono>
             {member.last_active_at ? datetime(member.last_active_at) : '미접속'}
           </Row>
-          <Row label="당첨이력">{member.win_history ?? '-'}</Row>
           <Row label="홈페이지 ID" mono>
             {homepageId(member.phone) || '-'}
           </Row>
@@ -427,6 +427,8 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
           </Row>
         </dl>
       )}
+
+      {tab === 'info' && <WinHistorySection meta={member.meta} />}
 
       {tab === 'info' && (
         <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -1140,6 +1142,65 @@ function Row({ label, children, mono }: { label: string; children: ReactNode; mo
       <dd className={mono ? 'font-mono text-[12.5px] text-ink-800' : 'text-[12.5px] text-ink-800'}>
         {children}
       </dd>
+    </div>
+  )
+}
+
+// 회원 당첨내역(현장 피드백) — 회차/날짜/조합순번/당첨금액 리스트 + 등수별 통합정리(최상단).
+const WIN_RANKS = [1, 2, 3, 4, 5] as const
+const WIN_SOURCE_LABEL: Record<WinRecord['source'], string> = { reco: '추천조합', bet: '베팅' }
+
+function WinHistorySection({ meta }: { meta: Record<string, unknown> }) {
+  const records = readWinRecords(meta)
+  const summary = summarizeWinRecords(records)
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">
+      <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-bold text-gray-600">
+        <Trophy className="h-3.5 w-3.5 text-accent-500" />
+        당첨내역
+      </div>
+      {records.length === 0 ? (
+        <p className="text-[12.5px] text-gray-400">당첨 이력이 없습니다.</p>
+      ) : (
+        <>
+          {/* 통합정리(최상단) — 등수별 당첨 건수 */}
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {WIN_RANKS.filter((r) => summary[r] > 0).map((r) => (
+              <span
+                key={r}
+                className="rounded-full bg-accent-50 px-2.5 py-1 text-[11.5px] font-semibold text-accent-600"
+              >
+                {r}등 {summary[r]}회
+              </span>
+            ))}
+          </div>
+          {/* 리스트 — 회차/날짜/조합순번/당첨금액(최신순) */}
+          <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-100">
+            {records.map((w) => (
+              <div
+                key={`${w.source}:${w.round_no}:${w.combo_index}`}
+                className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-[12px]"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="font-mono tnum text-ink-800">{w.round_no}회</span>
+                  <span className="font-mono text-[11px] tnum text-gray-400">
+                    {w.draw_date ? date(w.draw_date) : '-'}
+                  </span>
+                  <span className="whitespace-nowrap rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-gray-500">
+                    {w.combo_index}번째 조합
+                  </span>
+                  <span className="text-[10.5px] text-gray-400">({WIN_SOURCE_LABEL[w.source]})</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-semibold text-accent-600">{w.rank}등</span>
+                  <span className="font-mono tnum text-ink-800">{krw(w.prize)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
