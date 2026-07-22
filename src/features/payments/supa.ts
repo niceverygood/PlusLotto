@@ -42,13 +42,14 @@ export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResul
   const filter: Record<string, unknown> = {
     status: q.status,
     search: q.search,
-    grade: q.grade,
     method: q.method,
     pg: q.pg,
     staffId: q.staffId,
     dateFrom: q.dateFrom,
     dateTo: q.dateTo,
   }
+  // 빈 문자열을 JSON 키로 보내면 DB가 실제 등급값 ''로 해석해 전체 목록이 0건이 된다.
+  if (q.grade) filter.grade = q.grade
   const { data, error } = await sb().rpc('admin_payments_page', {
     p_filter: filter,
     p_offset: Math.max(0, q.page - 1) * q.pageSize,

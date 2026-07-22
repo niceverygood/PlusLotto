@@ -131,7 +131,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   const [smsTpl, setSmsTpl] = useState('')
   const [smsBody, setSmsBody] = useState('') // 직접 입력 발송 본문
   const [issueCount, setIssueCount] = useState('') // 수동 발급 세트 수
-  const [issueSms, setIssueSms] = useState(false) // 수동 발급 시 문자 발송 여부
+  const [issueSms, setIssueSms] = useState(true) // 수동 발급 시 문자 발송 여부(현장 7/22: 기본 체크)
   const [confirmSuspend, setConfirmSuspend] = useState(false)
   const [recoToDelete, setRecoToDelete] = useState<WeeklyRecoIssue | null>(null)
   // 회원 설정(조합발송요일/갯수/홈페이지 비번/종료일/일시정지)
@@ -164,7 +164,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     setPayAmount('')
     setSmsBody('')
     setIssueCount('')
-    setIssueSms(false)
+    setIssueSms(true)
     setRecoToDelete(null)
   }, [member?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
