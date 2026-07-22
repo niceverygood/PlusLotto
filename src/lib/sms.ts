@@ -5,13 +5,19 @@ import { BRAND } from '@/lib/brand'
 
 // 템플릿 본문 변수: $name $id $pw $num $contents (CLAUDE §4 sms_templates)
 // TODO(live-verify): $pw(임시비밀번호)·$num(회차 추천번호)은 실 연동 시 실제 값 주입.
-export function renderSms(body: string, m: Member): string {
+// overrides: 템플릿별 특수 발송(예: 약관)이 $contents 등을 회원 기본값 대신 채울 때 사용(현장 7/22).
+export function renderSms(
+  body: string,
+  m: Member,
+  overrides?: Partial<Record<'name' | 'id' | 'pw' | 'num' | 'contents', string>>,
+): string {
   const vars: Record<string, string> = {
     name: m.name,
     id: m.user_id,
     pw: '****',
     num: '— 회차 추천번호 —',
     contents: m.win_history ?? '',
+    ...overrides,
   }
   return body.replace(/\$(name|id|pw|num|contents)/g, (_, k: string) => vars[k] ?? '')
 }
@@ -26,7 +32,7 @@ export function recoSmsBody(name: string, sets: number[][]): string {
   return `[${BRAND.short}]\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
-/** 템플릿 key → 발송유형(가입·추천·당첨·마케팅). 미지정 템플릿은 마케팅으로 분류. */
+/** 템플릿 key → 발송유형(가입·추천·당첨·약관·마케팅). 미지정 템플릿은 마케팅으로 분류. */
 export function smsTypeForTemplate(key: string | null): SmsType {
   switch (key) {
     case 'join':
@@ -35,6 +41,8 @@ export function smsTypeForTemplate(key: string | null): SmsType {
       return 'win'
     case 'recommend':
       return 'recommend'
+    case 'terms':
+      return 'terms'
     default:
       return 'marketing'
   }

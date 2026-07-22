@@ -61,6 +61,12 @@ export function TemplatesCard() {
             <label className={cn(labelCls, 'sr-only')} htmlFor={`tpl-${t.key}`}>
               본문
             </label>
+            {t.key === 'terms' && (
+              <p className={cn(hintCls, 'mb-1.5 mt-0')}>
+                $contents 는 발송 시 회원 등급의 개별약관(설정 &gt; 멤버십 등급의 약관 내용)으로 자동
+                치환되어, 등급별로 서로 다른 약관이 발송됩니다.
+              </p>
+            )}
             <textarea
               id={`tpl-${t.key}`}
               rows={2}

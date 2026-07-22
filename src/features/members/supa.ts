@@ -4,7 +4,7 @@
 //       쓰기는 mock 의 mutateDb 부수효과(§8)를 supabase 호출로 1:1 미러링한다.
 // TODO(live-verify): 대량(15만) 데이터에서는 목록을 server-side 필터/페이지네이션으로 이관해야 함.
 import { type SupabaseClient } from '@supabase/supabase-js'
-import type { Assignment, CallAiAnalysis, CallRecording, LottoRound, Member, MemberStatus, Payment, Product, Role, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
+import type { Assignment, CallAiAnalysis, CallRecording, Grade, LottoRound, Member, MembershipTier, MemberStatus, Payment, Product, Role, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
@@ -16,6 +16,7 @@ import { mapPool } from '@/lib/async'
 // (크론 weekly-reco 는 server-side CONC=12). 1000건 기준 순차 대비 체감 ~6배 단축.
 const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
+import { resolveTiers } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
 import type { ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
 
@@ -621,7 +622,6 @@ export async function bulkUpdateMembers(
 export async function assignStaff(ids: string[], staffId: string, actor: string | null): Promise<void> {
   const { data: st } = await sb().from('staff').select('team_id').eq('id', staffId).maybeSingle()
   const teamId = (st as { team_id: string | null } | null)?.team_id ?? null
-  await updateByIds('members', { assigned_staff_id: staffId, team_id: teamId }, ids)
   const ts = nowIso()
   const rows = ids.map((mid) => ({
     id: genId('as'),
@@ -631,8 +631,12 @@ export async function assignStaff(ids: string[], staffId: string, actor: string 
     type: 'manual' as const,
     created_at: ts,
   }))
+  // 로그(assignments) 를 먼저 남기고 회원 정보를 나중에 바꾼다(현장 피드백 7/22) — 순서가 반대면
+  // members UPDATE 는 성공했는데 assignments INSERT 가 실패할 때 "실제로는 배정됐는데 금일 디비
+  // 집계에서 누락"되는 불일치가 생긴다. 이 순서로는 최악의 경우도 "기록은 됐는데 반영 전" 상태라 안전.
   const { error: e2 } = await sb().from('assignments').insert(rows)
   if (e2) throw e2
+  await updateByIds('members', { assigned_staff_id: staffId, team_id: teamId }, ids)
   await pushLog({ kind: 'admin', actor, action: 'member.assign', meta: { count: ids.length, staff_id: staffId } })
 }
 
@@ -652,23 +656,29 @@ export async function autoAssign(
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
   if (reps.length === 0) return
   const ts = nowIso()
-  const asg: Record<string, unknown>[] = []
-  let i = 0
   // TODO(live-verify): rep 순서 결정성 — 라이브에서는 order by 로 고정 권장.
-  for (const mid of ids) {
-    const rep = reps[i % reps.length]
-    i++
-    const { error } = await sb().from('members').update({ assigned_staff_id: rep.id, team_id: rep.team_id }).eq('id', mid)
-    if (error) throw error
-    asg.push({ id: genId('as'), member_id: mid, staff_id: rep.id, assigned_by: actor, type: 'auto', created_at: ts })
-  }
+  const plan = ids.map((mid, i) => ({ mid, rep: reps[i % reps.length] }))
+  const asg = plan.map(({ mid, rep }) => ({
+    id: genId('as'),
+    member_id: mid,
+    staff_id: rep.id,
+    assigned_by: actor,
+    type: 'auto' as const,
+    created_at: ts,
+  }))
+  // 로그(assignments) 를 먼저 통째로 남기고, 그 다음 회원별 담당자를 갱신한다(현장 피드백 7/22).
+  // 기존엔 회원 업데이트를 먼저 순차 실행해, 루프 중간에 실패하면 이미 바뀐 담당자가 assignments
+  // 로그(=금일 디비 집계 소스) 에는 전혀 안 남는 불일치가 있었다.
   const { error: e2 } = await sb().from('assignments').insert(asg)
   if (e2) throw e2
+  for (const { mid, rep } of plan) {
+    const { error } = await sb().from('members').update({ assigned_staff_id: rep.id, team_id: rep.team_id }).eq('id', mid)
+    if (error) throw error
+  }
   await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length } })
 }
 
 export async function resetAssign(ids: string[], actor: string | null): Promise<void> {
-  await updateByIds('members', { assigned_staff_id: null, team_id: null }, ids)
   const ts = nowIso()
   const rows = ids.map((mid) => ({
     id: genId('as'),
@@ -678,8 +688,10 @@ export async function resetAssign(ids: string[], actor: string | null): Promise<
     type: 'manual' as const,
     created_at: ts,
   }))
+  // 로그 먼저, 회원 정보 나중(현장 피드백 7/22) — assignStaff/autoAssign 과 동일 원칙.
   const { error: e2 } = await sb().from('assignments').insert(rows)
   if (e2) throw e2
+  await updateByIds('members', { assigned_staff_id: null, team_id: null }, ids)
   await pushLog({ kind: 'admin', actor, action: 'member.reset_assign', meta: { count: ids.length } })
 }
 
@@ -749,14 +761,22 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
   // 추천번호 템플릿 발송: 회원정보창 조합발송과 '동일 본문'(실제 발급조합)으로 통일(현장 피드백 6/22).
   // 회원에게 대상 회차 발급분이 없으면 즉석 발급 후 meta 적재(홈페이지 조회분과 일치).
   const isReco = templateKey === 'recommend'
+  // 약관 템플릿: $contents 를 회원 등급의 개별약관(설정 > 멤버십 등급)으로 치환(현장 피드백 7/22).
+  const isTerms = templateKey === 'terms'
   let recoRounds: LottoRound[] = []
   let recoSettings: SiteSettings | null = null
   let recoTarget = 0
+  let tiersByGrade: Map<Grade, MembershipTier> | null = null
   if (isReco) {
     recoRounds = await selectAll<LottoRound>('lotto_rounds')
     const { data: sData } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
     recoSettings = sData as SiteSettings
     recoTarget = recoRounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
+  }
+  if (isTerms) {
+    const { data: sData } = await sb().from('site_settings').select('membership_tiers').eq('id', 1).maybeSingle()
+    const tiers = (sData as { membership_tiers: MembershipTier[] } | null)?.membership_tiers
+    tiersByGrade = new Map(resolveTiers(tiers).map((t) => [t.grade, t]))
   }
 
   // 제한 동시성(SMS_SEND_CONC)으로 발송 — 순차 1건씩이면 1000건에 수십분 걸려 탭 끊김 위험.
@@ -778,6 +798,9 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
         await sb().from('members').update({ meta }).eq('id', m.id)
       }
       body = recoSmsBody(m.name, issue.sets)
+    } else if (isTerms) {
+      const contents = tiersByGrade?.get(m.grade)?.terms?.trim() || '등록된 약관 내용이 없습니다.'
+      body = tpl ? renderSms(tpl.body, m, { contents }) : contents
     } else {
       body = tpl ? renderSms(tpl.body, m) : ''
       if (type === 'marketing' && adOptout) body = `(광고)${body}\n무료거부 ${adOptout}`

@@ -40,6 +40,7 @@ export const SMS_TYPE_LABEL: Record<SmsType, string> = {
   join: '가입',
   recommend: '추천',
   win: '당첨',
+  terms: '약관',
   marketing: '마케팅',
   direct: '직접입력',
 }

@@ -52,7 +52,7 @@ const DB_KEY = 'pluslotto-db'
 // v12: 유입구분 '구디비' 추가 + member.consult_status(상담상태) 추가(현장 피드백).
 // v13: 역할별 메뉴 축소(팀장=이용자·나의고객, 실장=로또 제외) + 등급별 약관(현장 피드백 6/11).
 // v16: 당첨자 수를 current+admin 로그 이력으로 전환 + 생성기록을 회차·등급 로직 중심으로 전환.
-const DB_VERSION = 17
+const DB_VERSION = 18
 
 interface Persisted {
   __v: number
