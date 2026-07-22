@@ -99,6 +99,7 @@ export type PaymentStatusTab = (typeof PAYMENT_STATUS_TABS)[number]
 export interface PaymentsQuery {
   status?: PaymentStatusTab
   search?: string
+  grade?: Grade | '' // 결제 상품이 부여하는 회원등급(실버/골드/다이아 매출 구분)
   method?: PaymentMethod | ''
   pg?: string
   staffId?: string
@@ -124,6 +125,7 @@ function paymentDateStr(p: PaymentRow): string {
 
 function matchFilters(p: PaymentRow, q: PaymentsQuery): boolean {
   if (q.status && q.status !== 'all' && p.status !== q.status) return false
+  if (q.grade && p.product?.grade_granted !== q.grade) return false
   if (q.method && p.method !== q.method) return false
   if (q.pg && p.pg_provider !== q.pg) return false
   if (q.staffId && p.staff_id !== q.staffId) return false

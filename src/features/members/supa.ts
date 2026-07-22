@@ -2,7 +2,7 @@
 // 설계: 읽기는 RLS 가 역할 스코프를 처리하고 목록/뷰/검색/정렬/페이지는 서버 RPC에서 끝낸다.
 //       쓰기는 mock 의 mutateDb 부수효과(§8)를 supabase 호출로 1:1 미러링한다.
 import { type SupabaseClient } from '@supabase/supabase-js'
-import type { Assignment, CallAiAnalysis, CallRecording, Grade, LottoRound, Member, MembershipTier, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
+import type { Assignment, CallAiAnalysis, CallRecording, LottoRound, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
@@ -14,7 +14,7 @@ import { mapPool } from '@/lib/async'
 // (크론 weekly-reco 는 server-side CONC=12). 1000건 기준 순차 대비 체감 ~6배 단축.
 const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
-import { resolveTiers } from '@/lib/membership'
+import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
 import type { ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
@@ -778,22 +778,16 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
   // 추천번호 템플릿 발송: 회원정보창 조합발송과 '동일 본문'(실제 발급조합)으로 통일(현장 피드백 6/22).
   // 회원에게 대상 회차 발급분이 없으면 즉석 발급 후 meta 적재(홈페이지 조회분과 일치).
   const isReco = templateKey === 'recommend'
-  // 약관 템플릿: $contents 를 회원 등급의 개별약관(설정 > 멤버십 등급)으로 치환(현장 피드백 7/22).
+  // 약관 템플릿: 약관 전문 대신 회원 등급의 공개 약관 페이지 링크를 발송(현장 피드백 7/22).
   const isTerms = templateKey === 'terms'
   let recoRounds: LottoRound[] = []
   let recoSettings: SiteSettings | null = null
   let recoTarget = 0
-  let tiersByGrade: Map<Grade, MembershipTier> | null = null
   if (isReco) {
     recoRounds = await selectAll<LottoRound>('lotto_rounds')
     const { data: sData } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
     recoSettings = sData as SiteSettings
     recoTarget = recoRounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
-  }
-  if (isTerms) {
-    const { data: sData } = await sb().from('site_settings').select('membership_tiers').eq('id', 1).maybeSingle()
-    const tiers = (sData as { membership_tiers: MembershipTier[] } | null)?.membership_tiers
-    tiersByGrade = new Map(resolveTiers(tiers).map((t) => [t.grade, t]))
   }
 
   // 제한 동시성(SMS_SEND_CONC)으로 발송 — 순차 1건씩이면 1000건에 수십분 걸려 탭 끊김 위험.
@@ -816,8 +810,9 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
       }
       body = recoSmsBody(m.name, issue.sets)
     } else if (isTerms) {
-      const contents = tiersByGrade?.get(m.grade)?.terms?.trim() || '등록된 약관 내용이 없습니다.'
-      body = tpl ? renderSms(tpl.body, m, { contents }) : contents
+      const link = membershipTermsUrl(m.grade)
+      // 기존 라이브 템플릿의 $contents도 링크로 치환해 템플릿 저장 전후 모두 전문이 발송되지 않게 한다.
+      body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
     } else {
       body = tpl ? renderSms(tpl.body, m) : ''
       if (type === 'marketing' && adOptout) body = `(광고)${body}\n무료거부 ${adOptout}`

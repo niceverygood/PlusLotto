@@ -59,12 +59,12 @@ export function MembersPage() {
   const { data: staff = [] } = useStaff()
 
   const [moreOpen, setMoreOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [importing, setImporting] = useState(false)
 
   // ── URL → 쿼리 상태 ──────────────────────────────
   const viewKey = get('view') ?? 'all'
+  const selectedId = get('member') ?? null
   const search = get('q') ?? ''
   const page = Math.max(1, Number(get('page') ?? '1') || 1)
   const sizeRaw = Number(get('size') ?? '') || DEFAULT_PAGE_SIZE
@@ -396,7 +396,7 @@ export function MembersPage() {
         data={data?.rows ?? []}
         getRowId={(m) => m.id}
         isLoading={isLoading}
-        onRowClick={(m) => setSelectedId(m.id)}
+        onRowClick={(m) => set('member', m.id)}
         enableSelection
         bulkActions={(ctx) => <MemberBulkActions {...ctx} />}
         sorting={sorting}
@@ -419,7 +419,7 @@ export function MembersPage() {
         }}
       />
 
-      <MemberDrawer memberId={selectedId} onClose={() => setSelectedId(null)} />
+      <MemberDrawer memberId={selectedId} onClose={() => set('member', null)} />
       {creating && <MemberCreateDrawer onClose={() => setCreating(false)} />}
       {importing && <ImportMembersModal onClose={() => setImporting(false)} />}
     </div>

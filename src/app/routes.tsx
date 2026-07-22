@@ -39,6 +39,7 @@ import { MyPage as SiteMyPage } from '@/features/site/MyPage'
 import { LoginPage as SiteLoginPage } from '@/features/site/LoginPage'
 import { SignupPage as SiteSignupPage } from '@/features/site/SignupPage'
 import { SupportPage as SiteSupportPage } from '@/features/site/SupportPage'
+import { TermsPage as SiteTermsPage } from '@/features/site/TermsPage'
 import { useRole } from '@/lib/auth'
 
 // 랜딩 분기(현장 피드백 6/11): 팀장(rep)은 메뉴가 이용자·나의고객뿐이라 /admin/members 로 보낸다.
@@ -97,6 +98,7 @@ export function AppRoutes() {
         <Route path="login" element={<SiteLoginPage />} />
         <Route path="signup" element={<SiteSignupPage />} />
         <Route path="support" element={<SiteSupportPage />} />
+        <Route path="terms/:grade" element={<SiteTermsPage />} />
       </Route>
 
       {/* 구 /portal 주소 호환 (문자·안내 링크 보존) */}

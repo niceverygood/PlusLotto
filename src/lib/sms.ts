@@ -3,13 +3,13 @@
 import type { Member, SmsType } from '@/types/db'
 import { BRAND } from '@/lib/brand'
 
-// 템플릿 본문 변수: $name $id $pw $num $contents (CLAUDE §4 sms_templates)
+// 템플릿 본문 변수: $name $id $pw $num $contents $link (CLAUDE §4 sms_templates)
 // TODO(live-verify): $pw(임시비밀번호)·$num(회차 추천번호)은 실 연동 시 실제 값 주입.
 // overrides: 템플릿별 특수 발송(예: 약관)이 $contents 등을 회원 기본값 대신 채울 때 사용(현장 7/22).
 export function renderSms(
   body: string,
   m: Member,
-  overrides?: Partial<Record<'name' | 'id' | 'pw' | 'num' | 'contents', string>>,
+  overrides?: Partial<Record<'name' | 'id' | 'pw' | 'num' | 'contents' | 'link', string>>,
 ): string {
   const vars: Record<string, string> = {
     name: m.name,
@@ -17,9 +17,10 @@ export function renderSms(
     pw: '****',
     num: '— 회차 추천번호 —',
     contents: m.win_history ?? '',
+    link: '',
     ...overrides,
   }
-  return body.replace(/\$(name|id|pw|num|contents)/g, (_, k: string) => vars[k] ?? '')
+  return body.replace(/\$(name|id|pw|num|contents|link)/g, (_, k: string) => vars[k] ?? '')
 }
 
 /**

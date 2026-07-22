@@ -1,6 +1,6 @@
 // 결제 목록 (CLAUDE §6·§8). 상태 탭(전체/대기/승인/실패/취소) + FilterBar(검색·결제수단·PG·담당,
 // URL 동기화) + DataTable(서버 정렬·페이지) + 행 클릭 → 상세 Drawer(승인/PG취소). 수기결제 등록 링크.
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
@@ -16,8 +16,8 @@ import {
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useStaff } from '@/lib/staff'
-import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
-import type { PaymentMethod } from '@/types/db'
+import { GRADE_LABEL, PAYMENT_METHOD_LABEL } from '@/design-system/labels'
+import type { Grade, PaymentMethod } from '@/types/db'
 import {
   PAYMENT_STATUS_TABS,
   usePaymentCounts,
@@ -30,6 +30,7 @@ import { PaymentDrawer } from './PaymentDrawer'
 
 const PAGE_SIZE = 50
 const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg']
+const PRODUCT_GRADES: Grade[] = ['goldp', 'vip', 'royal']
 const PG_PROVIDERS = ['웰컴페이먼츠', '페이허브', '플러스페이']
 const TAB_LABEL: Record<PaymentStatusTab, string> = {
   all: '전체',
@@ -58,6 +59,8 @@ export function PaymentsPage() {
   const sortDesc = sortDirRaw === 'desc'
 
   const methodF = get('m') as PaymentMethod | undefined
+  const gradeRaw = get('g') as Grade | undefined
+  const gradeF = gradeRaw && PRODUCT_GRADES.includes(gradeRaw) ? gradeRaw : undefined
   const pgF = get('pg')
   const staffF = get('staff')
   const dateFromF = get('rf') // 결제일 범위(현장 피드백)
@@ -66,6 +69,7 @@ export function PaymentsPage() {
   const query: PaymentsQuery = {
     status: statusTab,
     search,
+    grade: gradeF ?? '',
     method: methodF ?? '',
     pg: pgF,
     staffId: staffF,
@@ -87,9 +91,13 @@ export function PaymentsPage() {
   }, [staff])
 
   const pageOffset = (page - 1) * PAGE_SIZE
+  const openMember = useCallback(
+    (memberId: string) => navigate(`/admin/members?member=${encodeURIComponent(memberId)}`),
+    [navigate],
+  )
   const columns = useMemo(
-    () => paymentColumns({ pageOffset, staffNames }),
-    [pageOffset, staffNames],
+    () => paymentColumns({ pageOffset, staffNames, onMemberClick: openMember }),
+    [openMember, pageOffset, staffNames],
   )
 
   const sorting: SortingState = sortId ? [{ id: sortId, desc: sortDesc }] : []
@@ -106,6 +114,8 @@ export function PaymentsPage() {
   }))
 
   const chips: FilterChip[] = []
+  if (gradeF)
+    chips.push({ key: 'g', label: `등급: ${GRADE_LABEL[gradeF]}`, onRemove: () => remove('g') })
   if (methodF)
     chips.push({ key: 'm', label: `수단: ${PAYMENT_METHOD_LABEL[methodF]}`, onRemove: () => remove('m') })
   if (pgF) chips.push({ key: 'pg', label: `PG: ${pgF}`, onRemove: () => remove('pg') })
@@ -146,7 +156,21 @@ export function PaymentsPage() {
         chips={chips}
         onClearAll={chips.length > 0 ? () => clear(['st']) : undefined}
       >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <Field label="회원등급">
+            <select
+              className={selectCls}
+              value={gradeF ?? ''}
+              onChange={(e) => set('g', e.target.value || null, { resetPage: true })}
+            >
+              <option value="">전체</option>
+              {PRODUCT_GRADES.map((grade) => (
+                <option key={grade} value={grade}>
+                  {GRADE_LABEL[grade]}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="결제수단">
             <select
               className={selectCls}

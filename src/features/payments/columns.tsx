@@ -9,6 +9,7 @@ import type { PaymentRow } from './api'
 export interface PaymentColumnsCtx {
   pageOffset: number
   staffNames: Record<string, string>
+  onMemberClick: (memberId: string) => void
 }
 
 export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] {
@@ -115,10 +116,17 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
         const m = info.row.original.member
         if (!m) return <span className="text-gray-300">-</span>
         return (
-          <div className="leading-tight">
+          <button
+            type="button"
+            className="text-left leading-tight hover:underline"
+            onClick={(event) => {
+              event.stopPropagation()
+              ctx.onMemberClick(m.id)
+            }}
+          >
             <div className="font-semibold text-ink-800">{m.name}</div>
             <div className="font-mono text-[10.5px] text-gray-400">{m.user_id}</div>
-          </div>
+          </button>
         )
       },
     },

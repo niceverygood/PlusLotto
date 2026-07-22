@@ -699,8 +699,8 @@ export function buildSeed(): DbShape {
       { key: 'join', title: '가입 환영', body: '[플러스로또] $name님 가입을 환영합니다. 아이디: $id / 임시비밀번호: $pw', category: 'join' },
       { key: 'recommend', title: '추천번호 안내', body: '[플러스로또] $name님 이번 회차 추천번호: $num', category: 'recommend' },
       { key: 'win', title: '당첨 안내', body: '[플러스로또] $name님 $contents', category: 'win' },
-      // 약관 안내(현장 피드백 7/22) — $contents 는 회원 등급의 개별약관(설정 > 멤버십 등급)으로 자동 치환.
-      { key: 'terms', title: '약관 안내', body: '[플러스로또] $name님, 가입하신 등급의 이용약관을 안내드립니다.\n\n$contents', category: 'terms' },
+      // 약관 안내(현장 피드백 7/22) — 전문 대신 회원 등급의 공개 약관 페이지 링크 발송.
+      { key: 'terms', title: '약관 안내', body: '[플러스로또] $name님, 가입하신 등급의 이용약관을 확인해 주세요.\n$link', category: 'terms' },
     ],
     members,
     payments,

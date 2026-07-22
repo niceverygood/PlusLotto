@@ -9,6 +9,7 @@ import { usePageMeta } from '@/app/uiStore'
 import { SMS_TYPE_LABEL } from '@/design-system/labels'
 import { datetime, phone } from '@/lib/format'
 import { renderSms } from '@/lib/sms'
+import { membershipTermsUrl } from '@/lib/membership'
 import type { SmsType } from '@/types/db'
 import { useMyCustomers, useMySmsLog, useSendSms, useSmsTemplates, type MembersQuery } from './api'
 import { getView } from './views'
@@ -40,7 +41,13 @@ export function MySmsPage() {
   const activeTpl = templates.find((t) => t.key === tplKey) ?? templates[0]
   const preview = useMemo(() => {
     if (!activeTpl) return ''
-    return recipRows[0] ? renderSms(activeTpl.body, recipRows[0]) : activeTpl.body
+    const member = recipRows[0]
+    if (!member) return activeTpl.body
+    if (activeTpl.key === 'terms') {
+      const link = membershipTermsUrl(member.grade)
+      return renderSms(activeTpl.body, member, { link, contents: link })
+    }
+    return renderSms(activeTpl.body, member)
   }, [activeTpl, recipRows])
 
   const canSend = !!activeTpl && recipCount > 0 && !sendSms.isPending

@@ -2,7 +2,8 @@
 // 액션: 승인 / PG취소 — 둘 다 회원 등급·매출에 §8 부수효과가 있으므로 확인 모달(§10).
 // 결제내역 수정(금액·결제수단·PG사·입금자명)은 실장 이상 전용(현장 피드백 7/21).
 import { useMemo, useState, type ReactNode } from 'react'
-import { Check, Pencil, X, XCircle } from 'lucide-react'
+import { Check, Pencil, UserRound, X, XCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Badge, Button, ConfirmModal, Drawer, StatusChip } from '@/design-system/components'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import { datetime, krw } from '@/lib/format'
@@ -24,6 +25,7 @@ export function PaymentDrawer({
   paymentId: string | null
   onClose: () => void
 }) {
+  const navigate = useNavigate()
   const open = !!paymentId
   const { data: payment } = usePayment(paymentId)
   const { data: staff = [] } = useStaff()
@@ -54,19 +56,21 @@ export function PaymentDrawer({
     )
   }
 
+  const currentPayment = payment
   const id = payment.id
   const busy = approve.isPending || cancel.isPending
   const canApprove = payment.status === 'wait' || payment.status === 'failed'
   const canCancel = payment.status === 'approved' || payment.status === 'wait'
+  const member = payment.member
   // 결제내역 수정은 실장 이상(leader/manager/admin) 전용 — 팀장(rep)은 승인/취소만 가능(현장 피드백 7/21).
   const canEdit = role === 'leader' || role === 'manager' || role === 'admin'
 
   function startEdit(): void {
     setDraft({
-      amount: String(payment!.amount),
-      method: payment!.method,
-      pgProvider: payment!.pg_provider ?? '',
-      depositorName: payment!.depositor_name ?? '',
+      amount: String(currentPayment.amount),
+      method: currentPayment.method,
+      pgProvider: currentPayment.pg_provider ?? '',
+      depositorName: currentPayment.depositor_name ?? '',
     })
     setIsEditing(true)
   }
@@ -199,7 +203,23 @@ export function PaymentDrawer({
             </>
           )}
         </Row>
-        <Row label="회원">{payment.member?.name ?? '-'}</Row>
+        <Row label="회원">
+          {member ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 font-semibold text-primary-600 hover:underline"
+              onClick={() => {
+                onClose()
+                navigate(`/admin/members?member=${encodeURIComponent(member.id)}`)
+              }}
+            >
+              <UserRound className="h-3.5 w-3.5" />
+              {member.name} · 기본정보 보기
+            </button>
+          ) : (
+            '-'
+          )}
+        </Row>
         <Row label="유저 ID" mono>
           {payment.member?.user_id ?? '-'}
         </Row>

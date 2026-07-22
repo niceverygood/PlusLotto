@@ -8,8 +8,18 @@ import type { Grade, MembershipTier } from '@/types/db'
 export const TIER_GRADES = ['free', 'gold', 'goldp', 'vip', 'royal'] as const
 export type TierGrade = (typeof TIER_GRADES)[number]
 
-export function isTierGrade(g: Grade): g is TierGrade {
+export function isTierGrade(g: string): g is TierGrade {
   return (TIER_GRADES as readonly string[]).includes(g)
+}
+
+/** 고객 공개 등급 약관 주소. 관리자와 고객 사이트가 같은 origin을 쓰므로 문자에도 그대로 사용한다. */
+export function membershipTermsPath(grade: Grade): string {
+  return `/terms/${grade}`
+}
+
+export function membershipTermsUrl(grade: Grade): string {
+  const path = membershipTermsPath(grade)
+  return typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
 }
 
 // 코드 기본값 = 종전 하드코딩 카드 내용(라벨은 GRADE_LABEL 기본값과 동일). 운영자가 저장 전까지 그대로 노출.

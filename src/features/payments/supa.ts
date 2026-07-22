@@ -42,6 +42,7 @@ export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResul
   const filter: Record<string, unknown> = {
     status: q.status,
     search: q.search,
+    grade: q.grade,
     method: q.method,
     pg: q.pg,
     staffId: q.staffId,

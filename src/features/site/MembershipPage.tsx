@@ -15,7 +15,7 @@ import { Banknote, Check, Crown, FileText, Headphones, Minus, Sparkles } from 'l
 import type { Grade, MembershipTier } from '@/types/db'
 import { Badge } from '@/design-system/components'
 import { cn } from '@/lib/cn'
-import { DEFAULT_MEMBERSHIP_TIERS, type TierGrade, visibleTiers } from '@/lib/membership'
+import { DEFAULT_MEMBERSHIP_TIERS, membershipTermsPath, type TierGrade, visibleTiers } from '@/lib/membership'
 import { useMemberAuth } from './auth'
 import { useMembershipTiers, usePublicSiteInfo } from './api'
 
@@ -120,7 +120,15 @@ function TierCard({ tier, isCurrent }: { tier: MembershipTier; isCurrent: boolea
         ))}
       </ul>
 
-      {/* CTA */}
+      {/* 등급별 약관 → 가입 문의 순서(현장 피드백 7/22) */}
+      <Link
+        to={membershipTermsPath(tier.grade)}
+        className="mb-2 inline-flex items-center justify-center gap-1.5 rounded-[7px] border border-gray-300 bg-white px-3.5 py-2.5 text-[13px] font-bold text-gray-700 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
+      >
+        <FileText className="h-3.5 w-3.5" />
+        약관보기
+      </Link>
+
       <Link
         to="/support"
         className={cn(
@@ -152,7 +160,6 @@ export function MembershipPage() {
     const m = new Map(allTiers.map((t) => [t.grade, t.label]))
     return (g: Grade): string | undefined => m.get(g)
   }, [allTiers])
-  const tiersWithTerms = tiers.filter((t) => t.terms.trim())
 
   return (
     <div className="font-sans">
@@ -279,36 +286,6 @@ export function MembershipPage() {
             안내드립니다.
           </p>
         </div>
-
-        {/* ── 등급별 개별약관 (전산 편집) ────────────────────── */}
-        {tiersWithTerms.length > 0 && (
-          <div className="mt-14">
-            <h2 className="text-[22px] font-extrabold text-ink-900">등급별 이용약관</h2>
-            <p className="mt-1 text-[13.5px] text-gray-500">
-              각 등급의 개별약관서입니다. 가입 전 반드시 확인해 주세요.
-            </p>
-            <div className="mt-4 space-y-2.5">
-              {tiersWithTerms.map((t) => {
-                const tone = GRADE_TONE[t.grade]
-                return (
-                  <details key={t.grade} className="group rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[14px] font-bold text-ink-900">
-                      <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', tone.dot)} />
-                      <FileText className={cn('h-4 w-4', tone.text)} />
-                      {t.label} 개별약관서
-                      <span className="ml-auto text-[12px] font-medium text-gray-400 group-open:hidden">
-                        펼치기
-                      </span>
-                    </summary>
-                    <div className="whitespace-pre-wrap border-t border-gray-100 px-4 py-3.5 text-[12.5px] leading-relaxed text-gray-600">
-                      {t.terms}
-                    </div>
-                  </details>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* ── 결제 안내(무통장 입금) ─────────────────────────── */}
         {bank && bank.account_no && (

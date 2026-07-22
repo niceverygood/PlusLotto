@@ -11,7 +11,7 @@ import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys 
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { resolveExcludeForGrade } from '@/lib/lotto'
-import { resolveTiers } from '@/lib/membership'
+import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
 import { filterMembers, getView, MEMBER_VIEWS, type MemberFilter } from './views'
 import * as supa from './supa'
@@ -1134,11 +1134,8 @@ export function useSendSms() {
       const recoTarget = isReco ? cur.lotto_rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1 : 0
       const freshIssues: Record<string, WeeklyRecoIssue> = {}
 
-      // 약관 템플릿: $contents 를 회원 등급의 개별약관(설정 > 멤버십 등급)으로 치환(현장 피드백 7/22).
+      // 약관 템플릿: 약관 전문 대신 회원 등급의 공개 약관 페이지 링크를 발송(현장 피드백 7/22).
       const isTerms = v.templateKey === 'terms'
-      const tiersByGrade = isTerms
-        ? new Map(resolveTiers(cur.site_settings.membership_tiers).map((t) => [t.grade, t]))
-        : null
 
       const records: SmsSend[] = []
       for (const m of targets) {
@@ -1162,8 +1159,8 @@ export function useSendSms() {
           }
           body = recoSmsBody(m.name, issue.sets)
         } else if (isTerms) {
-          const contents = tiersByGrade?.get(m.grade)?.terms?.trim() || '등록된 약관 내용이 없습니다.'
-          body = tpl ? renderSms(tpl.body, m, { contents }) : contents
+          const link = membershipTermsUrl(m.grade)
+          body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
         } else {
           body = tpl ? renderSms(tpl.body, m) : ''
           if (type === 'marketing' && sms?.ad_optout) body = `(광고)${body}\n무료거부 ${sms.ad_optout}`

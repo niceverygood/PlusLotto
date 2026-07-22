@@ -1,6 +1,6 @@
 // 기본 문자 멘트 템플릿(sms_templates) 편집 카드 — site_settings 와 별도 엔터티.
 // 저장 시 members(드로어·일괄·나의문자)의 동일 키 캐시도 함께 갱신(§8).
-// 변수: $name $id $pw $num $contents (lib/sms.renderSms 와 동일 — 라이브 확인 TODO).
+// 변수: $name $id $pw $num $contents $link (lib/sms.renderSms 와 동일).
 import { useEffect, useState } from 'react'
 import type { SmsTemplate } from '@/types/db'
 import { Button } from '@/design-system/components'
@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { SectionCard, hintCls, inputCls, labelCls, textareaCls } from './ui'
 import { useSaveSmsTemplates, useSmsTemplates } from './api'
 
-const VARS = ['$name', '$id', '$pw', '$num', '$contents']
+const VARS = ['$name', '$id', '$pw', '$num', '$contents', '$link']
 
 export function TemplatesCard() {
   const { data: templates } = useSmsTemplates()
@@ -63,8 +63,8 @@ export function TemplatesCard() {
             </label>
             {t.key === 'terms' && (
               <p className={cn(hintCls, 'mb-1.5 mt-0')}>
-                $contents 는 발송 시 회원 등급의 개별약관(설정 &gt; 멤버십 등급의 약관 내용)으로 자동
-                치환되어, 등급별로 서로 다른 약관이 발송됩니다.
+                $link 는 회원 등급의 공개 약관 페이지 주소로 자동 치환됩니다. 약관 전문은 문자에
+                포함하지 않습니다. 기존 $contents 변수도 호환을 위해 같은 링크로 치환됩니다.
               </p>
             )}
             <textarea
