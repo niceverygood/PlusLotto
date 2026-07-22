@@ -9,6 +9,7 @@ import { nowIso } from '@/lib/db/store'
 import { insertLog, fetchSiteSettings, patchSiteSettings, sb, selectAll } from '@/lib/db/remote'
 import { gradeRank, lottoSum, oddEven, prizeForRank } from '@/lib/lotto'
 import { makeGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
+import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
 import { generateIssueSets, generateRecommendation } from '@/lib/lottoGenerator'
 import {
   resolveExcludeForGrade,
@@ -18,7 +19,7 @@ import {
   type WeeklyIssueResult,
 } from './api'
 
-/** 당첨 확정: 회차 베팅 등수/당첨금 (재)산정 + 1~3등 회원 win_history 갱신. 멱등. */
+/** 당첨 확정: 회차 베팅 등수/당첨금 (재)산정 + 1~3등 회원 win_history/win_records 갱신. 멱등. */
 export async function confirmRound(roundNo: number, actor: string | null): Promise<void> {
   const { data: rData, error: re } = await sb()
     .from('lotto_rounds')
@@ -33,8 +34,18 @@ export async function confirmRound(roundNo: number, actor: string | null): Promi
   if (be) throw be
   const bets = (bData ?? []) as Bet[]
 
+  // 회원별 당첨내역 누적(§ 회원상세 "당첨이력") — bet/reco 각각의 새 WinRecord 를 모아 회원당 한 번에 반영.
+  const freshByMember = new Map<string, WinRecord[]>()
+  const winHistoryByMember = new Map<string, string>()
+  const addFresh = (memberId: string, w: WinRecord) => {
+    const arr = freshByMember.get(memberId) ?? []
+    arr.push(w)
+    freshByMember.set(memberId, arr)
+  }
+
   let winners = 0
   let prizeSum = 0
+  const betIndexByMember = new Map<string, number>()
   for (const bet of bets) {
     const rank = gradeRank(bet.numbers, round.numbers, round.bonus)
     const prize = prizeForRank(round, rank)
@@ -44,12 +55,20 @@ export async function confirmRound(roundNo: number, actor: string | null): Promi
       winners += 1
       prizeSum += prize ?? 0
     }
-    if (rank != null && rank <= 3 && bet.member_ref) {
-      const { error: me } = await sb()
-        .from('members')
-        .update({ win_history: `${roundNo}회 ${rank}등` })
-        .eq('id', bet.member_ref)
-      if (me) throw me
+    if (bet.member_ref) {
+      const idx = (betIndexByMember.get(bet.member_ref) ?? 0) + 1
+      betIndexByMember.set(bet.member_ref, idx)
+      if (rank != null && rank <= 3) {
+        winHistoryByMember.set(bet.member_ref, `${roundNo}회 ${rank}등`)
+        addFresh(bet.member_ref, {
+          round_no: roundNo,
+          draw_date: round.draw_date,
+          rank,
+          prize: prize ?? 0,
+          combo_index: idx,
+          source: 'bet',
+        })
+      }
     }
   }
 
@@ -63,21 +82,39 @@ export async function confirmRound(roundNo: number, actor: string | null): Promi
     if (!issue) continue
     let best: number | null = null
     let wins = 0
-    for (const set of issue.sets) {
+    issue.sets.forEach((set, i) => {
       const rk = gradeRank(set, round.numbers, round.bonus)
-      if (rk != null) {
-        wins += 1
-        if (best === null || rk < best) best = rk
-      }
-    }
+      if (rk == null) return
+      wins += 1
+      if (best === null || rk < best) best = rk
+      addFresh(m.id, {
+        round_no: roundNo,
+        draw_date: round.draw_date,
+        rank: rk,
+        prize: prizeForRank(round, rk) ?? 0,
+        combo_index: i + 1,
+        source: 'reco',
+      })
+    })
     if (best != null) {
       winners += 1
-      const { error: we } = await sb()
-        .from('members')
-        .update({ win_history: `${roundNo}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}` })
-        .eq('id', m.id)
-      if (we) throw we
+      winHistoryByMember.set(m.id, `${roundNo}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`)
     }
+  }
+
+  const memberById = new Map(members.map((m) => [m.id, m]))
+  const touchedIds = new Set([...freshByMember.keys(), ...winHistoryByMember.keys()])
+  for (const id of touchedIds) {
+    const m = memberById.get(id)
+    if (!m) continue
+    const fresh = freshByMember.get(id) ?? []
+    const patch: Record<string, unknown> = {
+      meta: { ...(m.meta ?? {}), win_records: upsertWinRecords(readWinRecords(m.meta), fresh) },
+    }
+    const wh = winHistoryByMember.get(id)
+    if (wh) patch.win_history = wh
+    const { error: me } = await sb().from('members').update(patch).eq('id', id)
+    if (me) throw me
   }
 
   const { error: ue } = await sb()
