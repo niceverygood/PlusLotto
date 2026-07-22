@@ -4,6 +4,7 @@
 
 export const memberKeys = {
   all: ['members'] as const,
+  snapshot: (scope: string) => ['members', 'snapshot', scope] as const,
   list: (p: Record<string, unknown>) => ['members', 'list', p] as const,
   counts: (scope: string) => ['members', 'counts', scope] as const,
   detail: (id: string) => ['member', id] as const,

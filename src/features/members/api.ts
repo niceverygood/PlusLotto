@@ -1,6 +1,7 @@
 // 이용자 모듈 데이터 훅 (CLAUDE §1·§8). 전부 TanStack Query 경유 —
 // 컴포넌트 직접 fetch 금지. 뮤테이션은 mock DB 를 변경하고 §8 흐름대로
 // 로그/배정/문자 부수효과를 만든 뒤 관련 쿼리를 무효화한다.
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, PaymentMethod, Role, SmsSend, Staff, WeeklyRecoIssue } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
@@ -164,6 +165,55 @@ export interface MembersResult {
   pageCount: number
 }
 
+interface MembersSnapshot {
+  base: Member[]
+  roleMap: Record<string, Role>
+}
+
+// 목록·세그먼트 건수·유입코드가 각각 회원 전체를 다시 읽으면 같은 화면 진입만으로
+// 2천+ 행을 세 번 내려받게 된다. 역할 스코프별 원본 스냅샷을 한 쿼리로 공유하고,
+// 필터/정렬/페이지 계산만 브라우저에서 파생한다. 회원 뮤테이션은 memberKeys.all 을
+// 무효화하므로 이 스냅샷도 즉시 갱신된다.
+function useScopedMembersSnapshot() {
+  const user = useCurrentUser()
+  return useQuery({
+    queryKey: memberKeys.snapshot(`scope:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryFn: async (): Promise<MembersSnapshot> => {
+      if (dataSource === 'supabase') {
+        const [base, roleMap] = await Promise.all([supa.fetchScopedMembers(), supa.fetchStaffRoleMap()])
+        return { base, roleMap }
+      }
+      return {
+        base: scopeMembers(readDb().members, user),
+        roleMap: staffRoleById(),
+      }
+    },
+    // 다른 운영자의 변경은 최대 2분 안에 반영. 현재 사용자의 변경은 invalidate 로 즉시 반영.
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+function useMineMembersSnapshot() {
+  const user = useCurrentUser()
+  return useQuery({
+    queryKey: memberKeys.snapshot(`mine:${user?.id ?? 'anon'}`),
+    queryFn: async (): Promise<MembersSnapshot> => {
+      if (dataSource === 'supabase') {
+        const [base, roleMap] = await Promise.all([
+          supa.fetchMineMembers(user?.id ?? ''),
+          supa.fetchStaffRoleMap(),
+        ])
+        return { base, roleMap }
+      }
+      return {
+        base: scopeMine(readDb().members, user),
+        roleMap: staffRoleById(),
+      }
+    },
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
 // 목록/카운트 공통 코어 — base(이미 스코프된 회원 배열)에 뷰·필터·정렬·페이지를 적용.
 // roleMap(assigned_staff_id→role)은 모드별 출처(mock=staffRoleById / supabase=fetchStaffRoleMap)에서 주입.
 function listFrom(base: readonly Member[], q: MembersQuery, roleMap: Record<string, Role>): MembersResult {
@@ -191,50 +241,37 @@ function countsFrom(base: readonly Member[], roleMap: Record<string, Role>): Rec
 }
 
 export function useMembers(q: MembersQuery) {
-  const user = useCurrentUser()
-  return useQuery({
-    queryKey: memberKeys.list({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
-    queryFn: async (): Promise<MembersResult> => {
-      if (dataSource === 'supabase') {
-        const [base, roleMap] = await Promise.all([supa.fetchScopedMembers(), supa.fetchStaffRoleMap()])
-        return listFrom(base, q, roleMap)
-      }
-      return listFrom(scopeMembers(readDb().members, user), q, staffRoleById())
-    },
-    placeholderData: (prev) => prev, // 페이지/정렬 전환 시 깜빡임 방지
-  })
+  const snapshot = useScopedMembersSnapshot()
+  const signature = JSON.stringify(q)
+  const data = useMemo(
+    () => (snapshot.data ? listFrom(snapshot.data.base, q, snapshot.data.roleMap) : undefined),
+    // q 객체는 렌더마다 새로 만들어질 수 있어 값 시그니처로만 재계산한다.
+    [snapshot.data, signature], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  return { ...snapshot, data }
 }
 
 /** 각 뷰의 건수(스코프 적용, 검색 제외) — 탭/드롭다운 배지용. */
 export function useMemberViewCounts() {
-  const user = useCurrentUser()
-  return useQuery({
-    queryKey: memberKeys.counts(`${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
-    queryFn: async (): Promise<Record<string, number>> => {
-      if (dataSource === 'supabase') {
-        const [base, roleMap] = await Promise.all([supa.fetchScopedMembers(), supa.fetchStaffRoleMap()])
-        return countsFrom(base, roleMap)
-      }
-      return countsFrom(scopeMembers(readDb().members, user), staffRoleById())
-    },
-  })
+  const snapshot = useScopedMembersSnapshot()
+  const data = useMemo(
+    () => snapshot.data ? countsFrom(snapshot.data.base, snapshot.data.roleMap) : undefined,
+    [snapshot.data],
+  )
+  return { ...snapshot, data }
 }
 
 /** 실제 데이터에 존재하는 유입코드 목록(역할 스코프, 중복 제거·정렬) — 필터 드롭다운용(현장 피드백). */
 export function useInflowCodes() {
-  const user = useCurrentUser()
-  return useQuery({
-    queryKey: ['inflow-codes', user?.id ?? 'anon', user?.role ?? 'none'],
-    queryFn: async (): Promise<string[]> => {
-      const codes =
-        dataSource === 'supabase'
-          ? await supa.fetchInflowCodes()
-          : scopeMembers(readDb().members, user)
-              .map((m) => m.inflow_code)
-              .filter((c): c is string => !!c && c.trim().length > 0)
-      return Array.from(new Set(codes)).sort((a, b) => a.localeCompare(b, 'ko'))
-    },
-  })
+  const snapshot = useScopedMembersSnapshot()
+  const data = useMemo(() => {
+    if (!snapshot.data) return undefined
+    const codes = snapshot.data.base
+      .map((m) => m.inflow_code)
+      .filter((code): code is string => !!code && code.trim().length > 0)
+    return Array.from(new Set(codes)).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [snapshot.data])
+  return { ...snapshot, data }
 }
 
 // ── 나의고객 (CLAUDE §4 나의고객) — '내가 담당하는' 회원만(assigned_staff_id===나).
@@ -245,38 +282,22 @@ function scopeMine(all: readonly Member[], user: CurrentUser | null): Member[] {
 }
 
 export function useMyCustomers(q: MembersQuery) {
-  const user = useCurrentUser()
-  return useQuery({
-    queryKey: memberKeys.list({ ...q, scope: 'mine', uid: user?.id ?? 'anon' }),
-    queryFn: async (): Promise<MembersResult> => {
-      if (dataSource === 'supabase') {
-        const [base, roleMap] = await Promise.all([
-          supa.fetchMineMembers(user?.id ?? ''),
-          supa.fetchStaffRoleMap(),
-        ])
-        return listFrom(base, q, roleMap)
-      }
-      return listFrom(scopeMine(readDb().members, user), q, staffRoleById())
-    },
-    placeholderData: (prev) => prev,
-  })
+  const snapshot = useMineMembersSnapshot()
+  const signature = JSON.stringify(q)
+  const data = useMemo(
+    () => (snapshot.data ? listFrom(snapshot.data.base, q, snapshot.data.roleMap) : undefined),
+    [snapshot.data, signature], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  return { ...snapshot, data }
 }
 
 export function useMyCustomerCounts() {
-  const user = useCurrentUser()
-  return useQuery({
-    queryKey: memberKeys.counts(`mine:${user?.id ?? 'anon'}`),
-    queryFn: async (): Promise<Record<string, number>> => {
-      if (dataSource === 'supabase') {
-        const [base, roleMap] = await Promise.all([
-          supa.fetchMineMembers(user?.id ?? ''),
-          supa.fetchStaffRoleMap(),
-        ])
-        return countsFrom(base, roleMap)
-      }
-      return countsFrom(scopeMine(readDb().members, user), staffRoleById())
-    },
-  })
+  const snapshot = useMineMembersSnapshot()
+  const data = useMemo(
+    () => snapshot.data ? countsFrom(snapshot.data.base, snapshot.data.roleMap) : undefined,
+    [snapshot.data],
+  )
+  return { ...snapshot, data }
 }
 
 export interface MySmsRow {
