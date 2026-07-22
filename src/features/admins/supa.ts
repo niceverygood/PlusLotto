@@ -7,21 +7,7 @@ import { genId, nowIso } from '@/lib/db/store'
 import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
 import type { NavAccessMap } from '@/lib/permissions'
 import { CALL_VOLUME_ALERT_DEFAULT, tallyCallVolume, type CallVolumeStatus } from '@/lib/callVolume'
-import { tallyTodayDb, type MemberLite, type StaffInput, type TodayDbCount, type UnmatchedRecording } from './api'
-
-/** 금일(오늘 0시~) 배정 이력을 staff 별 {전체/수동/자동} 으로 집계. */
-export async function fetchTodayDbCounts(): Promise<Record<string, TodayDbCount>> {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const { data, error } = await sb()
-    .from('assignments')
-    .select('staff_id, type, created_at')
-    .gte('created_at', start.toISOString())
-  if (error) throw error
-  return tallyTodayDb(
-    (data ?? []) as { staff_id: string | null; type: 'manual' | 'auto'; created_at: string }[],
-  )
-}
+import type { MemberLite, StaffInput, UnmatchedRecording } from './api'
 
 /** 이번 달 발신 통화량(상담상태 변경 건수 근사) + 경고 임계치(현장 피드백 7/3). */
 export async function fetchCallVolumeStatus(): Promise<CallVolumeStatus> {

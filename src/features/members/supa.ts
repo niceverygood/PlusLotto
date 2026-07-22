@@ -619,6 +619,10 @@ export async function bulkUpdateMembers(
   await pushLog({ kind: 'admin', actor, action: 'member.bulk_update', meta: { count: ids.length, ids, patch } })
 }
 
+// 배정 3종(수동배정·자동할당·리셋) 은 "회원 갱신 + assignments 감사로그" 를 함께 남겨야
+// 관리자 화면·자동할당 모달의 '금일 배분디비' 집계(assignments 기준)가 실제 배정과 어긋나지 않는다
+// (현장 피드백 "자동/수동배분 갯수처리 오류"). 로그 insert 를 회원 update 보다 먼저 실행 —
+// 로그 기록이 실패하면 회원도 바뀌지 않아 "배정은 됐는데 로그가 없는" 유령 상태를 만들지 않는다.
 export async function assignStaff(ids: string[], staffId: string, actor: string | null): Promise<void> {
   const { data: st } = await sb().from('staff').select('team_id').eq('id', staffId).maybeSingle()
   const teamId = (st as { team_id: string | null } | null)?.team_id ?? null
@@ -645,35 +649,39 @@ export async function autoAssign(
   staffIds: string[] | null,
   actor: string | null,
 ): Promise<void> {
-  // 풀: 실행 시 지정 staffIds 우선, 없으면 '자동배분 대상' 플래그 rep(§V2-1).
+  // 풀: 실행 시 지정 staffIds 우선, 없으면 '자동배분 대상' 플래그 rep(§V2-1). id 순 정렬로 라운드로빈 결정성 확보.
   let q = sb().from('staff').select('id, team_id')
   q =
     staffIds && staffIds.length > 0
       ? q.in('id', staffIds)
       : q.eq('role', 'rep').eq('is_active', true).eq('auto_assign_enabled', true)
-  const { data: repData, error: re } = await q
+  const { data: repData, error: re } = await q.order('id')
   if (re) throw re
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
   if (reps.length === 0) return
   const ts = nowIso()
-  // TODO(live-verify): rep 순서 결정성 — 라이브에서는 order by 로 고정 권장.
-  const plan = ids.map((mid, i) => ({ mid, rep: reps[i % reps.length] }))
-  const asg = plan.map(({ mid, rep }) => ({
+  const repOf = ids.map((_, i) => reps[i % reps.length])
+  const asg = ids.map((mid, i) => ({
     id: genId('as'),
     member_id: mid,
-    staff_id: rep.id,
+    staff_id: repOf[i].id,
     assigned_by: actor,
     type: 'auto' as const,
     created_at: ts,
   }))
-  // 로그(assignments) 를 먼저 통째로 남기고, 그 다음 회원별 담당자를 갱신한다(현장 피드백 7/22).
-  // 기존엔 회원 업데이트를 먼저 순차 실행해, 루프 중간에 실패하면 이미 바뀐 담당자가 assignments
-  // 로그(=금일 디비 집계 소스) 에는 전혀 안 남는 불일치가 있었다.
   const { error: e2 } = await sb().from('assignments').insert(asg)
   if (e2) throw e2
-  for (const { mid, rep } of plan) {
-    const { error } = await sb().from('members').update({ assigned_staff_id: rep.id, team_id: rep.team_id }).eq('id', mid)
-    if (error) throw error
+  // rep 별로 묶어 update 를 배치 처리(회원 수만큼 개별 update 하던 것을 rep 수만큼으로 축소 —
+  // 라운드트립이 줄어야 도중 실패 구간도 줄어든다).
+  const idsByRep = new Map<string, string[]>()
+  ids.forEach((mid, i) => {
+    const rep = repOf[i]
+    idsByRep.set(rep.id, [...(idsByRep.get(rep.id) ?? []), mid])
+  })
+  for (const rep of reps) {
+    const memberIds = idsByRep.get(rep.id)
+    if (!memberIds || memberIds.length === 0) continue
+    await updateByIds('members', { assigned_staff_id: rep.id, team_id: rep.team_id }, memberIds)
   }
   await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length } })
 }

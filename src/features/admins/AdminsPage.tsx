@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Pencil, PhoneMissed, Plus, ShieldCheck, UserPlus } from 'lucide-react'
-import { Button, ConfirmModal, Drawer, EmptyState, PageHeader, SkeletonRows, Tabs, type TabItem } from '@/design-system/components'
+import { Button, ConfirmModal, Drawer, EmptyState, PageHeader, SkeletonRows } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useCurrentUser } from '@/lib/auth'
 import { useStaff, useTeams } from '@/lib/staff'
@@ -54,23 +54,15 @@ export function AdminsPage() {
 
   const [edit, setEdit] = useState<Staff | 'new' | null>(null)
   const [deactivate, setDeactivate] = useState<Staff | null>(null)
-  const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('')
 
   const toggle = useToggleStaffActive()
   // 계층 위임(§5): 본인이 관리 가능한 하위 직원만 노출. admin 은 canManageStaff 가 전원 true.
-  // 정렬은 로그인ID 기준으로 전 화면 통일(현장 피드백 7/22) — 등급 구분은 등급 필터 탭으로 대체.
-  const manageable = staff.filter((s) => canManageStaff(me, s))
-  const visible = manageable
-    .filter((s) => roleFilter === 'all' || s.role === roleFilter)
+  // 등급별(실장·팀장 등) 필터링(현장 피드백) + 로그인ID 기준 정렬(useStaff 가 이미 정렬 — 여기선 유지만).
+  const visible = [...staff]
+    .filter((s) => canManageStaff(me, s))
+    .filter((s) => !roleFilter || s.role === roleFilter)
     .sort((a, b) => a.login_id.localeCompare(b.login_id))
-
-  const roleTabs: TabItem[] = [
-    { key: 'all', label: `전체 ${manageable.length}` },
-    ...ROLE_ORDER.filter((r) => manageable.some((s) => s.role === r)).map((r) => ({
-      key: r,
-      label: `${ROLE_LABEL[r]} ${manageable.filter((s) => s.role === r).length}`,
-    })),
-  ]
 
   const onToggle = (s: Staff) => {
     if (s.is_active) setDeactivate(s)
@@ -112,7 +104,22 @@ export function AdminsPage() {
         </div>
       )}
 
-      <Tabs tabs={roleTabs} value={roleFilter} onChange={(k) => setRoleFilter(k as Role | 'all')} className="mb-3" />
+      {/* 등급별(실장·팀장 등) 필터링(현장 피드백) */}
+      <div className="mb-3 flex items-center gap-2">
+        <label className="text-[12px] font-semibold text-gray-500">등급</label>
+        <select
+          className="h-9 rounded-md border border-gray-300 bg-white px-2.5 text-[12.5px] text-gray-700 outline-none focus:border-primary-500"
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as Role | '')}
+        >
+          <option value="">전체</option>
+          {ROLE_ORDER.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="rounded-lg border border-gray-200 bg-white">
         {isLoading ? (

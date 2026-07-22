@@ -6,6 +6,7 @@ import { BulkButton, ConfirmModal, Modal, Button } from '@/design-system/compone
 import { STATUS_META, GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
+import { useTodayDbCounts } from '@/lib/todayDb'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
@@ -57,6 +58,8 @@ export function MemberBulkActions({
 
   const { data: staff = [] } = useStaff()
   const { data: templates = [] } = useSmsTemplates()
+  // 금일 배분디비 갯수 — 관리자 리스트뿐 아니라 자동할당 대상 선택에도 표시(현장 피드백).
+  const { data: todayDb = {} } = useTodayDbCounts()
 
   const bulkUpdate = useBulkUpdateMembers()
   const bulkSettings = useBulkUpdateMemberSettings()
@@ -495,8 +498,15 @@ export function MemberBulkActions({
                     onChange={() => togglePool(s.id)}
                   />
                   <span className="text-gray-700">{s.name}</span>
+                  <span
+                    className="ml-auto font-mono text-[10.5px] tnum text-gray-400"
+                    title="금일 배분디비(전체 · 수동/자동)"
+                  >
+                    금일 {todayDb[s.id]?.total ?? 0}
+                    <span className="text-gray-300"> ({todayDb[s.id]?.manual ?? 0}/{todayDb[s.id]?.auto ?? 0})</span>
+                  </span>
                   {s.auto_assign_enabled && (
-                    <span className="ml-auto rounded bg-gray-100 px-1.5 text-[10px] font-semibold text-gray-500">
+                    <span className="rounded bg-gray-100 px-1.5 text-[10px] font-semibold text-gray-500">
                       기본
                     </span>
                   )}

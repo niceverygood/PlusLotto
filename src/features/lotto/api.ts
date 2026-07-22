@@ -10,6 +10,7 @@ import { useCurrentUser } from '@/lib/auth'
 import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
 import { makeGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
+import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
 import { generateIssueSets, generateRecommendation } from '@/lib/lottoGenerator'
 import * as supa from './supa'
 
@@ -167,6 +168,15 @@ export function useConfirmRound() {
         if (!round) return
         let winners = 0
         let prizeSum = 0
+        // 회원별 당첨내역 누적(§ 회원상세 "당첨이력") — bet/reco 각각의 새 WinRecord 를 모아 한 번에 upsert.
+        const freshByMember = new Map<string, WinRecord[]>()
+        const addFresh = (memberId: string, w: WinRecord) => {
+          const arr = freshByMember.get(memberId) ?? []
+          arr.push(w)
+          freshByMember.set(memberId, arr)
+        }
+        // 베팅 내 조합순번(몇 번째 조합) — 같은 회원·회차 베팅을 등록 순서대로 세어 부여.
+        const betIndexByMember = new Map<string, number>()
         for (const bet of db.bets) {
           if (bet.round_no !== v.roundNo) continue
           const rank = gradeRank(bet.numbers, round.numbers, round.bonus)
@@ -176,10 +186,55 @@ export function useConfirmRound() {
             winners += 1
             prizeSum += bet.prize ?? 0
           }
-          if (rank != null && rank <= 3 && bet.member_ref) {
-            const m = db.members.find((x) => x.id === bet.member_ref)
-            if (m) m.win_history = `${v.roundNo}회 ${rank}등`
+          if (bet.member_ref) {
+            const idx = (betIndexByMember.get(bet.member_ref) ?? 0) + 1
+            betIndexByMember.set(bet.member_ref, idx)
+            if (rank != null && rank <= 3) {
+              const m = db.members.find((x) => x.id === bet.member_ref)
+              if (m) {
+                m.win_history = `${v.roundNo}회 ${rank}등`
+                addFresh(m.id, {
+                  round_no: v.roundNo,
+                  draw_date: round.draw_date,
+                  rank,
+                  prize: bet.prize ?? 0,
+                  combo_index: idx,
+                  source: 'bet',
+                })
+              }
+            }
           }
+        }
+        // 추천조합(weekly_recos) 당첨 집계 — 실제 서비스 기준 당첨자 산정(당첨금은 등수별 고정 산식).
+        for (const m of db.members) {
+          const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
+          const issue = recos.find((x) => x.round_no === v.roundNo)
+          if (!issue) continue
+          let best: number | null = null
+          let wins = 0
+          issue.sets.forEach((set, i) => {
+            const rk = gradeRank(set, round.numbers, round.bonus)
+            if (rk == null) return
+            wins += 1
+            if (best === null || rk < best) best = rk
+            addFresh(m.id, {
+              round_no: v.roundNo,
+              draw_date: round.draw_date,
+              rank: rk,
+              prize: prizeForRank(round, rk) ?? 0,
+              combo_index: i + 1,
+              source: 'reco',
+            })
+          })
+          if (best != null) {
+            winners += 1
+            m.win_history = `${v.roundNo}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`
+          }
+        }
+        for (const [memberId, fresh] of freshByMember) {
+          const m = db.members.find((x) => x.id === memberId)
+          if (!m) continue
+          m.meta = { ...m.meta, win_records: upsertWinRecords(readWinRecords(m.meta), fresh) }
         }
         round.confirmed_at = nowIso()
         db.logs.push(lottoLog(user?.id ?? null, 'lotto.confirm', v.roundNo, { winners, prizeSum }))

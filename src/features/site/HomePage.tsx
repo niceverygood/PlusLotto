@@ -14,6 +14,7 @@ import { BRAND } from '@/lib/brand'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
+  Banknote,
   BellRing,
   CheckCircle2,
   MessageSquareText,
@@ -99,6 +100,7 @@ export function HomePage() {
   const { data: publicInfo } = usePublicSiteInfo()
   const winnerStats = publicInfo?.winner_stats
   const winnerCurrent = winnerStats?.current
+  const bank = publicInfo?.bank
 
   return (
     <div className="font-sans">
@@ -344,6 +346,34 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ── 결제 안내(무통장 입금) ─────────────────────────────── */}
+      {bank && bank.account_no && (
+        <section className="mx-auto max-w-[1120px] px-4 pt-16 sm:px-6 sm:pt-20">
+          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent-50 text-accent-600">
+                <Banknote className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-[17px] font-extrabold text-ink-900">결제 안내(무통장 입금)</h3>
+                <p className="mt-1 text-[13.5px] leading-relaxed text-gray-500">
+                  아래 계좌로 입금해 주시면 담당자 확인 후 등급이 적용됩니다.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[14px]">
+                  <span className="font-bold text-ink-900">
+                    {bank.bank_name} <span className="font-mono tabular-nums">{bank.account_no}</span>
+                  </span>
+                  <span className="text-gray-500">예금주 {bank.holder}</span>
+                </div>
+                {bank.guide && (
+                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-gray-400">{bank.guide}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── 마무리 CTA ─────────────────────────────────────────── */}
       <section className="mx-auto max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20">
