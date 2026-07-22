@@ -1,5 +1,5 @@
 // 회원 일괄 임포트 모달 (§V2-3). 업로드 → 컬럼 매핑 → 미리보기 → 일괄 등록.
-// 엑셀/CSV 첫 행을 헤더로 보고 회원 필드에 매핑. 전화 중복은 허용하고 '중복유입'으로 표시.
+// 엑셀/CSV 첫 행을 헤더로 보고 회원 필드에 매핑. 전화 중복은 건너뛰고 기존 DB를 '중복 DB'로 표시.
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Button, Modal } from '@/design-system/components'
@@ -115,7 +115,7 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
           </p>
           {result.dup > 0 && (
             <p className="text-[12.5px] text-warning">
-              이 중 {result.dup}건은 기존 번호와 중복 → ‘중복유입’으로 표시했습니다.
+              중복 {result.dup}건은 등록하지 않고 기존 DB를 ‘중복 DB’로 표시했습니다.
             </p>
           )}
           <p className="text-[12px] text-gray-500">목록·세그먼트 카운트에 즉시 반영됩니다.</p>
@@ -347,8 +347,8 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
             <p className="text-[11.5px] text-gray-400">…상위 50건만 표시. 등록은 전체 {valid.length}건.</p>
           )}
           <p className="rounded-md bg-gray-50 px-3 py-2 text-[11.5px] leading-relaxed text-gray-500">
-            모든 행을 신규 리드(미배분·미아웃콜)로 등록합니다. 기존 회원과 번호가 겹치면 등록은 하되 ‘중복유입’으로
-            표시합니다(중복 허용).
+            기존 회원과 전화번호가 겹치거나 파일 안에서 같은 번호가 반복되면 신규 등록하지 않고, 먼저 등록된 기존
+            DB를 ‘중복 DB’로 표시합니다.
           </p>
         </div>
       )}

@@ -16,7 +16,7 @@ const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
-import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberPatch, MySmsRow } from './api'
+import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
 function sb(): SupabaseClient {
@@ -178,18 +178,14 @@ export async function fetchMineSmsLog(uid: string, limit: number): Promise<MySms
 }
 
 // ── 쓰기 (§8 미러링) ───────────────────────────────────────────────────────
-/** 회원 단건 등록(§V2-2) — mock useCreateMember 의 supabase 미러. 전화 중복 허용(meta.dup_phone). */
-export async function createMember(input: MemberCreateInput, actor: string | null): Promise<string> {
+/** 회원 단건 등록(§V2-2) — DB 트리거가 전화 중복이면 기존 회원을 표시하고 INSERT를 건너뛴다. */
+export async function createMember(input: MemberCreateInput, actor: string | null): Promise<MemberCreateResult> {
   const id = genId('m')
-  const digits = (s: string) => s.replace(/\D/g, '')
-  // 중복검사·user_id 채번은 전체 회원 대상 — 1000행 캡에 걸리면 캡 너머 회원과 중복을 못 잡아
-  // 실데이터(15만) 임포트 시 중복이 그대로 들어간다. range 로 전량 조회(D69).
-  const existing = await paginateAll<{ phone: string; user_id: string }>((from, to) =>
-    sb().from('members').select('phone, user_id').range(from, to),
+  // user_id 채번용으로만 조회한다. 전화 중복 판정은 동시 요청도 안전한 DB 트리거가 처리한다.
+  const existing = await paginateAll<{ user_id: string }>((from, to) =>
+    sb().from('members').select('user_id').range(from, to),
   )
-  const rows = (existing ?? []) as { phone: string; user_id: string }[]
-  const phone = digits(input.phone)
-  const dup = phone.length > 0 && rows.some((m) => digits(m.phone) === phone)
+  const rows = (existing ?? []) as { user_id: string }[]
   const maxNum = rows.reduce((mx, m) => {
     const mm = /^pl(\d+)$/.exec(m.user_id ?? '')
     return mm ? Math.max(mx, parseInt(mm[1], 10)) : mx
@@ -226,13 +222,14 @@ export async function createMember(input: MemberCreateInput, actor: string | nul
     is_deleted: false,
     is_withdrawn: false,
     meta: {
-      ...(dup ? { dup_phone: true } : {}),
       ...(input.age_band ? { age_band: input.age_band } : {}),
       ...(input.gender ? { gender: input.gender } : {}),
     },
   }
-  const { error } = await sb().from('members').insert(row)
+  const { data: inserted, error } = await sb().from('members').insert(row).select('id')
   if (error) throw error
+  // BEFORE INSERT 중복 가드가 NULL을 반환하면 PostgREST 결과가 빈 배열이다.
+  if (!inserted?.length) return { id: null, created: false }
   if (staff) {
     await sb().from('assignments').insert({
       id: genId('as'),
@@ -249,24 +246,21 @@ export async function createMember(input: MemberCreateInput, actor: string | nul
     action: 'member.create',
     target_type: 'member',
     target_id: id,
-    meta: { name: row.name, dup },
+    meta: { name: row.name, dup: false },
   })
-  return id
+  return { id, created: true }
 }
 
-/** 일괄 임포트(§V2-3) — mock useBulkImportMembers 의 supabase 미러. 청크 분할 insert. */
+/** 일괄 임포트(§V2-3) — DB 트리거가 기존/파일내 중복행을 건너뛰고 기존 회원을 표시한다. */
 export async function bulkImportMembers(
   inputs: MemberCreateInput[],
   actor: string | null,
 ): Promise<{ created: number; dup: number }> {
-  const digits = (s: string) => s.replace(/\D/g, '')
-  // 중복검사·user_id 채번은 전체 회원 대상 — 1000행 캡에 걸리면 캡 너머 회원과 중복을 못 잡아
-  // 실데이터(15만) 임포트 시 중복이 그대로 들어간다. range 로 전량 조회(D69).
-  const existing = await paginateAll<{ phone: string; user_id: string }>((from, to) =>
-    sb().from('members').select('phone, user_id').range(from, to),
+  // user_id 채번용으로만 조회한다. 전화 중복 판정은 DB 트리거 한 곳에서 처리한다.
+  const existing = await paginateAll<{ user_id: string }>((from, to) =>
+    sb().from('members').select('user_id').range(from, to),
   )
-  const rows = (existing ?? []) as { phone: string; user_id: string }[]
-  const phones = new Set(rows.map((m) => digits(m.phone)).filter(Boolean))
+  const rows = (existing ?? []) as { user_id: string }[]
   let seq = rows.reduce((mx, m) => {
     const mm = /^pl(\d+)$/.exec(m.user_id ?? '')
     return mm ? Math.max(mx, parseInt(mm[1], 10)) : mx
@@ -279,13 +273,8 @@ export async function bulkImportMembers(
   }
   const memberRows: Member[] = []
   const assignmentRows: Record<string, unknown>[] = []
-  let dup = 0
   const ts = nowIso()
   for (const input of inputs) {
-    const phone = digits(input.phone)
-    const isDup = phone.length > 0 && phones.has(phone)
-    if (isDup) dup++
-    if (phone) phones.add(phone)
     seq++
     const id = genId('m')
     const sid = input.assigned_staff_id ?? null
@@ -312,7 +301,7 @@ export async function bulkImportMembers(
       is_suspended: false,
       is_deleted: false,
       is_withdrawn: false,
-      meta: { imported: true, ...(isDup ? { dup_phone: true } : {}) },
+      meta: { imported: true },
     })
     if (sid) {
       assignmentRows.push({
@@ -326,23 +315,28 @@ export async function bulkImportMembers(
     }
   }
   const CHUNK = 500
+  const createdIds = new Set<string>()
   for (let i = 0; i < memberRows.length; i += CHUNK) {
-    const { error } = await sb().from('members').insert(memberRows.slice(i, i + CHUNK))
+    const { data, error } = await sb().from('members').insert(memberRows.slice(i, i + CHUNK)).select('id')
+    if (error) throw error
+    for (const row of (data ?? []) as { id: string }[]) createdIds.add(row.id)
+  }
+  const createdAssignments = assignmentRows.filter((row) => createdIds.has(String(row.member_id)))
+  for (let i = 0; i < createdAssignments.length; i += CHUNK) {
+    const { error } = await sb().from('assignments').insert(createdAssignments.slice(i, i + CHUNK))
     if (error) throw error
   }
-  for (let i = 0; i < assignmentRows.length; i += CHUNK) {
-    const { error } = await sb().from('assignments').insert(assignmentRows.slice(i, i + CHUNK))
-    if (error) throw error
-  }
+  const created = createdIds.size
+  const dup = memberRows.length - created
   await pushLog({
     kind: 'admin',
     actor,
     action: 'member.bulk_import',
     target_type: 'member',
     target_id: null,
-    meta: { count: memberRows.length, dup },
+    meta: { count: created, dup },
   })
-  return { created: memberRows.length, dup }
+  return { created, dup }
 }
 
 export async function updateMember(id: string, patch: MemberPatch, actor: string | null): Promise<void> {

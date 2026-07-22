@@ -235,7 +235,7 @@ function matchesSearch(m: Member, q: string): boolean {
   )
 }
 
-/** 전화번호(숫자)가 2건 이상 등록된 번호 집합 — '중복' 디비 필터용(현장 피드백). */
+/** 과거 실제 중복행의 전화번호 집합 — 신규 중복 차단 이후에는 meta.dup_phone 표시도 함께 본다. */
 function dupPhoneSet(members: readonly Member[]): Set<string> {
   const counts = new Map<string, number>()
   for (const m of members) {
@@ -290,7 +290,7 @@ export function filterMembers(
       if (filter.registeredFrom && d < filter.registeredFrom) return false
       if (filter.registeredTo && d > filter.registeredTo) return false
     }
-    if (dupPhones && !dupPhones.has(normalizePhone(m.phone))) return false
+    if (dupPhones && !dupPhones.has(normalizePhone(m.phone)) && m.meta.dup_phone !== true) return false
     if (filter.inactiveDays !== undefined) {
       const last = m.last_active_at ? Date.parse(m.last_active_at) : null
       const inactive = last === null || ctx.now - last >= filter.inactiveDays * 864e5

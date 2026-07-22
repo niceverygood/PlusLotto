@@ -797,12 +797,17 @@ export interface MemberCreateInput {
   assigned_staff_id?: string | null
 }
 
+export interface MemberCreateResult {
+  id: string | null
+  created: boolean
+}
+
 const onlyDigits = (s: string) => s.replace(/\D/g, '')
 
 // 단건/일괄 공통: MemberCreateInput → 신규 리드 Member(기본값 동일 — 미배분·무료·정상·미아웃콜).
 function buildLeadMember(
   input: MemberCreateInput,
-  opts: { id: string; userId: string; staff: Staff | null; dup: boolean; imported?: boolean },
+  opts: { id: string; userId: string; staff: Staff | null; imported?: boolean },
 ): Member {
   return {
     id: opts.id,
@@ -827,11 +832,24 @@ function buildLeadMember(
     is_deleted: false,
     is_withdrawn: false,
     meta: {
-      ...(opts.dup ? { dup_phone: true } : {}),
       ...(opts.imported ? { imported: true } : {}),
       ...(input.age_band ? { age_band: input.age_band } : {}),
       ...(input.gender ? { gender: input.gender } : {}),
     },
+  }
+}
+
+/** 중복 입력은 새 행 대신 기존 회원에 표시·최근 시도 정보를 남긴다. */
+function markDuplicateAttempt(member: Member, input: MemberCreateInput, source: 'manual' | 'bulk_import'): void {
+  const previousCount = Number(member.meta.duplicate_attempt_count)
+  member.meta = {
+    ...member.meta,
+    dup_phone: true,
+    duplicate_attempt_count: Number.isFinite(previousCount) ? previousCount + 1 : 1,
+    duplicate_last_at: nowIso(),
+    duplicate_last_source: source,
+    duplicate_last_inflow_code: input.inflow_code?.trim() || null,
+    duplicate_last_inflow_type: input.inflow_type?.trim() || null,
   }
 }
 
@@ -843,17 +861,29 @@ function maxUserSeq(members: readonly { user_id: string }[]): number {
   }, 1000)
 }
 
-/** 신규 리드 1건 등록. 미배분·무료·미아웃콜 기본. 전화 중복은 허용하고 meta.dup_phone 로 표시(중복유입). */
+/** 신규 리드 1건 등록. 전화 중복이면 신규 행을 만들지 않고 기존 DB를 중복으로 표시한다. */
 export function useCreateMember() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()
   return useMutation({
     mutationFn: async (input: MemberCreateInput) => {
       if (dataSource === 'supabase') return supa.createMember(input, user?.id ?? null)
-      const id = genId('m')
+      let result: MemberCreateResult = { id: null, created: false }
       mutateDb((db) => {
         const phone = onlyDigits(input.phone)
-        const dup = phone.length > 0 && db.members.some((m) => onlyDigits(m.phone) === phone)
+        const existing = phone ? db.members.find((m) => onlyDigits(m.phone) === phone) : undefined
+        if (existing) {
+          markDuplicateAttempt(existing, input, 'manual')
+          db.logs.push(
+            adminLog(user?.id ?? null, 'member.duplicate_rejected', existing.id, {
+              source: 'manual',
+              attempted_name: input.name.trim(),
+            }),
+          )
+          result = { id: existing.id, created: false }
+          return
+        }
+        const id = genId('m')
         const staff = input.assigned_staff_id
           ? (db.staff.find((s) => s.id === input.assigned_staff_id) ?? null)
           : null
@@ -861,7 +891,6 @@ export function useCreateMember() {
           id,
           userId: `pl${maxUserSeq(db.members) + 1}`,
           staff,
-          dup,
         })
         db.members.push(member)
         if (staff) {
@@ -874,15 +903,16 @@ export function useCreateMember() {
             created_at: nowIso(),
           })
         }
-        db.logs.push(adminLog(user?.id ?? null, 'member.create', id, { name: member.name, dup }))
+        db.logs.push(adminLog(user?.id ?? null, 'member.create', id, { name: member.name, dup: false }))
+        result = { id, created: true }
       })
-      return id
+      return result
     },
-    onSuccess: (id) => invalidate([id]),
+    onSuccess: (result) => invalidate(result.id ? [result.id] : undefined),
   })
 }
 
-/** 일괄 임포트(§V2-3) — 여러 리드를 한 번에 등록. 전화 중복 허용 + meta.dup_phone 표시(파일내·기존 모두 검사). */
+/** 일괄 임포트(§V2-3) — 전화 중복은 건너뛰고 기존 DB를 중복으로 표시한다. */
 export function useBulkImportMembers() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()
@@ -892,19 +922,27 @@ export function useBulkImportMembers() {
       let created = 0
       let dupCount = 0
       mutateDb((db) => {
-        const phones = new Set(db.members.map((m) => onlyDigits(m.phone)).filter(Boolean))
         let seq = maxUserSeq(db.members)
         for (const input of inputs) {
           const phone = onlyDigits(input.phone)
-          const dup = phone.length > 0 && phones.has(phone)
-          if (dup) dupCount++
-          if (phone) phones.add(phone)
+          const existing = phone ? db.members.find((m) => onlyDigits(m.phone) === phone) : undefined
+          if (existing) {
+            dupCount++
+            markDuplicateAttempt(existing, input, 'bulk_import')
+            db.logs.push(
+              adminLog(user?.id ?? null, 'member.duplicate_rejected', existing.id, {
+                source: 'bulk_import',
+                attempted_name: input.name.trim(),
+              }),
+            )
+            continue
+          }
           seq++
           const staff = input.assigned_staff_id
             ? (db.staff.find((s) => s.id === input.assigned_staff_id) ?? null)
             : null
           const id = genId('m')
-          db.members.push(buildLeadMember(input, { id, userId: `pl${seq}`, staff, dup, imported: true }))
+          db.members.push(buildLeadMember(input, { id, userId: `pl${seq}`, staff, imported: true }))
           if (staff) {
             db.assignments.push({
               id: genId('as'),

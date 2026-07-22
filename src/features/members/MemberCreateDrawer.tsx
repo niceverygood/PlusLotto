@@ -49,6 +49,7 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
   const create = useCreateMember()
   const { data: staff = [] } = useStaff()
   const [serverErr, setServerErr] = useState<string | null>(null)
+  const [serverNotice, setServerNotice] = useState<string | null>(null)
 
   const {
     register,
@@ -79,6 +80,7 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
 
   const submit = handleSubmit((v) => {
     setServerErr(null)
+    setServerNotice(null)
     create.mutate(
       {
         name: v.name,
@@ -95,7 +97,10 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
         assigned_staff_id: v.assigned_staff_id || null,
       },
       {
-        onSuccess: onClose,
+        onSuccess: (result) => {
+          if (result.created) onClose()
+          else setServerNotice('이미 등록된 번호입니다. 신규 등록하지 않고 기존 DB를 ‘중복 DB’로 표시했습니다.')
+        },
         onError: (e) => setServerErr(e instanceof Error ? e.message : '등록에 실패했습니다.'),
       },
     )
@@ -243,9 +248,10 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
         </div>
 
         {serverErr && <p className={errCls}>{serverErr}</p>}
+        {serverNotice && <p className="text-[12px] font-semibold text-warning">{serverNotice}</p>}
         <p className="rounded-md bg-gray-50 px-3 py-2 text-[11.5px] leading-relaxed text-gray-500">
           신규 리드는 미배분·무료·미아웃콜 상태로 등록됩니다. 담당자를 지정하면 배정 이력이 함께 남습니다. 이미
-          등록된 번호면 ‘중복유입’으로 표시됩니다(중복 허용).
+          등록된 번호면 새로 등록하지 않고 기존 DB를 ‘중복 DB’로 표시합니다.
         </p>
       </div>
     </Drawer>

@@ -41,6 +41,7 @@ const ACTION_LABEL: Record<string, string> = {
   'payment.cancel': '결제 취소',
   'sms.send': '문자 발송',
   'inflow.update': '유입분류 변경',
+  'member.duplicate_rejected': '중복 DB 입력 차단',
   'point.grant': '포인트 적립',
   'point.deduct': '포인트 차감',
 }
