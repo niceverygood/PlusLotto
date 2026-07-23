@@ -1,7 +1,7 @@
 // 이용자 — 수직 슬라이스의 본체 (CLAUDE §6·§7·§8). 탭(자주쓰는 6뷰)+더보기,
 // FilterBar(검색·등급·상태·담당·유입, URL 동기화), DataTable(서버 정렬·페이지·선택),
 // 일괄작업 바, 행 클릭 → 상세 Drawer. 모든 데이터는 api 훅 경유.
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, Plus, Upload } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
 import {
@@ -16,6 +16,7 @@ import {
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useRole } from '@/lib/auth'
+import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import { GRADE_LABEL, STATUS_META } from '@/design-system/labels'
 import type { Grade, MemberStatus } from '@/types/db'
@@ -41,7 +42,6 @@ import {
 } from './views'
 import { memberColumns, memberColumnVisibility } from './columns'
 import { MemberBulkActions } from './bulk'
-import { MemberDrawer } from './MemberDrawer'
 import { MemberCreateDrawer } from './MemberCreateDrawer'
 import { ImportMembersModal } from './ImportMembersModal'
 
@@ -66,6 +66,18 @@ export function MembersPage() {
   // ── URL → 쿼리 상태 ──────────────────────────────
   const viewKey = get('view') ?? 'all'
   const selectedId = get('member') ?? null
+  // 회원상세는 전역 Drawer(AppShell, 현장 피드백 7/23 "회원 클릭 시 화면 이동" 버그 수정)를 쓴다.
+  // ?member= 딥링크는 여기서 열어주고 유지, 닫히면 이 화면의 URL 파라미터도 정리한다.
+  const openMemberDrawer = useMemberDrawerStore((s) => s.open)
+  const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
+  useEffect(() => {
+    if (selectedId) openMemberDrawer(selectedId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
+  useEffect(() => {
+    if (selectedId && drawerMemberId === null) set('member', null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawerMemberId])
   const search = get('q') ?? ''
   const page = Math.max(1, Number(get('page') ?? '1') || 1)
   const sizeRaw = Number(get('size') ?? '') || DEFAULT_PAGE_SIZE
@@ -402,7 +414,10 @@ export function MembersPage() {
         data={data?.rows ?? []}
         getRowId={(m) => m.id}
         isLoading={isLoading}
-        onRowClick={(m) => set('member', m.id)}
+        onRowClick={(m) => {
+          set('member', m.id)
+          openMemberDrawer(m.id)
+        }}
         enableSelection
         bulkActions={(ctx) => <MemberBulkActions {...ctx} />}
         sorting={sorting}
@@ -425,7 +440,6 @@ export function MembersPage() {
         }}
       />
 
-      <MemberDrawer memberId={selectedId} onClose={() => set('member', null)} />
       {creating && <MemberCreateDrawer onClose={() => setCreating(false)} />}
       {importing && <ImportMembersModal onClose={() => setImporting(false)} />}
     </div>

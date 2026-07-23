@@ -1,6 +1,6 @@
 // 나의고객 — 담당현황 (CLAUDE §4·§8). 내가 담당하는 회원만(assigned_staff_id===나)
 // 보여주는 이용자 화면의 포커스 뷰. 이용자 모듈의 컬럼·일괄작업·상세 Drawer 를 재사용한다.
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessageSquare } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
@@ -8,6 +8,7 @@ import { Button, DataTable, FilterBar, PageHeader, Tabs, type TabItem } from '@/
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useRole } from '@/lib/auth'
+import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import {
   useMyCustomers,
@@ -20,7 +21,6 @@ import {
 import { getView, type MemberFilter } from './views'
 import { memberColumns } from './columns'
 import { MemberBulkActions } from './bulk'
-import { MemberDrawer } from './MemberDrawer'
 
 const PAGE_SIZE = 50
 // 나의고객에서 자주 보는 케이스로드 하위 뷰(이용자 뷰 프리셋 재사용).
@@ -33,7 +33,8 @@ export function MyCustomersPage() {
   const { get, set, setMany } = useUrlFilters()
   const { data: staff = [] } = useStaff()
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 회원상세는 전역 Drawer(AppShell, 현장 피드백 7/23) — 화면 이동 없이 뜬다.
+  const openMemberDrawer = useMemberDrawerStore((s) => s.open)
 
   const viewKey = get('view') ?? 'all'
   const search = get('q') ?? ''
@@ -127,7 +128,7 @@ export function MyCustomersPage() {
         data={data?.rows ?? []}
         getRowId={(m) => m.id}
         isLoading={isLoading}
-        onRowClick={(m) => setSelectedId(m.id)}
+        onRowClick={(m) => openMemberDrawer(m.id)}
         enableSelection
         bulkActions={(ctx) => <MemberBulkActions {...ctx} />}
         sorting={sorting}
@@ -146,8 +147,6 @@ export function MyCustomersPage() {
           onPageChange: (p) => set('page', p === 1 ? null : p),
         }}
       />
-
-      <MemberDrawer memberId={selectedId} onClose={() => setSelectedId(null)} />
     </div>
   )
 }

@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LogOut, PanelLeft } from 'lucide-react'
+import { Bell, LogOut, PanelLeft } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
+import { useCallReservationAlerts } from '@/lib/callReservations'
+import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
 import { canAccessWith, ROLE_LABEL, type NavKey } from '@/lib/permissions'
 import { BRAND } from '@/lib/brand'
 import { cn } from '@/lib/cn'
+import { datetime } from '@/lib/format'
+import { MemberDrawer } from '@/features/members/MemberDrawer'
 
 interface NavItem {
   key: NavKey
@@ -72,6 +76,11 @@ export function AppShell() {
   const { data: navMap } = useNavAccess()
   const navCounts = useNavBadges()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const { data: callAlerts } = useCallReservationAlerts()
+  const alerts = callAlerts ?? []
+  const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
+  const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
@@ -174,8 +183,55 @@ export function AppShell() {
             {pageDesc && <span className="ml-2 text-[12px] text-gray-400">{pageDesc}</span>}
           </div>
 
-          {/* 계정 메뉴 */}
+          {/* 통화예약 알림(현장 피드백 7/23) — 예약시각 도래한 건을 벨 배지로 표시. */}
           <div className="relative ml-auto">
+            <button
+              type="button"
+              onClick={() => setNotifOpen((o) => !o)}
+              aria-label="통화예약 알림"
+              className="relative grid h-8 w-8 place-items-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            >
+              <Bell className="h-[18px] w-[18px]" />
+              {alerts.length > 0 && (
+                <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold text-white">
+                  {alerts.length}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setNotifOpen(false)} />
+                <div className="absolute right-0 top-10 z-20 w-72 rounded-lg border border-gray-200 bg-white p-1.5 shadow-md">
+                  <div className="px-2 py-1.5 text-[11px] font-bold text-gray-400">통화예약 알림</div>
+                  {alerts.length === 0 ? (
+                    <div className="px-2.5 py-4 text-center text-[12px] text-gray-400">도래한 예약이 없습니다.</div>
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto">
+                      {alerts.map((a) => (
+                        <button
+                          key={a.member_id}
+                          type="button"
+                          onClick={() => {
+                            setNotifOpen(false)
+                            navigate(`/admin/members?member=${encodeURIComponent(a.member_id)}`)
+                          }}
+                          className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-gray-50"
+                        >
+                          <span className="text-[12.5px] font-semibold text-ink-900">{a.member_name}</span>
+                          <span className="font-mono text-[11px] tabular-nums text-gray-500">
+                            예약 {datetime(a.reserved_at)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 계정 메뉴 */}
+          <div className="relative">
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
@@ -210,6 +266,10 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      {/* 회원상세 Drawer 전역 인스턴스(현장 피드백 7/23) — 어느 화면이든 memberDrawerStore.open() 만
+          호출하면 라우트 이동 없이 여기서 뜬다(§8 허브를 화면 전환 없이 공유). */}
+      <MemberDrawer memberId={drawerMemberId} onClose={closeMemberDrawer} />
     </div>
   )
 }

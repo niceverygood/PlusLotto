@@ -111,6 +111,17 @@ export function DataTable<T>({
 
   const manualSorting = !!onSortingChange
 
+  // 선택 상태가 페이지/필터를 넘어 남아있던 문제(현장 피드백 7/23 "자동할당 갯수차이") — rowSelection 은
+  // row id 만 들고 있어 페이지 이동·검색·뷰 변경으로 현재 목록에 없는 행이 섞여도 selectedIds 에는 그대로
+  // 남는다. 서버 페이지네이션 결과(page·total)가 바뀌면 곧 다른 목록이라는 뜻이므로 선택을 비운다.
+  const resetSig = pagination ? `${pagination.page}:${pagination.total}` : null
+  const prevResetSig = useRef<string | null>(resetSig)
+  useEffect(() => {
+    if (resetSig === null) return
+    if (prevResetSig.current !== null && prevResetSig.current !== resetSig) setRowSelection({})
+    prevResetSig.current = resetSig
+  }, [resetSig])
+
   const table = useReactTable({
     data,
     columns,

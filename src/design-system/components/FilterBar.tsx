@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 export interface FilterChip {
@@ -28,7 +28,6 @@ export function FilterBar({
   children,
   className,
 }: FilterBarProps) {
-  const [open, setOpen] = useState(false)
   const hasChips = chips.length > 0
 
   // 한글 IME 대응: 입력값을 로컬로 관리해 키 입력마다 URL→재렌더→value 재설정으로 조합이 끊기는 것을 방지.
@@ -77,26 +76,6 @@ export function FilterBar({
             </button>
           )}
         </div>
-        {children && (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className={cn(
-              'inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[12.5px] font-semibold transition-colors',
-              open
-                ? 'border-primary-500 bg-primary-50 text-primary-700'
-                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            필터
-            {hasChips && (
-              <span className="rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white tnum">
-                {chips.length}
-              </span>
-            )}
-          </button>
-        )}
       </div>
 
       {hasChips && (
@@ -129,7 +108,8 @@ export function FilterBar({
         </div>
       )}
 
-      {open && children && (
+      {/* 항시 노출(현장 피드백 7/23) — 접이식 토글 제거, 필터 패널을 상시 렌더. */}
+      {children && (
         <div className="border-t border-gray-100 bg-gray-50/60 p-3">{children}</div>
       )}
     </div>

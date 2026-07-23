@@ -171,15 +171,33 @@ export async function cancelPayment(id: string, actor: string | null): Promise<s
 }
 
 /** 결제내역 수정(금액·결제수단·PG사·입금자명) — 실장 이상 전용(현장 피드백 7/21). 반환=대상 회원 id. */
+/** 결제내역 수정(§V2 확장 7/23: 등급(상품)·담당자·결제일시 포함). 승인된 결제의 상품을 바꾸면
+ *  approvePayment 와 동일하게 회원 등급·이용기간을 다시 반영한다. */
 export async function updatePayment(
   id: string,
-  patch: Partial<Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name'>>,
+  patch: Partial<
+    Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name' | 'product_id' | 'staff_id' | 'paid_at'>
+  >,
   actor: string | null,
 ): Promise<string | null> {
   const p = await fetchPayment(id)
   if (!p) return null
   const { error } = await sb().from('payments').update(patch).eq('id', id)
   if (error) throw error
+  if (p.status === 'approved' && patch.product_id !== undefined && patch.product_id !== p.product_id) {
+    const product = await fetchProduct(patch.product_id)
+    if (product) {
+      await promoteMember(p.member_id, product.grade_granted)
+      if (p.paid_at) {
+        const ts = new Date(p.paid_at)
+        const { error: pe } = await sb()
+          .from('payments')
+          .update({ period_start: ts.toISOString(), period_end: addMonths(ts, product.duration_months).toISOString() })
+          .eq('id', id)
+        if (pe) throw pe
+      }
+    }
+  }
   await insertLog({
     kind: 'payment',
     actor,

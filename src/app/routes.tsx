@@ -5,6 +5,7 @@ import { RequireNav } from './RequireNav'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { MembersPage } from '@/features/members/MembersPage'
+import { MemberPopupPage } from '@/features/members/MemberPopupPage'
 import { MyCustomersPage } from '@/features/members/MyCustomersPage'
 import { MySmsPage } from '@/features/members/MySmsPage'
 import { CommunityPage } from '@/features/community/CommunityPage'
@@ -80,6 +81,16 @@ export function AppRoutes() {
     <Routes>
       {/* 직원 로그인 (셸 밖) */}
       <Route path="/admin/login" element={<LoginPage />} />
+
+      {/* 회원상세 팝업(새창, 현장 피드백 7/23) — AppShell 밖, 여러 창을 동시에 띄우기 위함 */}
+      <Route
+        path="/admin/members/popup/:id"
+        element={
+          <RequireAuth>
+            <MemberPopupPage />
+          </RequireAuth>
+        }
+      />
 
       {/* 고객 홈페이지(공개) = 루트 — 전화번호/뒷4자리 로그인, 본인 발급번호 조회(현장 피드백). */}
       <Route

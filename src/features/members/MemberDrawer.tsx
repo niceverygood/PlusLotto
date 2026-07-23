@@ -2,7 +2,7 @@
 // 액션(등급변경·담당변경·정지·아웃콜·문자발송). 모든 액션은 api 뮤테이션 →
 // 관련 쿼리 무효화 + 로그/배정/문자 부수효과를 만든다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CreditCard, Dices, Mic, MessageSquare, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
+import { CreditCard, Dices, ExternalLink, Mic, MessageSquare, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -90,6 +90,20 @@ const metaNum = (meta: Record<string, unknown> | undefined, key: string): number
 const metaStr = (meta: Record<string, unknown> | undefined, key: string): string =>
   typeof meta?.[key] === 'string' ? (meta[key] as string) : ''
 
+// 통화예약(현장 피드백 7/23) — <input type="datetime-local"> 은 로컬시각 "YYYY-MM-DDTHH:mm" 문자열을 쓴다.
+function isoToLocalInput(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function localInputToIso(local: string): string | null {
+  if (!local) return null
+  const d = new Date(local)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 export function MemberDrawer({ memberId, onClose }: { memberId: string | null; onClose: () => void }) {
   const open = !!memberId
   const { data: member } = useMember(memberId)
@@ -121,9 +135,13 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
 
   const [tab, setTab] = useState<DrawerTab>('info')
   const [memoDraft, setMemoDraft] = useState('')
-  // 기본정보 인라인 수정(현장 피드백 7/6) — 이름/핸드폰
+  // 기본정보 인라인 수정(현장 피드백 7/6·7/23) — 이름/핸드폰/닉네임/유입코드
   const [nameDraft, setNameDraft] = useState('')
   const [phoneDraft, setPhoneDraft] = useState('')
+  const [nicknameDraft, setNicknameDraft] = useState('')
+  const [inflowCodeDraft, setInflowCodeDraft] = useState('')
+  // 통화예약 일시(현장 피드백 7/23) — meta.call_reservation_at(ISO), datetime-local input 은 로컬시각 문자열
+  const [callResAtDraft, setCallResAtDraft] = useState('')
   // 민원관리(현장 피드백 7/6)
   const [complaintBody, setComplaintBody] = useState('')
   const [complaintType, setComplaintType] = useState<string>(COMPLAINT_TYPES[0])
@@ -150,6 +168,9 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     setTab('info')
     setNameDraft(member?.name ?? '')
     setPhoneDraft(member?.phone ?? '')
+    setNicknameDraft(member?.nickname ?? '')
+    setInflowCodeDraft(member?.inflow_code ?? '')
+    setCallResAtDraft(isoToLocalInput(metaStr(member?.meta, 'call_reservation_at')))
     setComplaintBody('')
     setComplaintType(COMPLAINT_TYPES[0])
     setComplaintResult(COMPLAINT_RESULTS[0])
@@ -219,7 +240,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
 
   if (!member) {
     return (
-      <Drawer open={open} onClose={onClose} title="회원 상세" movable storageKey="member">
+      <Drawer open={open} onClose={onClose} title="회원 상세" width={760} movable storageKey="member">
         <div className="py-10 text-center text-[12.5px] text-gray-400">불러오는 중…</div>
       </Drawer>
     )
@@ -250,7 +271,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   )
 
   return (
-    <Drawer open={open} onClose={onClose} title={title} width={620} movable storageKey="member">
+    <Drawer open={open} onClose={onClose} title={title} width={760} movable storageKey="member">
       {/* 빠른 액션 */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
         <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
@@ -308,14 +329,49 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
+          통화예약
+          <input
+            type="datetime-local"
+            className={selectCls}
+            value={callResAtDraft}
+            onChange={(e) => setCallResAtDraft(e.target.value)}
+            onBlur={() => {
+              const iso = localInputToIso(callResAtDraft)
+              const prev = metaStr(member.meta, 'call_reservation_at')
+              if ((iso ?? '') !== prev) updateSettings.mutate({ id, patch: { call_reservation_at: iso } })
+            }}
+          />
+          {callResAtDraft && (
+            <button
+              type="button"
+              className="text-gray-400 hover:text-danger"
+              title="예약 취소"
+              onClick={() => {
+                setCallResAtDraft('')
+                updateSettings.mutate({ id, patch: { call_reservation_at: null } })
+              }}
+            >
+              ×
+            </button>
+          )}
+        </label>
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={member.outcall_done ? 'sec' : 'acc'}
-            onClick={() => updateMember.mutate({ id, patch: { outcall_done: !member.outcall_done } })}
+          {/* 여러 회원상세를 동시에(현장 피드백 7/23) — 새 브라우저 창으로 열어 이 화면과 독립적으로 띄운다. */}
+          <button
+            type="button"
+            title="새창에서 열기"
+            onClick={() =>
+              window.open(
+                `/admin/members/popup/${id}`,
+                `member-popup-${id}`,
+                'width=820,height=900,noopener',
+              )
+            }
+            className="grid h-8 w-8 place-items-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
-            {member.outcall_done ? '아웃콜 완료' : '아웃콜 처리'}
-          </Button>
+            <ExternalLink className="h-4 w-4" />
+          </button>
           {member.status === 'suspended' ? (
             <Button size="sm" variant="suc" onClick={() => updateMember.mutate({ id, patch: { status: 'active' } })}>
               정지해제
@@ -345,7 +401,18 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
               }}
             />
           </Row>
-          <Row label="닉네임">{member.nickname ?? '-'}</Row>
+          <Row label="닉네임">
+            <input
+              className={inlineEditCls}
+              value={nicknameDraft}
+              placeholder="-"
+              onChange={(e) => setNicknameDraft(e.target.value)}
+              onBlur={() => {
+                const v = nicknameDraft.trim()
+                if (v !== (member.nickname ?? '')) updateMember.mutate({ id, patch: { nickname: v || null } })
+              }}
+            />
+          </Row>
           <Row label="로그인 ID" mono>
             {member.user_id}
           </Row>
@@ -416,7 +483,16 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
           {(role === 'admin' || role === 'manager') && (
             <>
               <Row label="유입코드" mono>
-                {member.inflow_code ?? '-'}
+                <input
+                  className={inlineEditCls + ' font-mono'}
+                  value={inflowCodeDraft}
+                  placeholder="-"
+                  onChange={(e) => setInflowCodeDraft(e.target.value)}
+                  onBlur={() => {
+                    const v = inflowCodeDraft.trim()
+                    if (v !== (member.inflow_code ?? '')) updateMember.mutate({ id, patch: { inflow_code: v || null } })
+                  }}
+                />
               </Row>
               <Row label="유입구분">{member.inflow_type ?? '-'}</Row>
             </>

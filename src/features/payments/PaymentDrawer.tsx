@@ -1,22 +1,36 @@
 // 결제 상세 Drawer (CLAUDE §6·§8). 회원 상세의 '결제내역'과 동일 데이터 소스(usePayment).
 // 액션: 승인 / PG취소 — 둘 다 회원 등급·매출에 §8 부수효과가 있으므로 확인 모달(§10).
-// 결제내역 수정(금액·결제수단·PG사·입금자명)은 실장 이상 전용(현장 피드백 7/21).
+// 결제내역 수정(금액·결제수단·PG사·입금자명·상품(등급)·담당자·결제일시)은 실장 이상 전용
+// (현장 피드백 7/21, 등급/담당/일시 확장은 7/23). 승인된 결제의 상품을 바꾸면 회원 등급도 같이 갱신된다.
 import { useMemo, useState, type ReactNode } from 'react'
 import { Check, Pencil, UserRound, X, XCircle } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { Badge, Button, ConfirmModal, Drawer, StatusChip } from '@/design-system/components'
-import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
+import { GRADE_LABEL, PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import { datetime, krw } from '@/lib/format'
 import { useStaff } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
+import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import type { PaymentMethod } from '@/types/db'
 import { cn } from '@/lib/cn'
-import { useApprovePayment, useCancelPayment, usePayment, useUpdatePayment } from './api'
+import { useActiveProducts, useApprovePayment, useCancelPayment, usePayment, useUpdatePayment } from './api'
 
 type Confirm = 'approve' | 'cancel' | null
 const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg']
 const inputCls =
   'h-8 w-full rounded-md border border-gray-300 px-2 text-[12.5px] text-ink-900 outline-none focus:border-primary-500'
+
+// datetime-local input 은 로컬시각 "YYYY-MM-DDTHH:mm" 문자열을 쓴다(members/MemberDrawer 와 동일 패턴).
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function localInputToIso(local: string): string | null {
+  if (!local) return null
+  const d = new Date(local)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
 
 export function PaymentDrawer({
   paymentId,
@@ -25,10 +39,12 @@ export function PaymentDrawer({
   paymentId: string | null
   onClose: () => void
 }) {
-  const navigate = useNavigate()
   const open = !!paymentId
   const { data: payment } = usePayment(paymentId)
   const { data: staff = [] } = useStaff()
+  const { data: products = [] } = useActiveProducts()
+  // 회원상세는 전역 Drawer(현장 피드백 7/23) — 라우트 이동 없이 이 결제 상세 위에 그대로 뜬다.
+  const openMemberDrawer = useMemberDrawerStore((s) => s.open)
   const approve = useApprovePayment()
   const cancel = useCancelPayment()
   const update = useUpdatePayment()
@@ -40,6 +56,9 @@ export function PaymentDrawer({
     method: PaymentMethod
     pgProvider: string
     depositorName: string
+    productId: string
+    staffId: string
+    paidAt: string
   } | null>(null)
 
   const staffName = useMemo(() => {
@@ -71,6 +90,9 @@ export function PaymentDrawer({
       method: currentPayment.method,
       pgProvider: currentPayment.pg_provider ?? '',
       depositorName: currentPayment.depositor_name ?? '',
+      productId: currentPayment.product_id ?? '',
+      staffId: currentPayment.staff_id ?? '',
+      paidAt: currentPayment.paid_at ? isoToLocalInput(currentPayment.paid_at) : '',
     })
     setIsEditing(true)
   }
@@ -90,6 +112,9 @@ export function PaymentDrawer({
           method: draft.method,
           pg_provider: draft.pgProvider.trim() || null,
           depositor_name: draft.depositorName.trim() || null,
+          product_id: draft.productId || null,
+          staff_id: draft.staffId || null,
+          paid_at: localInputToIso(draft.paidAt),
         },
       },
       { onSuccess: () => cancelEdit() },
@@ -172,8 +197,25 @@ export function PaymentDrawer({
             krw(payment.amount)
           )}
         </Row>
-        <Row label="상품">
-          {payment.product ? <Badge grade={payment.product.grade_granted}>{payment.product.name}</Badge> : '-'}
+        <Row label="상품(등급)">
+          {isEditing && draft ? (
+            <select
+              className={inputCls}
+              value={draft.productId}
+              onChange={(e) => setDraft({ ...draft, productId: e.target.value })}
+            >
+              <option value="">미지정</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {GRADE_LABEL[p.grade_granted]}
+                </option>
+              ))}
+            </select>
+          ) : payment.product ? (
+            <Badge grade={payment.product.grade_granted}>{payment.product.name}</Badge>
+          ) : (
+            '-'
+          )}
         </Row>
         <Row label="결제수단">
           {isEditing && draft ? (
@@ -208,10 +250,7 @@ export function PaymentDrawer({
             <button
               type="button"
               className="inline-flex items-center gap-1.5 font-semibold text-primary-600 hover:underline"
-              onClick={() => {
-                onClose()
-                navigate(`/admin/members?member=${encodeURIComponent(member.id)}`)
-              }}
+              onClick={() => openMemberDrawer(member.id)}
             >
               <UserRound className="h-3.5 w-3.5" />
               {member.name} · 기본정보 보기
@@ -234,12 +273,42 @@ export function PaymentDrawer({
             payment.depositor_name ?? '-'
           )}
         </Row>
-        <Row label="담당자">{payment.staff_id ? staffName[payment.staff_id] ?? '-' : '미지정'}</Row>
+        <Row label="담당자">
+          {isEditing && draft ? (
+            <select
+              className={inputCls}
+              value={draft.staffId}
+              onChange={(e) => setDraft({ ...draft, staffId: e.target.value })}
+            >
+              <option value="">미지정</option>
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          ) : payment.staff_id ? (
+            staffName[payment.staff_id] ?? '-'
+          ) : (
+            '미지정'
+          )}
+        </Row>
         <Row label="유입코드" mono>
           {payment.member?.inflow_code ?? '-'}
         </Row>
         <Row label="결제일시" mono>
-          {payment.paid_at ? datetime(payment.paid_at) : '-'}
+          {isEditing && draft ? (
+            <input
+              type="datetime-local"
+              className={inputCls}
+              value={draft.paidAt}
+              onChange={(e) => setDraft({ ...draft, paidAt: e.target.value })}
+            />
+          ) : payment.paid_at ? (
+            datetime(payment.paid_at)
+          ) : (
+            '-'
+          )}
         </Row>
         <Row label="이용시작" mono>
           {payment.period_start ? datetime(payment.period_start) : '-'}

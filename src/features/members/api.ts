@@ -128,6 +128,8 @@ export interface MemberPatch {
   outcall_done?: boolean
   name?: string // 기본정보 인라인 수정(현장 피드백 7/6)
   phone?: string
+  nickname?: string | null // 인라인 수정(현장 피드백 7/23)
+  inflow_code?: string | null // 인라인 수정(현장 피드백 7/23)
 }
 
 // ── 콜메모(리스트형) — 현장 피드백: 메모 1건만이 아니라 순차적으로 누적 ──────
@@ -508,6 +510,7 @@ export interface MemberSettingsPatch {
   reco_paused?: boolean // 조합발송 일시정지(true=발급·문자 중단). 일시정지 유료회원 문자 정지용(현장 6/26)
   age_band?: string | null // 연령대(40미만/40~70/70이상) — 현장 피드백(7/3)
   gender?: string | null // 성별(남/여) — 현장 피드백(7/3)
+  call_reservation_at?: string | null // 통화예약 일시(ISO) — 현장 피드백(7/23), AppShell 알림 배너가 참조
 }
 
 /** 회원별 발송 설정/홈페이지 비번 등(member.meta) 갱신. */

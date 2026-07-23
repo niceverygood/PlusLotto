@@ -345,10 +345,16 @@ export function useCancelPayment() {
 
 export interface UpdatePaymentInput {
   id: string
-  patch: Partial<Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name'>>
+  patch: Partial<
+    Pick<Payment, 'amount' | 'method' | 'pg_provider' | 'depositor_name' | 'product_id' | 'staff_id' | 'paid_at'>
+  >
 }
 
-/** 결제내역 수정(금액·결제수단·PG사·입금자명) — 실장 이상 전용(현장 피드백 7/21). UI 가드는 PaymentDrawer. */
+/**
+ * 결제내역 수정(금액·결제수단·PG사·입금자명·등급(상품)·담당자·결제일시) — 실장 이상 전용
+ * (현장 피드백 7/21, 등급/담당/일시 확장은 7/23). UI 가드는 PaymentDrawer.
+ * 승인된 결제의 상품(=등급)을 바꾸면 §8 결제승인과 동일하게 회원 등급·이용기간도 다시 반영한다.
+ */
 export function useUpdatePayment() {
   const user = useCurrentUser()
   const qc = useQueryClient()
@@ -360,7 +366,20 @@ export function useUpdatePayment() {
         const p = db.payments.find((x) => x.id === v.id)
         if (!p) return
         memberId = p.member_id
+        const prevProductId = p.product_id
         Object.assign(p, v.patch)
+        if (p.status === 'approved' && v.patch.product_id !== undefined && v.patch.product_id !== prevProductId) {
+          const member = db.members.find((m) => m.id === p.member_id)
+          const product = p.product_id ? db.products.find((pr) => pr.id === p.product_id) : undefined
+          if (member && product) {
+            member.grade = product.grade_granted
+            if (p.paid_at) {
+              const ts = new Date(p.paid_at)
+              p.period_start = ts.toISOString()
+              p.period_end = addMonths(ts, product.duration_months).toISOString()
+            }
+          }
+        }
         db.logs.push(paymentLog(user?.id ?? null, 'payment.update', p.id, { member_id: p.member_id, patch: v.patch }))
       })
       return memberId

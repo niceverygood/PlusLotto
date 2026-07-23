@@ -15,6 +15,7 @@ import {
 } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
+import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import { GRADE_LABEL, PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import type { Grade, PaymentMethod } from '@/types/db'
@@ -91,10 +92,10 @@ export function PaymentsPage() {
   }, [staff])
 
   const pageOffset = (page - 1) * PAGE_SIZE
-  const openMember = useCallback(
-    (memberId: string) => navigate(`/admin/members?member=${encodeURIComponent(memberId)}`),
-    [navigate],
-  )
+  // 회원상세는 전역 Drawer(현장 피드백 7/23 "결제내역에서 회원 클릭 시 화면 이동" 버그 수정) —
+  // 라우트 이동 없이 이 결제 목록 화면 위에 그대로 뜬다.
+  const openMemberDrawer = useMemberDrawerStore((s) => s.open)
+  const openMember = useCallback((memberId: string) => openMemberDrawer(memberId), [openMemberDrawer])
   const columns = useMemo(
     () => paymentColumns({ pageOffset, staffNames, onMemberClick: openMember }),
     [openMember, pageOffset, staffNames],
