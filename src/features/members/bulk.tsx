@@ -20,9 +20,9 @@ import {
   useSendSms,
   useSmsTemplates,
 } from './api'
-import { INFLOW_TYPES } from './views'
+import { CONSULT_STATUSES, INFLOW_TYPES } from './views'
 
-type BulkModal = 'status' | 'inflow' | 'grade' | 'assign' | 'auto' | 'reco' | 'reset' | 'resetdb' | 'sms' | null
+type BulkModal = 'status' | 'consult' | 'inflow' | 'grade' | 'assign' | 'auto' | 'reco' | 'reset' | 'resetdb' | 'sms' | null
 
 const STATUS_VALUES: MemberStatus[] = ['active', 'suspended', 'deleted', 'withdrawn']
 const GRADE_VALUES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
@@ -46,6 +46,7 @@ export function MemberBulkActions({
   const canDirectSms = role === 'admin' || role === 'manager'
   const [modal, setModal] = useState<BulkModal>(null)
   const [statusVal, setStatusVal] = useState<MemberStatus>('active')
+  const [consultVal, setConsultVal] = useState<string>(CONSULT_STATUSES[0])
   const [inflowVal, setInflowVal] = useState<string>(INFLOW_TYPES[0])
   const [staffVal, setStaffVal] = useState('')
   const [smsVal, setSmsVal] = useState('')
@@ -111,6 +112,9 @@ export function MemberBulkActions({
     <>
       <BulkButton onClick={() => setModal('status')}>
         <Tag className="h-3.5 w-3.5" /> 상태변경
+      </BulkButton>
+      <BulkButton onClick={() => setModal('consult')}>
+        <Tag className="h-3.5 w-3.5" /> 상담상태
       </BulkButton>
       {isAdmin && (
         <>
@@ -178,6 +182,40 @@ export function MemberBulkActions({
           ))}
         </select>
         <p className="mt-2 text-[11.5px] text-gray-400">정지·삭제·탈퇴는 위험 작업입니다. 신중히 적용하세요.</p>
+      </Modal>
+
+      {/* 상담상태 일괄변경(현장 피드백 7/23 — 디비 배분 후 상담상태를 여러 건 한 번에 지정) */}
+      <Modal
+        open={modal === 'consult'}
+        onClose={close}
+        title={`상담상태 일괄변경 · ${n}건`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="sec" size="sm" onClick={close} disabled={busy}>
+              취소
+            </Button>
+            <Button
+              variant="pri"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                bulkUpdate.mutate({ ids: selectedIds, patch: { consult_status: consultVal } }, { onSuccess: done })
+              }
+            >
+              적용
+            </Button>
+          </>
+        }
+      >
+        <label className="mb-1.5 block text-[12px] font-semibold text-gray-600">변경할 상담상태</label>
+        <select className={selectCls} value={consultVal} onChange={(e) => setConsultVal(e.target.value)}>
+          {CONSULT_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
       </Modal>
 
       {/* 유입분류 일괄변경 */}
