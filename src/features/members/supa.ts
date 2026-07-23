@@ -16,6 +16,7 @@ const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
+import { normalizeInflowType } from '@/lib/inflow'
 import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
@@ -210,7 +211,7 @@ export async function createMember(input: MemberCreateInput, actor: string | nul
     tendency: input.tendency?.trim() || null,
     consult_status: input.consult_status?.trim() || '신규',
     inflow_code: input.inflow_code?.trim() || null,
-    inflow_type: input.inflow_type?.trim() || null,
+    inflow_type: normalizeInflowType(input.inflow_type),
     assigned_staff_id: staff?.id ?? null,
     team_id: staff?.team_id ?? null,
     memo: input.memo?.trim() || null,
@@ -290,7 +291,7 @@ export async function bulkImportMembers(
       tendency: input.tendency?.trim() || null,
       consult_status: input.consult_status?.trim() || '신규',
       inflow_code: input.inflow_code?.trim() || null,
-      inflow_type: input.inflow_type?.trim() || null,
+      inflow_type: normalizeInflowType(input.inflow_type),
       assigned_staff_id: sid,
       team_id: team,
       memo: input.memo?.trim() || null,
@@ -618,8 +619,11 @@ export async function bulkUpdateMembers(
   patch: MemberPatch & { inflow_type?: string },
   actor: string | null,
 ): Promise<void> {
-  await updateByIds('members', { ...patch, ...statusFlags(patch.status) }, ids)
-  await pushLog({ kind: 'admin', actor, action: 'member.bulk_update', meta: { count: ids.length, ids, patch } })
+  const normalizedPatch = patch.inflow_type === undefined
+    ? patch
+    : { ...patch, inflow_type: normalizeInflowType(patch.inflow_type) }
+  await updateByIds('members', { ...normalizedPatch, ...statusFlags(patch.status) }, ids)
+  await pushLog({ kind: 'admin', actor, action: 'member.bulk_update', meta: { count: ids.length, ids, patch: normalizedPatch } })
 }
 
 // 배정 3종(수동배정·자동할당·리셋) 은 "회원 갱신 + assignments 감사로그" 를 함께 남겨야
@@ -734,6 +738,7 @@ export async function resetMembers(ids: string[], actor: string | null): Promise
         team_id: null,
         outcall_done: false,
         tendency: null,
+        consult_status: '신규',
         last_active_at: null,
         registered_at: ts, // 현장 피드백: 초기화 시점을 새 가입일시로
         is_suspended: false,

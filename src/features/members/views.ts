@@ -3,8 +3,10 @@
 // (오늘다비·재시도·중복유입)는 합리적으로 정의하고 docs/ASSUMPTIONS.md 에 기록.
 import type { Grade, Member, MemberStatus, Role } from '@/types/db'
 import { CONSULT_STATUSES, type ConsultStatus } from '@/lib/consultStatus'
+import { INFLOW_TYPES, sameInflowType, type InflowType } from '@/lib/inflow'
 
 export { CONSULT_STATUSES, type ConsultStatus }
+export { INFLOW_TYPES, type InflowType }
 
 // ── 필터 스펙 (모든 세그먼트가 이 형태의 술어 집합으로 표현된다) ──────────
 export interface MemberFilter {
@@ -36,9 +38,6 @@ export interface MemberFilter {
 
 // 유입구분(=유입분류) — 현장 피드백(2026-06): 채널명(네이버/카카오)이 아니라
 // "콜 단계/DB구분" 분류로 운영한다. inflow_code(채널)와 별개. DECISIONS.md 참조.
-export const INFLOW_TYPES = ['신규', '하루전부재', '하루전거절', '이틀전', '삼일전', '구디비'] as const
-export type InflowType = (typeof INFLOW_TYPES)[number]
-
 // 페이지당 행 수 옵션(현장 피드백) — 50 고정 → 선택형.
 export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000] as const
 export const DEFAULT_PAGE_SIZE = 50
@@ -282,7 +281,7 @@ export function filterMembers(
     if (filter.outcall !== undefined && m.outcall_done !== filter.outcall) return false
     if (filter.tendency && m.tendency !== filter.tendency) return false
     if (filter.inflowCode && m.inflow_code !== filter.inflowCode) return false
-    if (filter.inflowType && m.inflow_type !== filter.inflowType) return false
+    if (filter.inflowType && !sameInflowType(m.inflow_type, filter.inflowType)) return false
     if (filter.consultStatus && m.consult_status !== filter.consultStatus) return false
     if (filter.registeredToday && !isSameDay(m.registered_at, ctx.now)) return false
     if (filter.registeredFrom || filter.registeredTo) {

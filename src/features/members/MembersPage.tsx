@@ -55,6 +55,7 @@ const selectCls =
 export function MembersPage() {
   usePageMeta('이용자', '26 세그먼트 · 필터 · 일괄작업 · 상세')
   const role = useRole()
+  const canSeeInflow = role === 'admin' || role === 'manager'
   const { get, set, setMany, remove, clear } = useUrlFilters()
   const { data: staff = [] } = useStaff()
 
@@ -173,7 +174,7 @@ export function MembersPage() {
     chips.push({ key: 'it', label: `유입구분: ${inflowTypeF}`, onRemove: () => remove('it') })
   if (consultF)
     chips.push({ key: 'cs', label: `상담상태: ${consultF}`, onRemove: () => remove('cs') })
-  if (dupF) chips.push({ key: 'dup', label: '중복 디비만', onRemove: () => remove('dup') })
+  if (dupF) chips.push({ key: 'dup', label: '중복 디비만 · 최근 중복입력순', onRemove: () => remove('dup') })
   if (regFromF || regToF)
     chips.push({
       key: 'reg',
@@ -309,8 +310,8 @@ export function MembersPage() {
               ))}
             </select>
           </Field>
-          {/* 유입코드/유입구분은 최고관리자만(현장 피드백) */}
-          {role === 'admin' && (
+          {/* 유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21) */}
+          {canSeeInflow && (
             <>
               <Field label="유입코드">
                 <select
@@ -381,7 +382,12 @@ export function MembersPage() {
               <input
                 type="checkbox"
                 checked={dupF}
-                onChange={(e) => set('dup', e.target.checked ? '1' : null, { resetPage: true })}
+                onChange={(e) =>
+                  setMany(
+                    { dup: e.target.checked ? '1' : null, sort: e.target.checked ? null : sortRaw ?? null },
+                    { resetPage: true },
+                  )
+                }
               />
               중복 입력된 디비만
             </label>

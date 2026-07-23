@@ -13,6 +13,7 @@ import { sendOneShot } from '@/lib/oneshot'
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSets } from '@/lib/lottoGenerator'
+import { normalizeInflowType } from '@/lib/inflow'
 import { filterMembers, getView, MEMBER_VIEWS, type MemberFilter } from './views'
 import * as supa from './supa'
 
@@ -69,6 +70,28 @@ function sortMembers(rows: Member[], sortId: string, desc: boolean): Member[] {
     if (va > vb) return 1 * dir
     return inflowTimeCmp(a, b) // 동일 키는 유입시간으로 고정
   })
+}
+
+// 중복 DB 필터에서는 가입일이 아니라 "최근 중복 입력 시각"이 업무 우선순위다.
+// 과거 실제 중복행은 그룹 내 가장 늦은 가입일을 중복 발생시각으로 폴백한다.
+function sortByDuplicateInputTime(rows: Member[], allMembers: readonly Member[]): Member[] {
+  const phoneGroups = new Map<string, { count: number; latest: number }>()
+  for (const member of allMembers) {
+    const phone = member.phone.replace(/\D/g, '')
+    if (!phone) continue
+    const current = phoneGroups.get(phone) ?? { count: 0, latest: 0 }
+    current.count += 1
+    current.latest = Math.max(current.latest, Date.parse(member.registered_at) || 0)
+    phoneGroups.set(phone, current)
+  }
+  const timeOf = (member: Member): number => {
+    const raw = member.meta.duplicate_last_at
+    const marked = typeof raw === 'string' ? Date.parse(raw) : NaN
+    const group = phoneGroups.get(member.phone.replace(/\D/g, ''))
+    const legacy = group && group.count > 1 ? group.latest : 0
+    return Math.max(Number.isFinite(marked) ? marked : 0, legacy, Date.parse(member.registered_at) || 0)
+  }
+  return [...rows].sort((a, b) => timeOf(b) - timeOf(a) || inflowTimeCmp(a, b))
 }
 
 // ── 공통 헬퍼 ─────────────────────────────────────────────────────────
@@ -201,9 +224,11 @@ function listFrom(base: readonly Member[], q: MembersQuery, roleMap: Record<stri
   const filter: MemberFilter = { ...view.filter, ...q.extra, search: q.search }
   const ctx = { now: Date.now(), staffRoleById: roleMap }
   const filtered = filterMembers(base, filter, ctx)
-  const sorted = q.sortId
-    ? sortMembers(filtered, q.sortId, q.sortDesc ?? false)
-    : sortMembers(filtered, 'registered_at', true) // 기본: 최신가입 우선
+  const sorted = filter.dupPhone
+    ? sortByDuplicateInputTime(filtered, base)
+    : q.sortId
+      ? sortMembers(filtered, q.sortId, q.sortDesc ?? false)
+      : sortMembers(filtered, 'registered_at', true) // 기본: 최신가입 우선
   const total = sorted.length
   const start = (q.page - 1) * q.pageSize
   return {
@@ -763,7 +788,7 @@ export function useBulkUpdateMembers() {
       mutateDb((db) => {
         for (const m of db.members) {
           if (!v.ids.includes(m.id)) continue
-          if (v.patch.inflow_type !== undefined) m.inflow_type = v.patch.inflow_type
+          if (v.patch.inflow_type !== undefined) m.inflow_type = normalizeInflowType(v.patch.inflow_type)
           applyPatch(m, v.patch)
         }
         db.logs.push(
@@ -820,7 +845,7 @@ function buildLeadMember(
     tendency: input.tendency?.trim() || null,
     consult_status: input.consult_status?.trim() || '신규',
     inflow_code: input.inflow_code?.trim() || null,
-    inflow_type: input.inflow_type?.trim() || null,
+    inflow_type: normalizeInflowType(input.inflow_type),
     assigned_staff_id: opts.staff?.id ?? null,
     team_id: opts.staff?.team_id ?? null,
     memo: input.memo?.trim() || null,
@@ -849,7 +874,7 @@ function markDuplicateAttempt(member: Member, input: MemberCreateInput, source: 
     duplicate_last_at: nowIso(),
     duplicate_last_source: source,
     duplicate_last_inflow_code: input.inflow_code?.trim() || null,
-    duplicate_last_inflow_type: input.inflow_type?.trim() || null,
+    duplicate_last_inflow_type: normalizeInflowType(input.inflow_type),
   }
 }
 
@@ -1124,6 +1149,7 @@ export function useResetMembers() {
           m.team_id = null
           m.outcall_done = false
           m.tendency = null
+          m.consult_status = '신규'
           m.last_active_at = null
           m.registered_at = ts // 현장 피드백: 초기화 시점을 새 가입일시로 표시(재사용 신규 리드)
           m.is_suspended = false
