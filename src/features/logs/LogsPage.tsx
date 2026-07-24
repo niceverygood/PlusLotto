@@ -3,7 +3,8 @@
 // TODO(live-verify): 포인트(적립/차감) 시스템 존재 여부 미확인(ASSUMPTIONS) — 표준 로그로 시연.
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { ScrollText, Search } from 'lucide-react'
+import { format } from 'date-fns'
+import { CalendarDays, ScrollText, Search } from 'lucide-react'
 import { Button, EmptyState, PageHeader, SkeletonRows, Tabs, type TabItem } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useStaff } from '@/lib/staff'
@@ -48,6 +49,7 @@ const ACTION_LABEL: Record<string, string> = {
 
 const inputCls =
   'h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-[13px] text-gray-700 outline-none focus:border-primary-500'
+const todayStr = () => format(new Date(), 'yyyy-MM-dd')
 
 function metaSummary(meta: Record<string, unknown>): string {
   const entries = Object.entries(meta)
@@ -132,6 +134,19 @@ export function LogsPage() {
           <label className="mb-1 block text-[11px] font-semibold text-gray-500">종료일</label>
           <input type="date" className={inputCls + ' w-40'} value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
+        <button
+          type="button"
+          title="오늘"
+          onClick={() => {
+            const t = todayStr()
+            setFrom(t)
+            setTo(t)
+          }}
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 text-[11.5px] font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800"
+        >
+          <CalendarDays className="h-3.5 w-3.5" />
+          오늘
+        </button>
         {(q || from || to) && (
           <Button variant="gho" size="sm" onClick={resetFilters}>
             초기화

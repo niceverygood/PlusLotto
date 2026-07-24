@@ -100,7 +100,8 @@ function ruleQuota(mode: number): { month: number; freq: number } {
 }
 
 // ── PRNG (mulberry32) — 시드 가능한 결정적 난수 ─────────────────────────
-function makeRng(seed: number): () => number {
+// lib/lottoPatentExclude.ts(특허 제외수 로직)도 동일 PRNG·정렬·조합필터 헬퍼를 재사용한다(§2 lib 내부 공유).
+export function makeRng(seed: number): () => number {
   let a = seed >>> 0
   return () => {
     a |= 0
@@ -112,7 +113,7 @@ function makeRng(seed: number): () => number {
 }
 
 // ── 통계 헬퍼 ───────────────────────────────────────────────────────────
-function sortedRoundsDesc(rounds: readonly LottoRound[]): LottoRound[] {
+export function sortedRoundsDesc(rounds: readonly LottoRound[]): LottoRound[] {
   return [...rounds].sort((a, b) => b.round_no - a.round_no)
 }
 
@@ -152,11 +153,11 @@ export function sumBand(rounds: readonly LottoRound[]): [number, number] {
 }
 
 // 번호 → 구간 버킷(0:1-9, 1:10-19, 2:20-29, 3:30-39, 4:40-45).
-function decadeBucket(n: number): number {
+export function decadeBucket(n: number): number {
   return Math.min(4, Math.floor(n / 10))
 }
 
-function maxConsecutiveRun(sortedAsc: readonly number[]): number {
+export function maxConsecutiveRun(sortedAsc: readonly number[]): number {
   let best = 1
   let cur = 1
   for (let i = 1; i < sortedAsc.length; i++) {
@@ -166,13 +167,13 @@ function maxConsecutiveRun(sortedAsc: readonly number[]): number {
   return best
 }
 
-function consecutivePairCount(sortedAsc: readonly number[]): number {
+export function consecutivePairCount(sortedAsc: readonly number[]): number {
   let c = 0
   for (let i = 1; i < sortedAsc.length; i++) if (sortedAsc[i] === sortedAsc[i - 1] + 1) c++
   return c
 }
 
-function oddCount(nums: readonly number[]): number {
+export function oddCount(nums: readonly number[]): number {
   return nums.filter((n) => n % 2 === 1).length
 }
 
@@ -292,7 +293,7 @@ interface QualityOpts {
   relaxed: boolean
 }
 
-function key(nums: readonly number[]): string {
+export function key(nums: readonly number[]): string {
   return [...nums].sort((a, b) => a - b).join('-')
 }
 
@@ -324,7 +325,7 @@ function passesQuality(combo: readonly number[], opts: QualityOpts): boolean {
 }
 
 // ── 조합 생성 ───────────────────────────────────────────────────────────
-function drawCombo(pool: readonly number[], fixed: readonly number[], rng: () => number): number[] {
+export function drawCombo(pool: readonly number[], fixed: readonly number[], rng: () => number): number[] {
   const need = LOTTO_PICK - fixed.length
   const bag = pool.filter((n) => !fixed.includes(n))
   // Fisher–Yates 부분 셔플

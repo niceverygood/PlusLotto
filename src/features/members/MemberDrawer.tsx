@@ -246,7 +246,8 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     )
   }
   const id = member.id
-  const canDeleteReco = role === 'admin' || role === 'manager'
+  // 발급조합 삭제(§8) — 실장까지 확장(현장 피드백 7/24, 정의현 차장).
+  const canDeleteReco = role === 'admin' || role === 'manager' || role === 'leader'
 
   // 배정이력은 최고관리자만(현장 피드백 <회원정보창> 6). 메모는 기본정보 탭 하단에 통합(현장 피드백 7/3).
   const tabs: TabItem[] = [

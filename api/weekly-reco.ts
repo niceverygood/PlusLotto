@@ -125,7 +125,7 @@ export interface ExclusionReason {
   rule: ExclusionRuleKey
 }
 
-export type ExclusionRuleKey = 'prev' | 'bonus' | 'month' | 'freq' | 'forties' | 'manual'
+export type ExclusionRuleKey = 'prev' | 'bonus' | 'month' | 'freq' | 'forties' | 'manual' | 'patent'
 
 export interface ExclusionStage {
   rule: ExclusionRuleKey
@@ -527,9 +527,277 @@ export const EXCLUSION_RULE_LABEL: Record<ExclusionRuleKey, string> = {
   freq: '저빈도',
   forties: '40번대 과출현',
   manual: '수동 제외',
+  patent: '특허 제외수 로직',
 }
 
 export const MODE_OPTIONS: ExclusionMode[] = [10, 15, 20]
+
+// ── 이하 특허 제외수 로직: src/lib/lottoPatentExclude.ts 사본(임포트 제거, 현장 피드백 7/23) ──────
+// 실버(goldp)·골드(vip)·다이아(royal) 3개 유료등급 전용 — 위 통계 제외수 엔진(computeExclusions/
+// passesQuality)과는 완전히 별도 경로. 원본 수정 시 이 사본도 동기화할 것(파일 상단 경고 참조).
+type PatentGrade = 'goldp' | 'vip' | 'royal'
+function isPatentGrade(grade: string | null | undefined): grade is PatentGrade {
+  return grade === 'goldp' || grade === 'vip' || grade === 'royal'
+}
+
+interface PatentFilters {
+  sumBand: boolean
+  oddEven343: boolean
+  consecutivePairMax2: boolean
+  segmentMax3: boolean
+  carryoverMax2: boolean
+  lastDigitMax2: boolean
+}
+interface PatentGradeConfig {
+  window: number | 'all'
+  excludeCount: number
+  filters: PatentFilters
+}
+const SILVER_FILTERS: PatentFilters = {
+  sumBand: true,
+  oddEven343: true,
+  consecutivePairMax2: false,
+  segmentMax3: false,
+  carryoverMax2: false,
+  lastDigitMax2: false,
+}
+const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true, carryoverMax2: true }
+const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
+const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
+  goldp: { window: 10, excludeCount: 5, filters: SILVER_FILTERS }, // 실버
+  vip: { window: 30, excludeCount: 8, filters: GOLD_FILTERS }, // 골드
+  royal: { window: 'all', excludeCount: 12, filters: DIAMOND_FILTERS }, // 다이아
+}
+
+function patentFreqScore(ratio: number): number {
+  if (ratio >= 0.4) return 50
+  if (ratio >= 0.3) return 35
+  if (ratio >= 0.2) return 20
+  if (ratio >= 0.1) return 5
+  return 0
+}
+function patentGapScore(gap: number): number {
+  if (gap >= 15) return 50
+  if (gap >= 10) return 35
+  if (gap >= 5) return 20
+  if (gap >= 2) return 5
+  return 0 // gap 0(직전출현)·1(경계 미명시, 0점 처리)
+}
+interface PatentNumberScore {
+  number: number
+  total: number
+}
+function patentScoreWindow(roundsDesc: readonly LottoRound[], windowSize: number): PatentNumberScore[] {
+  const win = roundsDesc.slice(0, windowSize)
+  const n = win.length
+  const out: PatentNumberScore[] = []
+  for (let num = LOTTO_MIN; num <= LOTTO_MAX; num++) {
+    let appear = 0
+    let gap = n
+    for (let i = 0; i < n; i++) {
+      if (win[i].numbers.includes(num)) {
+        appear++
+        if (gap === n) gap = i
+      }
+    }
+    const ratio = n > 0 ? appear / n : 0
+    out.push({ number: num, total: patentFreqScore(ratio) + patentGapScore(gap) })
+  }
+  return out
+}
+
+/** N/N+1위 동점이면 창을 10회차씩 늘려 재계산 — window 는 유한 회차 내에서만 늘어나 항상 종료한다. */
+function computePatentExcludeSet(
+  roundsDesc: readonly LottoRound[],
+  baseWindow: number | 'all',
+  excludeCount: number,
+  fixedSet: ReadonlySet<number>,
+): { excluded: number[]; window: number } {
+  const maxAvailable = roundsDesc.length
+  let window = baseWindow === 'all' ? maxAvailable : Math.min(baseWindow, maxAvailable)
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const scores = patentScoreWindow(roundsDesc, window).filter((s) => !fixedSet.has(s.number))
+    const sorted = [...scores].sort((a, b) => b.total - a.total || a.number - b.number)
+    const cutoff = sorted[excludeCount - 1]?.total ?? 0
+    const next = sorted[excludeCount]?.total
+    const tiedAtBoundary = next !== undefined && next === cutoff
+    const canGrow = baseWindow !== 'all' && window < maxAvailable
+    if (!tiedAtBoundary || !canGrow) return { excluded: sorted.slice(0, excludeCount).map((s) => s.number), window }
+    window = Math.min(window + 10, maxAvailable)
+  }
+}
+
+function passesPatentFilters(
+  asc: readonly number[],
+  filters: PatentFilters,
+  prevNumbers: readonly number[],
+  relaxed: boolean,
+): boolean {
+  if (relaxed) return maxConsecutiveRun(asc) < LOTTO_PICK
+  if (filters.sumBand) {
+    const total = asc.reduce((a, n) => a + n, 0)
+    if (total < 100 || total > 175) return false
+  }
+  if (filters.oddEven343) {
+    const odd = oddCount(asc)
+    if (odd !== 2 && odd !== 3 && odd !== 4) return false
+  }
+  if (filters.consecutivePairMax2 && consecutivePairCount(asc) >= 3) return false
+  if (filters.segmentMax3) {
+    const counts = new Map<number, number>()
+    for (const n of asc) counts.set(decadeBucket(n), (counts.get(decadeBucket(n)) ?? 0) + 1)
+    if (Math.max(...counts.values()) >= 4) return false
+  }
+  if (filters.carryoverMax2) {
+    const overlap = asc.filter((n) => prevNumbers.includes(n)).length
+    if (overlap >= 3) return false
+  }
+  if (filters.lastDigitMax2) {
+    const counts = new Map<number, number>()
+    for (const n of asc) counts.set(n % 10, (counts.get(n % 10) ?? 0) + 1)
+    if (Math.max(...counts.values()) >= 3) return false
+  }
+  return true
+}
+
+function generatePatentCombos(
+  pool: readonly number[],
+  fixed: readonly number[],
+  count: number,
+  rng: () => number,
+  filters: PatentFilters,
+  prevNumbers: readonly number[],
+  pastSets: ReadonlySet<string>,
+): number[][] {
+  const out: number[][] = []
+  const used = new Set<string>()
+  let relaxed = false
+  const TRY_PER_SET = 400
+  while (out.length < count) {
+    let placed = false
+    for (let attempt = 0; attempt < TRY_PER_SET; attempt++) {
+      const combo = drawCombo(pool, fixed, rng)
+      const k = key(combo)
+      if (used.has(k) || pastSets.has(k)) continue
+      if (passesPatentFilters(combo, filters, prevNumbers, relaxed)) {
+        out.push(combo)
+        used.add(k)
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      if (!relaxed) {
+        relaxed = true
+        continue
+      }
+      break
+    }
+  }
+  return out
+}
+
+interface PatentGenerateResult {
+  sets: number[][]
+  excluded: number[]
+  autoExcluded: number[]
+  window: number
+  fixed: number[]
+  pool: number[]
+  targetRound: number
+  prevRound: number | null
+  prevNumbers: number[] | null
+  prevBonus: number | null
+}
+
+function generatePatentSets(
+  rounds: readonly LottoRound[],
+  grade: PatentGrade,
+  manual: LottoExcludeSettings,
+  setCount: number,
+  seed?: number,
+): PatentGenerateResult {
+  const cfg = PATENT_CONFIG[grade]
+  const desc = sortedRoundsDesc(rounds)
+  const prev = desc[0] ?? null
+  const targetRound = prev ? prev.round_no + 1 : 1
+  const fixed = manual.fixed.filter((n) => n >= LOTTO_MIN && n <= LOTTO_MAX).slice(0, LOTTO_PICK)
+  const fixedSet = new Set(fixed)
+
+  const { excluded: autoExcluded, window } = computePatentExcludeSet(desc, cfg.window, cfg.excludeCount, fixedSet)
+  const excludedSet = new Set<number>([...autoExcluded, ...manual.excluded])
+  for (const f of fixedSet) excludedSet.delete(f)
+
+  let pool = ALL_NUMBERS.filter((n) => !excludedSet.has(n))
+  if (pool.length < LOTTO_PICK) {
+    const manualSet = new Set(manual.excluded)
+    const droppable = autoExcluded.filter((n) => !manualSet.has(n))
+    while (pool.length < LOTTO_PICK && droppable.length) {
+      const back = droppable.pop()!
+      excludedSet.delete(back)
+      pool = ALL_NUMBERS.filter((n) => !excludedSet.has(n))
+    }
+  }
+
+  const prevNumbers = prev ? [...prev.numbers].sort((a, b) => a - b) : []
+  const pastSets = new Set(rounds.map((r) => key(r.numbers)))
+  const rng = makeRng(seed ?? (Date.now() & 0xffffffff))
+  const sets =
+    pool.length >= LOTTO_PICK
+      ? generatePatentCombos(pool, fixed, Math.max(1, setCount), rng, cfg.filters, prevNumbers, pastSets)
+      : []
+
+  return {
+    sets,
+    excluded: [...excludedSet].sort((a, b) => a - b),
+    autoExcluded,
+    window,
+    fixed,
+    pool,
+    targetRound,
+    prevRound: prev?.round_no ?? null,
+    prevNumbers: prev ? prevNumbers : null,
+    prevBonus: prev?.bonus ?? null,
+  }
+}
+
+/** 발급 조합(등급 인지) — 특허 3등급은 위 로직, 그 외는 기존 통계 로직 + 완전랜덤 보충(비율 혼합). */
+function generateIssueSetsForGrade(
+  rounds: readonly LottoRound[],
+  grade: string,
+  exclude: LottoExcludeSettings,
+  count: number,
+  logicRatio: number,
+  seed?: number,
+): number[][] {
+  const total = Math.max(1, count)
+  const ratio = Math.max(0, Math.min(100, Math.round(logicRatio)))
+  const logicCount = Math.max(0, Math.min(total, Math.round((total * ratio) / 100)))
+  const sets: number[][] = isPatentGrade(grade)
+    ? logicCount > 0
+      ? generatePatentSets(rounds, grade, exclude, logicCount, seed).sets
+      : []
+    : logicCount > 0
+      ? generateRecommendation(rounds, exclude, { mode: 20, setCount: logicCount, seed }).sets
+      : []
+  const seen = new Set(sets.map((s) => s.join('-')))
+  const randomCount = total - sets.length
+  let guard = 0
+  while (sets.length < total && guard++ < Math.max(1, randomCount) * 200) {
+    const poolAll = Array.from({ length: LOTTO_MAX - LOTTO_MIN + 1 }, (_, i) => i + LOTTO_MIN)
+    for (let i = poolAll.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[poolAll[i], poolAll[j]] = [poolAll[j], poolAll[i]]
+    }
+    const set = poolAll.slice(0, LOTTO_PICK).sort((a, b) => a - b)
+    const k = set.join('-')
+    if (seen.has(k)) continue
+    seen.add(k)
+    sets.push(set)
+  }
+  return sets
+}
 
 // ── 유료회원 지정요일 조합 SMS 자동발송(현장 피드백 6/18) ────────────────────────
 // 유료 등급(골드/골드+/VIP/로얄)만 대상. 무료는 발급만(문자 X).
@@ -742,26 +1010,8 @@ export default async function handler(req: any, res: any) {
     const CONC = 12
     const processOne = async ({ r, meta, recos, count }: (typeof eligible)[number]) => {
       const exclude = excludeFor(r.grade)
-      // 로직 round(count×ratio%) + 완전랜덤 나머지(소스: src/lib/lottoGenerator.generateIssueSets)
-      const logicCount = Math.max(0, Math.min(count, Math.round((count * ratio) / 100)))
-      const sets =
-        logicCount > 0
-          ? generateRecommendation(rounds, exclude, { mode: 20, setCount: logicCount }).sets
-          : []
-      const seen = new Set(sets.map((s) => s.join('-')))
-      let guard = 0
-      while (sets.length < count && guard++ < count * 200) {
-        const pool = Array.from({ length: LOTTO_MAX - LOTTO_MIN + 1 }, (_, i) => i + LOTTO_MIN)
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1))
-          ;[pool[i], pool[j]] = [pool[j], pool[i]]
-        }
-        const set = pool.slice(0, LOTTO_PICK).sort((a, b) => a - b)
-        const k = set.join('-')
-        if (seen.has(k)) continue
-        seen.add(k)
-        sets.push(set)
-      }
+      // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직 + 완전랜덤 보충(현장 피드백 7/23).
+      const sets = generateIssueSetsForGrade(rounds, r.grade, exclude, count, ratio)
       const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets }
       const nextMeta = { ...meta, weekly_recos: [issue, ...recos].slice(0, KEEP) }
       const { error } = await sb.from('members').update({ meta: nextMeta }).eq('id', r.id)
@@ -799,28 +1049,63 @@ export default async function handler(req: any, res: any) {
     if (issuedByGrade.size > 0) {
       let generationRecords = [...(settings.generation_records ?? [])]
       for (const [grade, gradeIssued] of issuedByGrade) {
-        const trace = generateRecommendation(rounds, excludeFor(grade), {
-          mode: 20,
-          setCount: 1,
-          seed: targetRound,
-        })
-        const record: GenerationRecordLite = {
-          id: `genrec_cron_${targetRound}_${grade}_${Date.now().toString(36)}`,
-          created_at: ts,
-          created_by: null,
-          grade,
-          target_round: targetRound,
-          mode: trace.mode,
-          source: 'weekly_auto',
-          fixed: trace.fixed,
-          excluded: trace.excluded,
-          reasons: trace.reasons,
-          stages: trace.stages,
-          pool: trace.pool,
-          basis: trace.basis,
-          set_count: baseCount,
-          logic_ratio: ratio,
-          issued_count: gradeIssued,
+        const exclude = excludeFor(grade)
+        let record: GenerationRecordLite
+        if (isPatentGrade(grade)) {
+          // 실버·골드·다이아 — 특허 제외수 로직 스냅샷(현장 피드백 7/23).
+          const patent = generatePatentSets(rounds, grade, exclude, 1, targetRound)
+          const manualExcluded = patent.excluded.filter((n) => !patent.autoExcluded.includes(n))
+          record = {
+            id: `genrec_cron_${targetRound}_${grade}_${Date.now().toString(36)}`,
+            created_at: ts,
+            created_by: null,
+            grade,
+            target_round: targetRound,
+            mode: patent.autoExcluded.length,
+            source: 'weekly_auto',
+            fixed: patent.fixed,
+            excluded: patent.excluded,
+            reasons: [
+              ...patent.autoExcluded.map((number) => ({ number, rule: 'patent' as ExclusionRuleKey })),
+              ...manualExcluded.map((number) => ({ number, rule: 'manual' as ExclusionRuleKey })),
+            ],
+            stages: [
+              { rule: 'patent', candidates: patent.autoExcluded, selected: patent.autoExcluded },
+              { rule: 'manual', candidates: manualExcluded, selected: manualExcluded },
+            ],
+            pool: patent.pool,
+            basis: {
+              roundsUsed: patent.window,
+              prevRound: patent.prevRound,
+              prevNumbers: patent.prevNumbers,
+              prevBonus: patent.prevBonus,
+              sumBand: [100, 175],
+              relaxed: false,
+            },
+            set_count: baseCount,
+            logic_ratio: ratio,
+            issued_count: gradeIssued,
+          }
+        } else {
+          const trace = generateRecommendation(rounds, exclude, { mode: 20, setCount: 1, seed: targetRound })
+          record = {
+            id: `genrec_cron_${targetRound}_${grade}_${Date.now().toString(36)}`,
+            created_at: ts,
+            created_by: null,
+            grade,
+            target_round: targetRound,
+            mode: trace.mode,
+            source: 'weekly_auto',
+            fixed: trace.fixed,
+            excluded: trace.excluded,
+            reasons: trace.reasons,
+            stages: trace.stages,
+            pool: trace.pool,
+            basis: trace.basis,
+            set_count: baseCount,
+            logic_ratio: ratio,
+            issued_count: gradeIssued,
+          }
         }
         generationRecords = [
           record,

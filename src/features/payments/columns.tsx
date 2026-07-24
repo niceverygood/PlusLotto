@@ -1,5 +1,5 @@
-// 결제 테이블 컬럼 정의 (CLAUDE §6). BUILD_PROMPTS P4-2 컬럼 순서 그대로:
-// No·상태·담당·결제수단·PG·금액·상품(Badge)·기간·유입코드·유저·입금자명·결제일시.
+// 결제 테이블 컬럼 정의 (CLAUDE §6). 컬럼 순서(현장 피드백 7/23 — 담당자 바로 오른쪽에 유저 배치):
+// No·상태·담당·유저·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge, NumCell, StatusChip } from '@/design-system/components'
 import { date, datetime, krw } from '@/lib/format'
@@ -39,6 +39,28 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
           <span className="text-[12.5px] text-gray-700">{name}</span>
         ) : (
           <span className="text-gray-300">-</span>
+        )
+      },
+    },
+    {
+      id: 'user',
+      header: '유저',
+      enableSorting: false,
+      cell: (info) => {
+        const m = info.row.original.member
+        if (!m) return <span className="text-gray-300">-</span>
+        return (
+          <button
+            type="button"
+            className="text-left leading-tight hover:underline"
+            onClick={(event) => {
+              event.stopPropagation()
+              ctx.onMemberClick(m.id)
+            }}
+          >
+            <div className="font-semibold text-ink-800">{m.name}</div>
+            <div className="font-mono text-[10.5px] text-gray-400">{m.user_id}</div>
+          </button>
         )
       },
     },
@@ -105,28 +127,6 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
           <span className="font-mono text-[11px] text-gray-500">{code}</span>
         ) : (
           <span className="text-gray-300">-</span>
-        )
-      },
-    },
-    {
-      id: 'user',
-      header: '유저',
-      enableSorting: false,
-      cell: (info) => {
-        const m = info.row.original.member
-        if (!m) return <span className="text-gray-300">-</span>
-        return (
-          <button
-            type="button"
-            className="text-left leading-tight hover:underline"
-            onClick={(event) => {
-              event.stopPropagation()
-              ctx.onMemberClick(m.id)
-            }}
-          >
-            <div className="font-semibold text-ink-800">{m.name}</div>
-            <div className="font-mono text-[10.5px] text-gray-400">{m.user_id}</div>
-          </button>
         )
       },
     },

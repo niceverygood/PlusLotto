@@ -6,8 +6,10 @@ export const LOTTO_MIN = 1
 export const LOTTO_MAX = 45
 export const LOTTO_PICK = 6
 
-// 고정/제외수를 운영하는 등급(현장 피드백 2026-06): 골드·VIP·로얄 3등급만. 그 외는 '공통' 적용.
-export const LOTTO_RULE_GRADES: Grade[] = ['gold', 'vip', 'royal']
+// 고정/제외수를 운영하는 등급(현장 피드백 2026-06, 실버 추가는 7/23 특허 제외수 로직 도입 시).
+// vip=고객화면 '골드', royal='다이아', goldp='실버'(D95 고객명 변경) — gold(구 내부 등급)는 하위호환 유지.
+// goldp·vip·royal 3등급은 lib/lottoPatentExclude.ts 의 특허 제외수 로직이 자동 적용된다(§8).
+export const LOTTO_RULE_GRADES: Grade[] = ['gold', 'goldp', 'vip', 'royal']
 
 function todayStr(): string {
   const d = new Date()

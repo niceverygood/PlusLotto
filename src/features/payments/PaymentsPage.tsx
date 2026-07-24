@@ -2,7 +2,8 @@
 // URL 동기화) + DataTable(서버 정렬·페이지) + 행 클릭 → 상세 Drawer(승인/PG취소). 수기결제 등록 링크.
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { format } from 'date-fns'
+import { CalendarDays, Plus } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
 import {
   Button,
@@ -43,6 +44,7 @@ const TAB_LABEL: Record<PaymentStatusTab, string> = {
 
 const selectCls =
   'h-9 rounded-md border border-gray-300 bg-white px-2.5 text-[12.5px] text-gray-700 outline-none focus:border-primary-500'
+const todayStr = () => format(new Date(), 'yyyy-MM-dd')
 
 export function PaymentsPage() {
   usePageMeta('결제', '다중 PG · 승인/취소 · 매출 귀속')
@@ -224,12 +226,23 @@ export function PaymentsPage() {
             />
           </Field>
           <Field label="결제일(까지)">
-            <input
-              type="date"
-              className={selectCls}
-              value={dateToF ?? ''}
-              onChange={(e) => set('rt', e.target.value || null, { resetPage: true })}
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                className={selectCls + ' flex-1'}
+                value={dateToF ?? ''}
+                onChange={(e) => set('rt', e.target.value || null, { resetPage: true })}
+              />
+              <button
+                type="button"
+                title="오늘"
+                onClick={() => setMany({ rf: todayStr(), rt: todayStr() }, { resetPage: true })}
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2 text-[11.5px] font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                오늘
+              </button>
+            </div>
           </Field>
         </div>
       </FilterBar>

@@ -2,7 +2,8 @@
 // FilterBar(검색·등급·상태·담당·유입, URL 동기화), DataTable(서버 정렬·페이지·선택),
 // 일괄작업 바, 행 클릭 → 상세 Drawer. 모든 데이터는 api 훅 경유.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ChevronDown, Plus, Upload } from 'lucide-react'
+import { format } from 'date-fns'
+import { CalendarDays, ChevronDown, Plus, Upload } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
 import {
   Button,
@@ -51,6 +52,7 @@ const GROUP_ORDER: ViewGroup[] = ['상태', '등급', '담당', '유입', '운�
 
 const selectCls =
   'h-9 rounded-md border border-gray-300 bg-white px-2.5 text-[12.5px] text-gray-700 outline-none focus:border-primary-500'
+const todayStr = () => format(new Date(), 'yyyy-MM-dd')
 
 export function MembersPage() {
   usePageMeta('이용자', '26 세그먼트 · 필터 · 일괄작업 · 상세')
@@ -382,12 +384,23 @@ export function MembersPage() {
             />
           </Field>
           <Field label="가입일(까지)">
-            <input
-              type="date"
-              className={selectCls}
-              value={regToF ?? ''}
-              onChange={(e) => set('rt', e.target.value || null, { resetPage: true })}
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                className={selectCls + ' flex-1'}
+                value={regToF ?? ''}
+                onChange={(e) => set('rt', e.target.value || null, { resetPage: true })}
+              />
+              <button
+                type="button"
+                title="오늘"
+                onClick={() => setMany({ rf: todayStr(), rt: todayStr() }, { resetPage: true })}
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2 text-[11.5px] font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                오늘
+              </button>
+            </div>
           </Field>
           <Field label="중복 디비">
             <label className="flex h-9 cursor-pointer items-center gap-2 text-[12.5px] text-gray-700">

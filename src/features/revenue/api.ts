@@ -131,10 +131,11 @@ function groupOf(
   }
 }
 
-export function useRevenue(q: RevenueQuery) {
+export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
   const user = useCurrentUser()
   return useQuery({
     queryKey: revenueKeys.summary({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
+    enabled: opts.enabled ?? true,
     queryFn: async (): Promise<RevenueResult> => {
       if (dataSource === 'supabase') {
         const { data, error } = await sb().rpc('admin_revenue', {
@@ -159,10 +160,16 @@ export function useRevenue(q: RevenueQuery) {
       const scoped = scopeApproved(db.payments, user)
       const convIds = conversionIds(scoped)
 
-      // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환.
+      // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환(1차결제).
       const periodAll = scoped.filter((p) => inRange(dayOf(recognitionIso(p)), q.from, q.to))
       const periodConv = periodAll.filter((p) => convIds.has(p.id))
-      const activeSet = q.view === 'conversion' ? periodConv : periodAll
+      // 실장매출(team) = 1차결제(신규전환) 제외한 모든 매출(현장 피드백 7/23) — 팀장매출(conversion)의 여집합.
+      const activeSet =
+        q.view === 'conversion'
+          ? periodConv
+          : q.view === 'team'
+            ? periodAll.filter((p) => !convIds.has(p.id))
+            : periodAll
 
       // 요약
       const total = activeSet.reduce((s, p) => s + p.amount, 0)
@@ -222,5 +229,135 @@ export function useRevenue(q: RevenueQuery) {
       return { summary, trend, breakdown, groupDim: dim }
     },
     placeholderData: (prev) => prev,
+  })
+}
+
+// ── 매출 캘린더(현장 피드백 7/24, 정의현 차장 — 기존 전산 동일 구성) ──────────────────
+// 월별 달력에 일자별 합계 + 담당자별(건수·금액) 내역을 표시. 전체매출(real)과 동일한 승인결제
+// 기준·역할 스코프를 쓰되, 팀장매출/실장매출처럼 뷰별 하위집합 필터는 적용하지 않는다(전체 기준).
+export interface RevenueCalendarStaffRow {
+  staffId: string | null
+  label: string
+  count: number
+  amount: number
+}
+export interface RevenueCalendarDay {
+  date: string // yyyy-MM-dd
+  total: number
+  count: number
+  byStaff: RevenueCalendarStaffRow[] // 금액 내림차순
+}
+export interface RevenueCalendarResult {
+  month: string // yyyy-MM
+  monthTotal: number
+  monthCount: number
+  days: RevenueCalendarDay[] // 실적이 있는 날짜만(빈 날짜는 화면에서 0으로 처리)
+}
+
+/** month = 'yyyy-MM'. */
+export function useRevenueCalendar(month: string) {
+  const user = useCurrentUser()
+  return useQuery({
+    queryKey: revenueKeys.calendar(`${month}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryFn: async (): Promise<RevenueCalendarResult> => {
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_revenue_calendar', { p_month: `${month}-01` })
+        if (error) throw error
+        return data as RevenueCalendarResult
+      }
+      const db = readDb()
+      const staffNames: Record<string, string> = {}
+      for (const s of db.staff) staffNames[s.id] = s.name
+
+      const scoped = scopeApproved(db.payments, user)
+      const inMonth = scoped.filter((p) => dayOf(recognitionIso(p)).startsWith(month))
+
+      const byDay = new Map<string, Map<string, { label: string; count: number; amount: number }>>()
+      for (const p of inMonth) {
+        const day = dayOf(recognitionIso(p))
+        const sid = p.staff_id ?? 'none'
+        const label = p.staff_id ? (staffNames[p.staff_id] ?? p.staff_id) : '미배정'
+        const dayMap = byDay.get(day) ?? new Map()
+        const cur = dayMap.get(sid) ?? { label, count: 0, amount: 0 }
+        cur.count += 1
+        cur.amount += p.amount
+        dayMap.set(sid, cur)
+        byDay.set(day, dayMap)
+      }
+
+      const days: RevenueCalendarDay[] = [...byDay.entries()]
+        .map(([date, dayMap]) => {
+          const byStaff = [...dayMap.entries()]
+            .map(([staffId, v]) => ({
+              staffId: staffId === 'none' ? null : staffId,
+              label: v.label,
+              count: v.count,
+              amount: v.amount,
+            }))
+            .sort((a, b) => b.amount - a.amount)
+          return {
+            date,
+            total: byStaff.reduce((s, r) => s + r.amount, 0),
+            count: byStaff.reduce((s, r) => s + r.count, 0),
+            byStaff,
+          }
+        })
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      return {
+        month,
+        monthTotal: days.reduce((s, d) => s + d.total, 0),
+        monthCount: days.reduce((s, d) => s + d.count, 0),
+        days,
+      }
+    },
+    placeholderData: (prev) => prev,
+  })
+}
+
+// ── 캘린더 일자 클릭 → 결제내역(현장 피드백 7/24, 기존 전산 우측 패널과 동일) ────────────
+export interface RevenueDayPaymentRow {
+  id: string
+  depositorName: string | null
+  memberUserId: string | null
+  staffName: string | null
+  method: Payment['method']
+  productName: string | null
+  amount: number
+}
+
+/** date = 'yyyy-MM-dd'. null 이면 비활성(선택된 날짜 없음). */
+export function useRevenueDayPayments(date: string | null) {
+  const user = useCurrentUser()
+  return useQuery({
+    queryKey: ['revenue', 'day-payments', date, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryFn: async (): Promise<RevenueDayPaymentRow[]> => {
+      if (!date) return []
+      if (dataSource === 'supabase') {
+        const { data, error } = await sb().rpc('admin_revenue_day_payments', { p_day: date })
+        if (error) throw error
+        return (data ?? []) as RevenueDayPaymentRow[]
+      }
+      const db = readDb()
+      const members = indexMembers(db.members)
+      const staffNames: Record<string, string> = {}
+      for (const s of db.staff) staffNames[s.id] = s.name
+      const productNames: Record<string, string> = {}
+      for (const pr of db.products) productNames[pr.id] = pr.name
+
+      return scopeApproved(db.payments, user)
+        .filter((p) => dayOf(recognitionIso(p)) === date)
+        .map((p) => ({
+          id: p.id,
+          depositorName: p.depositor_name,
+          memberUserId: members[p.member_id]?.user_id ?? null,
+          staffName: p.staff_id ? (staffNames[p.staff_id] ?? p.staff_id) : null,
+          method: p.method,
+          productName: p.product_id ? (productNames[p.product_id] ?? null) : null,
+          amount: p.amount,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+    },
+    enabled: !!date,
   })
 }

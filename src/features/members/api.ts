@@ -11,8 +11,8 @@ import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys 
 import { recoSmsBody, renderSms, smsTypeForTemplate, spamSafeRound } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { resolveExcludeForGrade } from '@/lib/lotto'
+import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { membershipTermsUrl } from '@/lib/membership'
-import { generateIssueSets } from '@/lib/lottoGenerator'
 import { normalizeInflowType } from '@/lib/inflow'
 import { filterMembers, getView, MEMBER_VIEWS, type MemberFilter } from './views'
 import * as supa from './supa'
@@ -1220,7 +1220,8 @@ export function useSendSms() {
             issue = {
               round_no: recoTarget,
               issued_at: ts,
-              sets: generateIssueSets(cur.lotto_rounds, exclude, Math.max(1, cnt), ratio),
+              // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직(현장 피드백 7/23).
+              sets: generateIssueSetsForGrade(cur.lotto_rounds, m.grade, exclude, Math.max(1, cnt), ratio),
             }
             freshIssues[m.id] = issue
           }
@@ -1368,7 +1369,7 @@ export function useManualIssueReco() {
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
       const setCount = Math.max(1, v.setCount)
       const ratio = cur.site_settings.weekly_free_reco?.logic_ratio ?? 100
-      const sets = generateIssueSets(rounds, exclude, setCount, ratio)
+      const sets = generateIssueSetsForGrade(rounds, member.grade, exclude, setCount, ratio)
       const res = { sets }
       const ts = nowIso()
       const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets: res.sets }

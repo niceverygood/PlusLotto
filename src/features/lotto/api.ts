@@ -9,9 +9,10 @@ import { fetchSiteSettings, fetchTables, patchSiteSettings } from '@/lib/db/remo
 import { useCurrentUser } from '@/lib/auth'
 import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
-import { makeGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
+import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
 import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
-import { generateIssueSets, generateRecommendation } from '@/lib/lottoGenerator'
+import { generateRecommendation } from '@/lib/lottoGenerator'
+import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import * as supa from './supa'
 
 export const WEEKLY_FREE_RECO_DEFAULT: import('@/types/db').WeeklyFreeRecoSettings = {
@@ -349,11 +350,13 @@ export function useIssueGradeReco() {
       const rounds = cur.lotto_rounds
       const exclude = resolveExcludeForGrade(cur.site_settings, v.grade)
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
-      const trace = generateRecommendation(rounds, exclude, {
-        mode: 20,
-        setCount: 1,
-        seed: memberSeed(v.grade, targetRound),
-      })
+      // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직(현장 피드백 7/23).
+      const patent = isPatentGrade(v.grade)
+        ? generatePatentSets(rounds, v.grade, exclude, 1, memberSeed(v.grade, targetRound))
+        : null
+      const trace = patent
+        ? null
+        : generateRecommendation(rounds, exclude, { mode: 20, setCount: 1, seed: memberSeed(v.grade, targetRound) })
       let issued = 0
       let skipped = 0
       const ts = nowIso()
@@ -369,23 +372,30 @@ export function useIssueGradeReco() {
           const mCount = typeof m.meta?.weekly_reco_count === 'number' && m.meta.weekly_reco_count > 0
             ? (m.meta.weekly_reco_count as number)
             : setCount
-          const sets = generateIssueSets(rounds, exclude, mCount, ratio, memberSeed(m.id, targetRound))
+          const sets = generateIssueSetsForGrade(rounds, v.grade, exclude, mCount, ratio, memberSeed(m.id, targetRound))
           const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets }
           m.meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, WEEKLY_RECO_KEEP) }
           issued++
         }
         if (issued > 0) {
-          db.site_settings.generation_records = upsertGenerationRecord(
-            db.site_settings.generation_records,
-            makeGenerationRecord(trace, {
-              createdBy: user?.id ?? null,
-              grade: v.grade,
-              source: 'grade_issue',
-              setCount,
-              logicRatio: ratio,
-              issuedCount: issued,
-            }),
-          )
+          const record = patent
+            ? makePatentGenerationRecord(patent, {
+                createdBy: user?.id ?? null,
+                grade: v.grade,
+                source: 'grade_issue',
+                setCount,
+                logicRatio: ratio,
+                issuedCount: issued,
+              })
+            : makeGenerationRecord(trace!, {
+                createdBy: user?.id ?? null,
+                grade: v.grade,
+                source: 'grade_issue',
+                setCount,
+                logicRatio: ratio,
+                issuedCount: issued,
+              })
+          db.site_settings.generation_records = upsertGenerationRecord(db.site_settings.generation_records, record)
         }
         db.logs.push({
           id: genId('log'),

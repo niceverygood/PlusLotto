@@ -1,6 +1,7 @@
 import type { GenerationRecord, Grade } from '@/types/db'
 import { genId, nowIso } from '@/lib/db/store'
 import type { GenerateResult } from '@/lib/lottoGenerator'
+import type { PatentGenerateResult } from '@/lib/lottoPatentExclude'
 
 interface GenerationRecordContext {
   createdBy: string | null
@@ -30,6 +31,45 @@ export function makeGenerationRecord(
     stages: result.stages,
     pool: result.pool,
     basis: result.basis,
+    set_count: context.setCount,
+    logic_ratio: context.logicRatio,
+    issued_count: context.issuedCount,
+  }
+}
+
+/** 특허 제외수 로직(실버/골드/다이아) 결과를 동일한 GenerationRecord 스냅샷 형태로 만든다(현장 피드백 7/23). */
+export function makePatentGenerationRecord(
+  result: PatentGenerateResult,
+  context: GenerationRecordContext,
+): GenerationRecord {
+  const manualExcluded = result.excluded.filter((n) => !result.autoExcluded.includes(n))
+  return {
+    id: genId('genrec'),
+    created_at: nowIso(),
+    created_by: context.createdBy,
+    grade: context.grade,
+    target_round: result.targetRound,
+    mode: result.autoExcluded.length,
+    source: context.source,
+    fixed: result.fixed,
+    excluded: result.excluded,
+    reasons: [
+      ...result.autoExcluded.map((number) => ({ number, rule: 'patent' })),
+      ...manualExcluded.map((number) => ({ number, rule: 'manual' })),
+    ],
+    stages: [
+      { rule: 'patent', candidates: result.autoExcluded, selected: result.autoExcluded },
+      { rule: 'manual', candidates: manualExcluded, selected: manualExcluded },
+    ],
+    pool: result.pool,
+    basis: {
+      roundsUsed: result.window,
+      prevRound: result.prevRound,
+      prevNumbers: result.prevNumbers,
+      prevBonus: result.prevBonus,
+      sumBand: [100, 175],
+      relaxed: result.relaxed,
+    },
     set_count: context.setCount,
     logic_ratio: context.logicRatio,
     issued_count: context.issuedCount,

@@ -15,7 +15,7 @@ import { mapPool } from '@/lib/async'
 const SMS_SEND_CONC = 6
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
-import { generateIssueSets } from '@/lib/lottoGenerator'
+import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { normalizeInflowType } from '@/lib/inflow'
 import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
@@ -802,7 +802,8 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
           typeof m.meta.weekly_reco_count === 'number' && (m.meta.weekly_reco_count as number) > 0
             ? (m.meta.weekly_reco_count as number)
             : (recoSettings.weekly_free_reco?.set_count ?? 30)
-        const sets = generateIssueSets(recoRounds, exclude, Math.max(1, cnt), ratio)
+        // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직(현장 피드백 7/23).
+        const sets = generateIssueSetsForGrade(recoRounds, m.grade, exclude, Math.max(1, cnt), ratio)
         issue = { round_no: recoTarget, issued_at: ts, sets }
         const meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
         await sb().from('members').update({ meta }).eq('id', m.id)
@@ -901,7 +902,7 @@ export async function manualIssueReco(
   const exclude = resolveExcludeForGrade(settings, member.grade)
   const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
   const ratio = settings.weekly_free_reco?.logic_ratio ?? 100
-  const res = { sets: generateIssueSets(rounds, exclude, Math.max(1, v.setCount), ratio) }
+  const res = { sets: generateIssueSetsForGrade(rounds, member.grade, exclude, Math.max(1, v.setCount), ratio) }
   const ts = nowIso()
   const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets: res.sets }
   const recos = Array.isArray(member.meta?.weekly_recos) ? (member.meta!.weekly_recos as WeeklyRecoIssue[]) : []
