@@ -41,18 +41,29 @@ async function fetchDueReservationsRemote(user: CurrentUser): Promise<CallReserv
   return dueReservations((data ?? []) as ReservationRow[], user)
 }
 
-/** 통화예약 시각이 도래한 회원 목록 — AppShell 알림 벨(§8). 60초 폴링으로 갱신. */
+/** call-reservation-alerts 쿼리 캐시 키(§8 — 예약 저장/삭제 시 이 키로 즉시 무효화). */
+export const callReservationAlertsKey = ['call-reservation-alerts'] as const
+
+/**
+ * 통화예약 시각이 도래한 회원 목록 — AppShell 알림 벨(§8). 30초 폴링으로 갱신.
+ * 현장 피드백(7/24) "예약 설정해도 알람이 안 울린다" 원인: 전역 QueryClient 기본값이
+ * refetchOnWindowFocus:false 라 다른 탭/창을 보다 돌아와도 재확인하지 않았고, TanStack Query
+ * 는 탭이 백그라운드면 refetchInterval 도 기본적으로 멈춘다 — 두 옵션을 이 쿼리에서만 켜서
+ * 탭 전환 후 복귀·백그라운드 상태에서도 계속 확인하도록 한다.
+ */
 export function useCallReservationAlerts() {
   const user = useCurrentUser()
   return useQuery({
-    queryKey: ['call-reservation-alerts', user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: [...callReservationAlertsKey, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<CallReservationAlert[]> => {
       if (!user) return []
       if (dataSource === 'supabase') return fetchDueReservationsRemote(user)
       return dueReservations(readDb().members, user)
     },
     enabled: !!user,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   })
 }

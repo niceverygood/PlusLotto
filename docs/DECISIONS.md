@@ -755,3 +755,10 @@
 - **매출 캘린더**: 정의현 차장이 공유한 기존 전산 스크린샷과 동일한 월별 달력 뷰를 매출 4번째 탭(`view=calendar`)으로 추가했다. 일자 셀에 그 날 합계 + 담당자별(건수·금액) 내역을 표시하고, 날짜 클릭 시 우측 패널에 그 날의 결제내역(결제자·회원ID(담당자)·방법·상품·금액)을 보여준다. 신규 RPC `admin_revenue_calendar`/`admin_revenue_day_payments`(둘 다 admin_revenue와 동일 역할 스코프)를 추가했다. 기존 전산 로그인 정보는 보안 정책상 사용하지 않고 전달받은 스크린샷만으로 재현했다(ASSUMPTIONS 기록).
 - **조합삭제 권한 확장**: 회원상세 발급번호 삭제(`canDeleteReco`)를 실장(leader)까지 허용하도록 클라이언트 가드와 `admin_delete_member_reco` RPC의 서버측 역할 체크를 함께 확장했다(admin/manager → admin/manager/leader).
 - **검증**: typecheck·build green. 신규 마이그레이션 4건(`admin_revenue` 재정의, `admin_delete_member_reco` 재정의, `admin_revenue_calendar`, `admin_revenue_day_payments`)을 라이브 DB에 적용하고 각 함수를 직접 호출해 에러 없음을 확인했다. 라이브 세션(admin)에서 매출 4개 탭 라벨·결제 컬럼 순서·캘린더 달력(7월 합계·일자별 담당자 내역)·날짜 클릭 시 결제내역 패널이 실제 프로덕션 데이터로 정상 동작하는 것을 확인했다.
+
+### D109. 통화예약 알림 미갱신 원인/수정 (현장 7/24, 정의현 차장)
+- **증상**: "통화예약기능 설정을 해도 알람이 안 울립니다."
+- **원인 조사**: 라이브 DB를 직접 조회해 쿼리·RLS 로직 자체는 정상임을 확인했다(현재 도래한 통화예약 12건이 실제로 존재하고, 관리자 세션의 알림 벨도 정확히 12건·동일한 회원 목록을 보여준다). 남은 설명은 프런트엔드 캐시 갱신 타이밍이다 — 전역 QueryClient 기본값이 `refetchOnWindowFocus:false`이고, TanStack Query는 브라우저 탭이 백그라운드일 때 `refetchInterval` 도 기본적으로 멈춘다. 담당자가 예약을 설정한 뒤 다른 탭·창에서 작업하다 돌아오면, 이미 도래한 예약이 있어도 다음 60초 주기가 돌 때까지(또는 그 이상) 벨이 갱신되지 않았다.
+- **조치**: `useCallReservationAlerts`(lib/callReservations.ts)에 `refetchIntervalInBackground:true`·`refetchOnWindowFocus:true`를 추가하고 폴링을 60초→30초로 단축했다. 또한 회원 meta를 바꾸는 모든 뮤테이션이 공유하는 `useInvalidateMembers`(members/api.ts)에 `call-reservation-alerts` 쿼리 무효화를 추가해, 통화예약을 저장·해제한 직후 알림이 그 세션에서 즉시 반영되도록 했다.
+- **검증**: typecheck·build green. 라이브 admin 세션에서 벨 배지 "12"가 DB의 실제 도래 예약 수(12건)와 정확히 일치하고, 드롭다운 목록도 회원명·전화번호·예약시각까지 DB 값과 동일함을 확인했다.
+- **별건(범위 외)**: 같은 대화에서 "자동조합발송시 최하단 문구(홈페이지에서도~) 삭제"를 요청받았으나, 첨부된 예시 메시지의 발신 태그가 `[88로또]`이고 요청 문구 자체도 "88로또 전산"으로 명시돼 있어 이 저장소(플러스로또, 별도 프로젝트/인프라)가 아닌 형제 프로젝트(`../88lotto`)에 해당하는 요청으로 판단해 반영하지 않았다. 플러스로또의 `recoSmsBody()`(lib/sms.ts)는 애초에 그런 하단 문구가 없어 동일 이슈가 존재하지 않는다.

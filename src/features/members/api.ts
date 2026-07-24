@@ -7,6 +7,7 @@ import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
+import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { recoSmsBody, renderSms, smsTypeForTemplate, spamSafeRound } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
@@ -408,6 +409,9 @@ function useInvalidateMembers() {
   return (ids?: string[]) => {
     qc.invalidateQueries({ queryKey: memberKeys.all }) // list + counts
     qc.invalidateQueries({ queryKey: operationalKeys.all })
+    // 통화예약(call_reservation_at)은 회원 meta 갱신 경로 어디서든 바뀔 수 있어 함께 무효화한다(현장
+    // 피드백 7/24 "예약해도 알람이 안 울린다" — 저장 직후 벨이 최신 상태를 즉시 반영하도록 보장).
+    qc.invalidateQueries({ queryKey: callReservationAlertsKey })
     for (const id of ids ?? []) qc.invalidateQueries({ queryKey: memberKeys.detail(id) })
   }
 }
