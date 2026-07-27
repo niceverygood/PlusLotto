@@ -1,13 +1,14 @@
 import type { Grade, MemberStatus, PaymentStatus, PaymentMethod, SmsType } from '@/types/db'
 
-/** 등급 한글 라벨. */
+/** 등급 한글 라벨. 고객화면 명칭 변경(D95, 7/21) — goldp=실버·vip=골드·royal=다이아.
+ *  gold 는 구 내부 등급(하위호환 유지, 신규 부여 없음)이라 "미정"으로 표시한다. */
 export const GRADE_LABEL: Record<Grade, string> = {
   simple: '간편가입',
   free: '무료',
-  gold: '골드',
-  goldp: '골드플러스',
-  vip: 'VIP',
-  royal: '로얄',
+  gold: '미정',
+  goldp: '실버',
+  vip: '골드',
+  royal: '다이아',
   ovr: '인반언스', // TODO(live-verify): 명칭 미확인 (ASSUMPTIONS)
   toss: '토스DB',
 }

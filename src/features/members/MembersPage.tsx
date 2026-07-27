@@ -403,7 +403,7 @@ export function MembersPage() {
             </div>
           </Field>
           <Field label="중복 디비">
-            <label className="flex h-9 cursor-pointer items-center gap-2 text-[12.5px] text-gray-700">
+            <label className="flex h-9 cursor-pointer items-center gap-2 whitespace-nowrap text-[12.5px] text-gray-700">
               <input
                 type="checkbox"
                 checked={dupF}

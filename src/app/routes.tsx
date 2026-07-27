@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RequireAuth } from './RequireAuth'
@@ -43,6 +44,16 @@ import { SupportPage as SiteSupportPage } from '@/features/site/SupportPage'
 import { TermsPage as SiteTermsPage } from '@/features/site/TermsPage'
 import { useRole } from '@/lib/auth'
 
+// 전산 글씨크기·굵기 확대(현장 피드백 7/24, 정의현 차장) — /admin/* (로그인 포함)에서만 적용하고
+// 고객 홈페이지(/)는 그대로 둔다. tokens.css 의 html.admin-scale 규칙 참조.
+function AdminScaleSync() {
+  const location = useLocation()
+  useEffect(() => {
+    document.documentElement.classList.toggle('admin-scale', location.pathname.startsWith('/admin'))
+  }, [location.pathname])
+  return null
+}
+
 // 랜딩 분기(현장 피드백 6/11): 팀장(rep)은 메뉴가 이용자·나의고객뿐이라 /admin/members 로 보낸다.
 function RoleHome() {
   const role = useRole()
@@ -78,7 +89,9 @@ const LEGACY_ADMIN_PREFIXES = [
  */
 export function AppRoutes() {
   return (
-    <Routes>
+    <>
+      <AdminScaleSync />
+      <Routes>
       {/* 직원 로그인 (셸 밖) */}
       <Route path="/admin/login" element={<LoginPage />} />
 
@@ -173,6 +186,7 @@ export function AppRoutes() {
 
       {/* 그 외 알 수 없는 경로 → 고객 홈 */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   )
 }

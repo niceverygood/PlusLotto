@@ -101,3 +101,15 @@
     system-ui, "Apple SD Gothic Neo", sans-serif;
   --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
 }
+
+/* 전산 글씨크기·굵기 확대(현장 피드백 7/24, 정의현 차장) — /admin/* 에서만 적용(app/routes.tsx
+   AdminScaleSync 가 html 에 클래스 토글). 고객 홈페이지는 영향 없음.
+   본문 대부분이 Tailwind 임의값(text-[13px] 등) 이라 rem 기반 확대가 통하지 않아 zoom 을 쓴다.
+   font-weight 는 이미 굵기 유틸(font-semibold 등)이 지정된 요소는 그대로 두고, 지정 안 된
+   본문(상속) 만 살짝 굵어지도록 body 에서 상속시킨다(Pretendard Variable 가변폰트 지원). */
+html.admin-scale {
+  zoom: 1.12;
+}
+html.admin-scale body {
+  font-weight: 460;
+}

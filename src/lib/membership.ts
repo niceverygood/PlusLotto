@@ -37,7 +37,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
   },
   {
     grade: 'gold',
-    label: '골드',
+    label: '미정',
     price: '문의',
     tagline: '본격적인 번호 관리의 시작',
     weekly_sets: '주 5조합',
@@ -53,7 +53,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
   },
   {
     grade: 'goldp',
-    label: '골드플러스',
+    label: '실버',
     price: '문의',
     tagline: '더 많은 조합과 우선 발송',
     weekly_sets: '주 10조합',
@@ -68,7 +68,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
   },
   {
     grade: 'vip',
-    label: 'VIP',
+    label: '골드',
     price: '문의',
     tagline: '전담 관리와 프리미엄 분석',
     weekly_sets: '주 20조합',
@@ -83,13 +83,13 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
   },
   {
     grade: 'royal',
-    label: '로얄',
+    label: '다이아',
     price: '문의',
     tagline: '최상위 로얄 멤버 전용 혜택',
     weekly_sets: '주 30조합+',
     highlights: [
       '주간 추천 조합 30세트 이상',
-      '로얄 전용 프리미엄 분석',
+      '다이아 전용 프리미엄 분석',
       '최우선 전담 컨설팅',
       '특별 이벤트·당첨 케어',
     ],

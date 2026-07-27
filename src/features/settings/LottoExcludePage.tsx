@@ -73,10 +73,16 @@ export function LottoExcludePage() {
   }, [settings])
 
   const today = fmtLocal(new Date())
+  // 동일 회차·등급·적용시작일로 재등록(수정 대신 "이력에 추가"로 다시 저장)한 경우가 있어
+  // created_at 을 최종 타이브레이커로 둔다 — 아니면 나중에 등록한 규칙이 "이전"으로 밀려
+  // 실제로는 적용되지 않는 오류가 난다(현장 피드백 7/27, 정의현 차장).
   const history = useMemo(
     () =>
       [...(settings?.lotto_exclude_history ?? [])].sort(
-        (a, b) => b.effective_from.localeCompare(a.effective_from) || b.round_no - a.round_no,
+        (a, b) =>
+          b.effective_from.localeCompare(a.effective_from) ||
+          b.round_no - a.round_no ||
+          b.created_at.localeCompare(a.created_at),
       ),
     [settings],
   )
@@ -115,7 +121,12 @@ export function LottoExcludePage() {
   function recalcSnapshot(hist: LottoExcludeRule[]) {
     const commonActive = hist
       .filter((r) => (r.grade ?? null) === null && r.effective_from <= today)
-      .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
+      .sort(
+        (a, b) =>
+          b.effective_from.localeCompare(a.effective_from) ||
+          b.round_no - a.round_no ||
+          b.created_at.localeCompare(a.created_at),
+      )
     return commonActive[0]
       ? { fixed: commonActive[0].fixed, excluded: commonActive[0].excluded }
       : (settings?.lotto_exclude ?? { fixed: [], excluded: [] })

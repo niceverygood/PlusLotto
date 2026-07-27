@@ -28,6 +28,7 @@ interface LottoExcludeRule {
   fixed: number[]
   excluded: number[]
   effective_from: string
+  created_at: string
 }
 interface WeeklyRecoIssue {
   round_no: number
@@ -69,9 +70,15 @@ const LOTTO_PICK = 6
 function resolveExcludeForGrade(settings: SiteSettingsLite, grade: string | null): LottoExcludeSettings {
   const d = new Date(Date.now() + 9 * 3600_000) // KST
   const today = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  // 동일 회차·등급·시작일 재등록 시 created_at 을 최종 타이브레이커로 둔다(현장 피드백 7/27).
   const effective = (settings.lotto_exclude_history ?? [])
     .filter((r) => r.effective_from <= today)
-    .sort((a, b) => b.effective_from.localeCompare(a.effective_from) || b.round_no - a.round_no)
+    .sort(
+      (a, b) =>
+        b.effective_from.localeCompare(a.effective_from) ||
+        b.round_no - a.round_no ||
+        b.created_at.localeCompare(a.created_at),
+    )
   const pick = (g: string | null): LottoExcludeRule | undefined =>
     effective.find((r) => (r.grade ?? null) === g)
   const rule = (grade != null ? pick(grade) : undefined) ?? pick(null)

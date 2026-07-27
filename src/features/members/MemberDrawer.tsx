@@ -2,13 +2,14 @@
 // 액션(등급변경·담당변경·정지·아웃콜·문자발송). 모든 액션은 api 뮤테이션 →
 // 관련 쿼리 무효화 + 로그/배정/문자 부수효과를 만든다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CreditCard, Dices, ExternalLink, Mic, MessageSquare, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
+import { CreditCard, Dices, ExternalLink, Mic, MessageSquare, PenLine, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
 import {
   Badge,
   Button,
   ConfirmModal,
   Drawer,
   LottoBalls,
+  Modal,
   StatusChip,
   Tabs,
   type TabItem,
@@ -148,6 +149,8 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   const [complaintResult, setComplaintResult] = useState<string>(COMPLAINT_RESULTS[0])
   const [smsTpl, setSmsTpl] = useState('')
   const [smsBody, setSmsBody] = useState('') // 직접 입력 발송 본문
+  // 직접발송 팝업(현장 피드백 7/24) — 상시 노출 텍스트박스에서 실수 발송이 잦아 아이콘 클릭 시에만 열리게.
+  const [customSmsOpen, setCustomSmsOpen] = useState(false)
   const [issueCount, setIssueCount] = useState('') // 수동 발급 세트 수
   const [issueSms, setIssueSms] = useState(true) // 수동 발급 시 문자 발송 여부(현장 7/22: 기본 체크)
   const [confirmSuspend, setConfirmSuspend] = useState(false)
@@ -184,6 +187,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
     setPayMethod('bank')
     setPayAmount('')
     setSmsBody('')
+    setCustomSmsOpen(false)
     setIssueCount('')
     setIssueSms(true)
     setRecoToDelete(null)
@@ -780,39 +784,16 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
               발송
             </Button>
           </div>
-          {/* 직접 입력 발송(현장 피드백 <회원정보창> 3) */}
-          <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
-            <div className="mb-1.5 text-[11.5px] font-semibold text-gray-500">직접 입력 발송</div>
-            <textarea
-              value={smsBody}
-              onChange={(e) => setSmsBody(e.target.value)}
-              rows={3}
-              placeholder="발송할 문자 내용을 직접 입력하세요."
-              className="w-full rounded-md border border-gray-300 p-2 text-[12.5px] text-gray-700 outline-none focus:border-primary-500"
-            />
-            <div className="mt-1.5 flex items-center justify-between">
-              <span className="font-mono text-[10.5px] tnum text-gray-400">
-                {koByteLength(smsBody)}byte · {classifyMsgType(smsBody)}
-              </span>
-              <Button
-                size="sm"
-                variant="acc"
-                icon={<Send className="h-3.5 w-3.5" />}
-                disabled={!smsBody.trim() || sendCustomSms.isPending}
-                onClick={() =>
-                  sendCustomSms.mutate(
-                    { ids: [id], body: smsBody },
-                    {
-                      onSuccess: () => setSmsBody(''),
-                      onError: (e) => window.alert(e instanceof Error ? e.message : '문자 발송에 실패했습니다.'),
-                    },
-                  )
-                }
-              >
-                직접 발송
-              </Button>
-            </div>
-          </div>
+          {/* 직접 입력 발송(현장 피드백 <회원정보창> 3) — 상시 텍스트박스 대신 아이콘 클릭 시 팝업으로
+              여는 방식으로 변경(현장 피드백 7/24: 실무자 실수 발송 방지). */}
+          <button
+            type="button"
+            onClick={() => setCustomSmsOpen(true)}
+            className="mb-3 flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-[12px] font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800"
+          >
+            <PenLine className="h-3.5 w-3.5" />
+            직접발송
+          </button>
           <TabList
             rows={sms}
             empty="발송된 문자가 없습니다."
@@ -1276,6 +1257,52 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
         tone="danger"
         loading={deleteRecoIssue.isPending}
       />
+
+      {/* 직접 입력 발송 팝업(현장 피드백 7/24) — 아이콘 클릭 시에만 텍스트박스를 노출해 실수 발송 방지. */}
+      <Modal
+        open={customSmsOpen}
+        onClose={() => setCustomSmsOpen(false)}
+        title="직접 입력 발송"
+        footer={
+          <>
+            <Button size="sm" variant="sec" onClick={() => setCustomSmsOpen(false)}>
+              취소
+            </Button>
+            <Button
+              size="sm"
+              variant="acc"
+              icon={<Send className="h-3.5 w-3.5" />}
+              disabled={!smsBody.trim() || sendCustomSms.isPending}
+              onClick={() =>
+                sendCustomSms.mutate(
+                  { ids: [id], body: smsBody },
+                  {
+                    onSuccess: () => {
+                      setSmsBody('')
+                      setCustomSmsOpen(false)
+                    },
+                    onError: (e) => window.alert(e instanceof Error ? e.message : '문자 발송에 실패했습니다.'),
+                  },
+                )
+              }
+            >
+              직접 발송
+            </Button>
+          </>
+        }
+      >
+        <textarea
+          value={smsBody}
+          onChange={(e) => setSmsBody(e.target.value)}
+          rows={5}
+          autoFocus
+          placeholder="발송할 문자 내용을 직접 입력하세요."
+          className="w-full rounded-md border border-gray-300 p-2.5 text-[13px] text-gray-700 outline-none focus:border-primary-500"
+        />
+        <div className="mt-1.5 text-right font-mono text-[10.5px] tnum text-gray-400">
+          {koByteLength(smsBody)}byte · {classifyMsgType(smsBody)}
+        </div>
+      </Modal>
     </Drawer>
   )
 }
