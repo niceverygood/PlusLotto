@@ -818,14 +818,14 @@ const BRAND_SHORT =
 
 /**
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 포맷(자급자족 중복, 상단 참조).
- * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33회차로 표기한다(현장 7/22).
+ * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33으로 표기하고(현장 7/22), "회차"라는
+ * 단어도 같은 이유로 "번째"로 표기한다(현장 7/27).
  */
 function formatComboSms(name: string, roundNo: number, sets: number[][]): string {
   const digits = String(Math.max(0, Math.trunc(roundNo)))
   const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
-  // 조합 번호 표기 "[1]" → "1번째"(현장 피드백 7/27, 정의현 차장) — src/lib/sms.ts recoSmsBody와 동일 포맷.
-  const lines = sets.map((s, i) => `${i + 1}번째 ${s.join(',')}`)
-  return `[${BRAND_SHORT}]\n${safeRound}회차\n${name || '회원'}님\n${lines.join('\n')}`
+  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
+  return `[${BRAND_SHORT}]\n${safeRound}번째\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
