@@ -823,7 +823,8 @@ const BRAND_SHORT =
 function formatComboSms(name: string, roundNo: number, sets: number[][]): string {
   const digits = String(Math.max(0, Math.trunc(roundNo)))
   const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
-  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
+  // 조합 번호 표기 "[1]" → "1번째"(현장 피드백 7/27, 정의현 차장) — src/lib/sms.ts recoSmsBody와 동일 포맷.
+  const lines = sets.map((s, i) => `${i + 1}번째 ${s.join(',')}`)
   return `[${BRAND_SHORT}]\n${safeRound}회차\n${name || '회원'}님\n${lines.join('\n')}`
 }
 

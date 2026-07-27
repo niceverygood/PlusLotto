@@ -35,7 +35,8 @@ export function spamSafeRound(roundNo: number): string {
 }
 
 export function recoSmsBody(name: string, roundNo: number, sets: number[][]): string {
-  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
+  // 조합 번호 표기 "[1]" → "1번째"(현장 피드백 7/27, 정의현 차장).
+  const lines = sets.map((s, i) => `${i + 1}번째 ${s.join(',')}`)
   return `[${BRAND.short}]\n${spamSafeRound(roundNo)}회차\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
