@@ -254,14 +254,14 @@ export interface RevenueCalendarResult {
   days: RevenueCalendarDay[] // 실적이 있는 날짜만(빈 날짜는 화면에서 0으로 처리)
 }
 
-/** month = 'yyyy-MM'. */
-export function useRevenueCalendar(month: string) {
+/** month = 'yyyy-MM'. view: 전체매출(real)·팀장매출(conversion=1차결제만)·실장매출(team=1차결제 제외)(현장 피드백 7/28). */
+export function useRevenueCalendar(month: string, view: RevenueView = 'real') {
   const user = useCurrentUser()
   return useQuery({
-    queryKey: revenueKeys.calendar(`${month}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: revenueKeys.calendar(`${month}:${view}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<RevenueCalendarResult> => {
       if (dataSource === 'supabase') {
-        const { data, error } = await sb().rpc('admin_revenue_calendar', { p_month: `${month}-01` })
+        const { data, error } = await sb().rpc('admin_revenue_calendar', { p_month: `${month}-01`, p_view: view })
         if (error) throw error
         return data as RevenueCalendarResult
       }
@@ -270,7 +270,14 @@ export function useRevenueCalendar(month: string) {
       for (const s of db.staff) staffNames[s.id] = s.name
 
       const scoped = scopeApproved(db.payments, user)
-      const inMonth = scoped.filter((p) => dayOf(recognitionIso(p)).startsWith(month))
+      const convIds = conversionIds(scoped)
+      const viewScoped =
+        view === 'conversion'
+          ? scoped.filter((p) => convIds.has(p.id))
+          : view === 'team'
+            ? scoped.filter((p) => !convIds.has(p.id))
+            : scoped
+      const inMonth = viewScoped.filter((p) => dayOf(recognitionIso(p)).startsWith(month))
 
       const byDay = new Map<string, Map<string, { label: string; count: number; amount: number }>>()
       for (const p of inMonth) {
@@ -326,15 +333,15 @@ export interface RevenueDayPaymentRow {
   amount: number
 }
 
-/** date = 'yyyy-MM-dd'. null 이면 비활성(선택된 날짜 없음). */
-export function useRevenueDayPayments(date: string | null) {
+/** date = 'yyyy-MM-dd'. null 이면 비활성(선택된 날짜 없음). view: 캘린더와 동일 3뷰(현장 피드백 7/28). */
+export function useRevenueDayPayments(date: string | null, view: RevenueView = 'real') {
   const user = useCurrentUser()
   return useQuery({
-    queryKey: ['revenue', 'day-payments', date, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: ['revenue', 'day-payments', date, view, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<RevenueDayPaymentRow[]> => {
       if (!date) return []
       if (dataSource === 'supabase') {
-        const { data, error } = await sb().rpc('admin_revenue_day_payments', { p_day: date })
+        const { data, error } = await sb().rpc('admin_revenue_day_payments', { p_day: date, p_view: view })
         if (error) throw error
         return (data ?? []) as RevenueDayPaymentRow[]
       }
@@ -345,7 +352,16 @@ export function useRevenueDayPayments(date: string | null) {
       const productNames: Record<string, string> = {}
       for (const pr of db.products) productNames[pr.id] = pr.name
 
-      return scopeApproved(db.payments, user)
+      const scoped = scopeApproved(db.payments, user)
+      const convIds = conversionIds(scoped)
+      const viewScoped =
+        view === 'conversion'
+          ? scoped.filter((p) => convIds.has(p.id))
+          : view === 'team'
+            ? scoped.filter((p) => !convIds.has(p.id))
+            : scoped
+
+      return viewScoped
         .filter((p) => dayOf(recognitionIso(p)) === date)
         .map((p) => ({
           id: p.id,

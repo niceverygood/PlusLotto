@@ -182,15 +182,22 @@ export function RevenuePage() {
 
 // ── 캘린더(현장 피드백 7/24, 정의현 차장 — 기존 전산과 동일 구성) ─────────────────────
 // 월별 달력에 일자별 합계 + 담당자별 내역, 날짜 클릭 시 우측에 그 날의 결제내역을 보여준다.
+// 다른 매출 탭과 동일하게 전체/팀장/실장 3뷰로 분리(현장 피드백 7/28).
 const WEEKDAY_LABEL = ['일', '월', '화', '수', '목', '금', '토']
+const CAL_VIEW_TABS: { key: RevenueView; label: string }[] = [
+  { key: 'real', label: '전체매출' },
+  { key: 'conversion', label: '팀장매출' },
+  { key: 'team', label: '실장매출' },
+]
 
 function RevenueCalendarSection() {
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [calView, setCalView] = useState<RevenueView>('real')
   const monthKey = format(monthCursor, 'yyyy-MM')
 
-  const { data, isLoading } = useRevenueCalendar(monthKey)
-  const { data: dayPayments = [], isLoading: dayLoading } = useRevenueDayPayments(selectedDay)
+  const { data, isLoading } = useRevenueCalendar(monthKey, calView)
+  const { data: dayPayments = [], isLoading: dayLoading } = useRevenueDayPayments(selectedDay, calView)
 
   const byDate = new Map((data?.days ?? []).map((d) => [d.date, d]))
   const gridStart = startOfWeek(startOfMonth(monthCursor))
@@ -198,7 +205,23 @@ function RevenueCalendarSection() {
   const cells = eachDayOfInterval({ start: gridStart, end: gridEnd })
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+    <div>
+      <div className="mb-3 inline-flex rounded-md border border-gray-200 p-0.5">
+        {CAL_VIEW_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setCalView(t.key)}
+            className={cn(
+              'rounded px-3 py-1.5 text-[12.5px] font-semibold transition',
+              calView === t.key ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
       <section className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
@@ -326,6 +349,7 @@ function RevenueCalendarSection() {
           </ul>
         )}
       </section>
+      </div>
     </div>
   )
 }

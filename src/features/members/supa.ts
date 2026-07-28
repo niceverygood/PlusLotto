@@ -727,7 +727,7 @@ export async function resetMembers(ids: string[], actor: string | null): Promise
     } else if (r.memo && r.memo.trim()) {
       archive.push({ body: r.memo, archived_at: ts, reset_by: actor })
     }
-    const meta = { ...(r.meta ?? {}), memos: [], reset_memos: archive, last_reset_at: ts }
+    const meta = { ...(r.meta ?? {}), memos: [], reset_memos: archive, win_records: [], last_reset_at: ts }
     const { error } = await sb()
       .from('members')
       .update({
@@ -744,6 +744,7 @@ export async function resetMembers(ids: string[], actor: string | null): Promise
         is_suspended: false,
         is_deleted: false,
         is_withdrawn: false,
+        win_history: null, // DB초기화 시 당첨내역도 함께 초기화(현장 피드백 7/28)
         meta,
       })
       .eq('id', r.id)

@@ -573,7 +573,7 @@ export function MemberBulkActions({
         onClose={close}
         onConfirm={() => resetDb.mutate({ ids: selectedIds }, { onSuccess: done })}
         title="DB 초기화 (재사용)"
-        description={`${n}건을 입력 시점(신규 리드) 상태로 초기화합니다. 상담상태는 '신규'로 바뀌며 등급·상태·담당·아웃콜·성향이 리셋되고 가입일시는 초기화 시점으로 갱신됩니다. 콜메모는 소프트삭제되어 최고관리자만 열람합니다. 결제 이력은 보존됩니다. 되돌릴 수 없습니다.`}
+        description={`${n}건을 입력 시점(신규 리드) 상태로 초기화합니다. 상담상태는 '신규'로 바뀌며 등급·상태·담당·아웃콜·성향·당첨내역이 리셋되고 가입일시는 초기화 시점으로 갱신됩니다. 콜메모는 소프트삭제되어 최고관리자만 열람합니다. 결제 이력은 보존됩니다. 되돌릴 수 없습니다.`}
         confirmText="초기화"
         tone="danger"
         loading={busy}

@@ -125,6 +125,29 @@ export function useToggleStaffActive() {
   })
 }
 
+/** 자동배분 대상 토글(팀장 리스트에서 바로 체크, 현장 피드백 7/28) — 활성/비활성 토글과 동일 패턴. */
+export function useToggleAutoAssign() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { id: string; enabled: boolean }) => {
+      if (dataSource === 'supabase') return supa.toggleAutoAssign(v.id, v.enabled, user?.id ?? null)
+      if (!user) throw new Error('로그인이 필요합니다.')
+      const target = readDb().staff.find((s) => s.id === v.id)
+      if (!target) throw new Error('대상 계정을 찾을 수 없습니다.')
+      if (!canManageStaff(user, target)) throw new Error('이 계정을 변경할 권한이 없습니다.')
+      mutateDb((db) => {
+        const s = db.staff.find((x) => x.id === v.id)
+        if (!s) return
+        s.auto_assign_enabled = v.enabled
+        db.logs.push(adminLog(user?.id ?? null, 'staff.update', 'staff', v.id, { auto_assign_enabled: v.enabled }))
+      })
+      return v.id
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: staffKeys.all }),
+  })
+}
+
 /** 권한 매트릭스 저장 → 사이드바/가드가 즉시 반영(§8). 맵은 깊은 복제해 참조 공유를 막는다. */
 export function useSaveNavAccess() {
   const user = useCurrentUser()

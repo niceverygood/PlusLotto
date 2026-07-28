@@ -119,6 +119,21 @@ export async function toggleStaffActive(
   return id
 }
 
+/** 자동배분 대상 토글 — mock useToggleAutoAssign 미러(현장 피드백 7/28). */
+export async function toggleAutoAssign(id: string, enabled: boolean, actor: string | null): Promise<string> {
+  const { error } = await sb().from('staff').update({ auto_assign_enabled: enabled }).eq('id', id)
+  if (error) throw error
+  await insertLog({
+    kind: 'admin',
+    actor,
+    action: 'staff.update',
+    target_type: 'staff',
+    target_id: id,
+    meta: { auto_assign_enabled: enabled },
+  })
+  return id
+}
+
 /** 권한 매트릭스 저장 → 사이드바/가드 즉시 반영(§8). 맵의 각 nav_key 행을 upsert. */
 export async function saveNavAccess(map: NavAccessMap, actor: string | null): Promise<void> {
   const rows = Object.entries(map).map(([nav_key, roles]) => ({ nav_key, roles: [...roles] as Role[] }))

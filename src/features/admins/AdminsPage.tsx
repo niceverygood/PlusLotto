@@ -14,7 +14,14 @@ import { useStaff, useTeams } from '@/lib/staff'
 import { datetime } from '@/lib/format'
 import { assignableRoles, canManageStaff, ROLE_LABEL, ROLE_ORDER } from '@/lib/permissions'
 import type { Role, Staff } from '@/types/db'
-import { useCallVolumeStatus, useSaveStaff, useToggleStaffActive, useTodayDbCounts, type StaffInput } from './api'
+import {
+  useCallVolumeStatus,
+  useSaveStaff,
+  useToggleAutoAssign,
+  useToggleStaffActive,
+  useTodayDbCounts,
+  type StaffInput,
+} from './api'
 import { dataSource } from '@/lib/supabase'
 import { setStaffPassword } from './supa'
 
@@ -57,6 +64,7 @@ export function AdminsPage() {
   const [roleFilter, setRoleFilter] = useState<Role | ''>('')
 
   const toggle = useToggleStaffActive()
+  const toggleAutoAssign = useToggleAutoAssign()
   // 계층 위임(§5): 본인이 관리 가능한 하위 직원만 노출. admin 은 canManageStaff 가 전원 true.
   // 등급별(실장·팀장 등) 필터링(현장 피드백) + 로그인ID 기준 정렬(useStaff 가 이미 정렬 — 여기선 유지만).
   const visible = [...staff]
@@ -155,12 +163,24 @@ export function AdminsPage() {
                     </td>
                     <td className="px-2 py-2.5 font-mono text-[12px] text-gray-600">{s.login_id}</td>
                     <td className="px-2 py-2.5">
-                      <div className="flex flex-wrap items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <RoleChip role={s.role} />
-                        {s.role === 'rep' && s.auto_assign_enabled && (
-                          <span className="whitespace-nowrap rounded bg-accent-50 px-1.5 py-0.5 text-[10px] font-semibold text-accent-600">
+                        {/* 자동배분 대상 — 활성/비활성 토글처럼 리스트에서 바로 체크(현장 피드백 7/28) */}
+                        {s.role === 'rep' && (
+                          <label
+                            className="flex items-center gap-1 whitespace-nowrap text-[10.5px] font-semibold text-accent-600"
+                            title="자동배분 대상"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={s.auto_assign_enabled}
+                              disabled={toggleAutoAssign.isPending}
+                              onChange={(e) =>
+                                toggleAutoAssign.mutate({ id: s.id, enabled: e.target.checked })
+                              }
+                            />
                             자동
-                          </span>
+                          </label>
                         )}
                       </div>
                     </td>
@@ -170,6 +190,12 @@ export function AdminsPage() {
                     </td>
                     <td className="px-2 py-2.5 text-right">
                       {(() => {
+                        // 비활성 계정(이틀전부재·중복디비 등 분류용 더미 계정 포함)은 실제 근무 중인
+                        // 담당자가 아니므로 배정 건수를 그대로 노출하지 않는다 — 분류 목적 대량 배정이
+                        // 실 담당자 수치처럼 보여 "배분상태 오류"로 보이는 문제였다(현장 피드백 7/28).
+                        if (!s.is_active) {
+                          return <span className="font-mono text-[12px] text-gray-300">—</span>
+                        }
                         const c = todayDb[s.id]
                         if (!c || c.total === 0)
                           return <span className="font-mono text-[12px] text-gray-300">0</span>

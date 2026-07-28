@@ -1162,7 +1162,8 @@ export function useResetMembers() {
           m.is_suspended = false
           m.is_deleted = false
           m.is_withdrawn = false
-          m.meta = { ...m.meta, memos: [], reset_memos: archive, last_reset_at: ts }
+          m.win_history = null // DB초기화 시 당첨내역도 함께 초기화(현장 피드백 7/28)
+          m.meta = { ...m.meta, memos: [], reset_memos: archive, win_records: [], last_reset_at: ts }
           db.assignments.push({
             id: genId('as'),
             member_id: m.id,
