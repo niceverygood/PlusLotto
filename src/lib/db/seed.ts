@@ -595,6 +595,10 @@ function buildSiteSettings(): SiteSettings {
       { rank: 4, body: '[플러스로또] $name님 $contents 4등에 당첨되셨습니다. 축하드립니다.' },
       { rank: 5, body: '[플러스로또] $name님 $contents 5등에 당첨되셨습니다. 축하드립니다.' },
     ],
+    // 당첨 안내문자 자동발송(현장 7/28) — 실제 고객에게 나가는 문자라 기본은 꺼짐, 설정에서 켠다.
+    win_sms: { enabled: false, ranks: [1, 2, 3, 4, 5], paid: true, free: false },
+    // 가입환영문자 자동발송(현장 7/28) — 실제 고객에게 나가는 문자라 기본은 꺼짐, 설정에서 켠다.
+    join_sms_auto: false,
     report: {
       enabled: true,
       frequency: 'weekly',

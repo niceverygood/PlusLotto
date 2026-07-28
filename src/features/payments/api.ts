@@ -10,12 +10,15 @@ import type {
   Payment,
   PaymentMethod,
   Product,
+  SmsSend,
 } from '@/types/db'
-import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
+import { genId, mutateDb, nowIso, readDb, type DbShape } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
+import { renderSms } from '@/lib/sms'
+import { sendOneShot } from '@/lib/oneshot'
 import * as supa from './supa'
 
 export { paymentKeys }
@@ -230,6 +233,48 @@ function paymentLog(
 }
 
 /**
+ * 가입환영문자 자동발송(현장 피드백 7/28, 정의현 차장) — site_settings.join_sms_auto 가 켜져 있고
+ * 이 결제가 이 회원의 *첫* 승인 결제일 때만 1회 발송할 SmsSend 행을 만든다(갱신결제 제외).
+ * mutateDb 는 동기 콜백이라, 실발송(sendOneShot, 비동기)은 mutateDb 진입 전 이 함수에서 미리 처리하고
+ * 완성된 행만 mutateDb 안에서 push 한다(useManualIssueReco 와 동일 패턴).
+ * approvePayment · 수기결제(approveNow) 두 승인 경로에서만 호출 — updatePayment 의 상품변경은 제외.
+ */
+async function buildJoinSmsRow(
+  cur: DbShape,
+  memberId: string,
+  excludePaymentId: string,
+): Promise<SmsSend | null> {
+  if (!cur.site_settings.join_sms_auto) return null
+  const isFirstPayment = !cur.payments.some(
+    (o) => o.id !== excludePaymentId && o.member_id === memberId && o.status === 'approved',
+  )
+  if (!isFirstPayment) return null
+  const member = cur.members.find((m) => m.id === memberId)
+  if (!member || !member.phone) return null
+  const tpl = cur.sms_templates.find((t) => t.key === 'join')
+  if (!tpl || !tpl.body.trim()) return null
+
+  const body = renderSms(tpl.body, member)
+  const sms = cur.site_settings.sms
+  const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
+  let status = '미발송'
+  if (realSend) {
+    const r = await sendOneShot({ dest_phone: member.phone, msg_body: body, send_phone: sms.sender_no })
+    status = r.ok ? '발송완료' : '실패'
+  }
+  return {
+    id: genId('sms'),
+    member_id: member.id,
+    template_key: 'join',
+    phone: member.phone,
+    body,
+    type: 'join',
+    status,
+    sent_at: nowIso(),
+  }
+}
+
+/**
  * 결제 승인의 §8 부수효과를 회원에 반영(in-place):
  * 등급 상향 + 상태=정상 + 이용기간 설정. 매출은 승인 결제 합계로 자동 산출.
  */
@@ -257,6 +302,11 @@ export function useApprovePayment() {
   return useMutation({
     mutationFn: async (v: { id: string }) => {
       if (dataSource === 'supabase') return supa.approvePayment(v.id, user?.id ?? null)
+      const cur = readDb()
+      const p0 = cur.payments.find((x) => x.id === v.id)
+      if (!p0 || p0.status === 'approved') return null
+      // 실발송(가입환영문자)은 비동기라 mutateDb 진입 전에 미리 준비(위 buildJoinSmsRow 주석 참조).
+      const joinSmsRow = await buildJoinSmsRow(cur, p0.member_id, v.id)
       let memberId: string | null = null
       mutateDb((db) => {
         const p = db.payments.find((x) => x.id === v.id)
@@ -267,6 +317,7 @@ export function useApprovePayment() {
           ? db.products.find((pr) => pr.id === p.product_id)
           : undefined
         applyApproval(member, product, p)
+        if (joinSmsRow) db.sms_sends.push(joinSmsRow)
         db.logs.push(
           paymentLog(user?.id ?? null, 'payment.approve', p.id, {
             member_id: p.member_id,
@@ -275,6 +326,18 @@ export function useApprovePayment() {
             grade: product?.grade_granted ?? null,
           }),
         )
+        if (joinSmsRow) {
+          db.logs.push({
+            id: genId('log'),
+            kind: 'sms',
+            actor: user?.id ?? null,
+            action: 'sms.join_auto',
+            target_type: 'member',
+            target_id: p.member_id,
+            meta: { payment_id: p.id, real: joinSmsRow.status !== '미발송' },
+            created_at: nowIso(),
+          })
+        }
       })
       return memberId
     },
@@ -461,6 +524,8 @@ export function useCreateManualPayment() {
     mutationFn: async (v: ManualPaymentInput) => {
       if (dataSource === 'supabase') return supa.createManualPayment(v, user?.id ?? null)
       const id = genId('pay')
+      // 실발송(가입환영문자)은 비동기라 mutateDb 진입 전에 미리 준비(buildJoinSmsRow 주석 참조).
+      const joinSmsRow = v.approveNow ? await buildJoinSmsRow(readDb(), v.memberId, id) : null
       mutateDb((db) => {
         const member = db.members.find((m) => m.id === v.memberId)
         const product = db.products.find((pr) => pr.id === v.productId)
@@ -484,6 +549,7 @@ export function useCreateManualPayment() {
         }
         if (v.approveNow) applyApproval(member, product, p)
         db.payments.push(p)
+        if (joinSmsRow) db.sms_sends.push(joinSmsRow)
         db.logs.push(
           paymentLog(user?.id ?? null, 'payment.manual_create', id, {
             member_id: v.memberId,
@@ -492,6 +558,18 @@ export function useCreateManualPayment() {
             approved: v.approveNow,
           }),
         )
+        if (joinSmsRow) {
+          db.logs.push({
+            id: genId('log'),
+            kind: 'sms',
+            actor: user?.id ?? null,
+            action: 'sms.join_auto',
+            target_type: 'member',
+            target_id: v.memberId,
+            meta: { payment_id: id, real: joinSmsRow.status !== '미발송' },
+            created_at: nowIso(),
+          })
+        }
       })
       return v.memberId
     },

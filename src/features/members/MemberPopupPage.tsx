@@ -7,7 +7,8 @@ import { MemberDrawer } from './MemberDrawer'
 export function MemberPopupPage() {
   const { id } = useParams<{ id: string }>()
   return (
-    <div className="h-screen bg-gray-50">
+    // 100vh 대신 배율 보정 높이(--app-vh) — 확대 상태에서 팝업 하단(메모 목록)이 잘리던 문제(현장 7/28).
+    <div className="bg-gray-50" style={{ height: 'var(--app-vh)' }}>
       <MemberDrawer memberId={id ?? null} onClose={() => window.close()} />
     </div>
   )

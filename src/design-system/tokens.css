@@ -110,6 +110,17 @@
 html.admin-scale {
   zoom: 1.12;
 }
+/* ★ 확대 배율 보정 화면높이(현장 피드백 7/28 — "최하단 메뉴가 안 보인다", "메모가 안 보인다").
+   zoom 은 vh 를 보정해 주지 않는다: 720px 창에서 height:100vh 요소가 720×1.12=806px 로 그려져
+   화면 아래 12% 가 잘려 나가고, 그 영역(사이드바 하단 메뉴·회원상세 하단 메모)은 스크롤로도
+   닿지 않았다. 화면높이를 쓰는 컨테이너(AppShell·회원상세 Drawer·회원상세 팝업)는 100vh 대신
+   반드시 var(--app-vh) 를 쓴다. 배율을 바꿀 땐 zoom 과 아래 나눗셈 값을 함께 바꿀 것. */
+:root {
+  --app-vh: 100vh;
+}
+html.admin-scale {
+  --app-vh: calc(100vh / 1.12);
+}
 html.admin-scale body {
   font-weight: 460;
 }

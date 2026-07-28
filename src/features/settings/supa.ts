@@ -4,6 +4,7 @@
 import type { SiteSettings, SmsTemplate } from '@/types/db'
 import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
+import { DEFAULT_WIN_SMS } from '@/lib/winSms'
 
 /** 사이트 설정 전체 저장(단일행 id=1). 등급색 변경은 gradeTheme 가 토큰으로 전파(§3). */
 export async function saveSiteSettings(next: SiteSettings, actor: string | null): Promise<void> {
@@ -17,6 +18,8 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     pg_providers: next.pg_providers,
     sms: next.sms,
     win_messages: next.win_messages,
+    win_sms: next.win_sms ?? DEFAULT_WIN_SMS,
+    join_sms_auto: next.join_sms_auto ?? false,
     report: next.report,
     lotto_exclude: next.lotto_exclude,
     lotto_exclude_history: next.lotto_exclude_history,
@@ -42,6 +45,8 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     'call_script',
     'business',
     'winner_stats',
+    'win_sms',
+    'join_sms_auto',
   ] as const
   let attempt: Record<string, unknown> = payload
   for (let i = 0; i <= OPTIONAL_COLUMNS.length; i++) {

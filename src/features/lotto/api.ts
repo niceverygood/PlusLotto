@@ -11,6 +11,7 @@ import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
 import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
 import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
+import { markWinSmsSent, readWinSms, shouldSendWinSms, winSmsBody, winSmsSentRounds } from '@/lib/winSms'
 import { generateRecommendation } from '@/lib/lottoGenerator'
 import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import * as supa from './supa'
@@ -171,10 +172,14 @@ export function useConfirmRound() {
         let prizeSum = 0
         // 회원별 당첨내역 누적(§ 회원상세 "당첨이력") — bet/reco 각각의 새 WinRecord 를 모아 한 번에 upsert.
         const freshByMember = new Map<string, WinRecord[]>()
+        // 회원별 최고 등수 — 당첨 안내문자 자동발송(현장 7/28) 대상 판정용.
+        const bestRankByMember = new Map<string, number>()
         const addFresh = (memberId: string, w: WinRecord) => {
           const arr = freshByMember.get(memberId) ?? []
           arr.push(w)
           freshByMember.set(memberId, arr)
+          const prev = bestRankByMember.get(memberId)
+          if (prev == null || w.rank < prev) bestRankByMember.set(memberId, w.rank)
         }
         // 베팅 내 조합순번(몇 번째 조합) — 같은 회원·회차 베팅을 등록 순서대로 세어 부여.
         const betIndexByMember = new Map<string, number>()
@@ -237,6 +242,34 @@ export function useConfirmRound() {
           if (!m) continue
           m.meta = { ...m.meta, win_records: upsertWinRecords(readWinRecords(m.meta), fresh) }
         }
+
+        // 당첨 안내문자 자동발송(현장 7/28) — 설정에서 체크한 등수 × 회원분류만, 회차당 1회.
+        // mock 은 실발송 없이 발송내역(sms_sends)만 기록한다(supabase 경로는 features/lotto/supa.ts).
+        const winCfg = readWinSms(db.site_settings)
+        if (winCfg.enabled) {
+          const ts = nowIso()
+          for (const [memberId, rank] of bestRankByMember) {
+            const m = db.members.find((x) => x.id === memberId)
+            if (!m || !m.phone) continue
+            if (m.is_deleted || m.is_withdrawn || m.is_suspended) continue
+            if (!shouldSendWinSms(winCfg, rank, m.grade)) continue
+            if (winSmsSentRounds(m.meta).includes(v.roundNo)) continue // 재확정 중복발송 방지
+            const body = winSmsBody(db.site_settings.win_messages ?? [], rank, m, m.win_history ?? undefined)
+            if (!body) continue
+            m.meta = { ...m.meta, win_sms_rounds: markWinSmsSent(m.meta, v.roundNo) }
+            db.sms_sends.push({
+              id: genId('sms'),
+              member_id: m.id,
+              template_key: 'win',
+              phone: m.phone,
+              body,
+              type: 'win',
+              status: '미발송',
+              sent_at: ts,
+            })
+          }
+        }
+
         round.confirmed_at = nowIso()
         db.logs.push(lottoLog(user?.id ?? null, 'lotto.confirm', v.roundNo, { winners, prizeSum }))
       })

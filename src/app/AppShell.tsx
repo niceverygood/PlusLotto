@@ -99,17 +99,22 @@ export function AppShell() {
 
   return (
     <div
-      className="grid h-screen overflow-hidden bg-white text-[13px]"
+      // 높이는 h-screen(100vh) 이 아니라 배율 보정된 --app-vh (tokens.css) — 전산 확대(zoom 1.12)에서
+      // 100vh 가 창보다 12% 커져 사이드바 최하단 메뉴가 화면 밖으로 밀려나던 문제(현장 7/28).
+      className="grid overflow-hidden bg-white text-[13px]"
       style={{
+        height: 'var(--app-vh)',
         gridTemplateColumns: `${collapsed ? 64 : 248}px 1fr`,
         gridTemplateRows: 'minmax(0, 1fr)',
       }}
     >
       {/* ── 사이드바 ───────────────────────────── */}
-      <aside className="flex flex-col overflow-y-auto bg-[color:var(--nav-bg)] py-3.5 text-white">
+      {/* 세로 여백을 줄여 최고관리자(전 메뉴 15개)도 1280×720 확대 화면에서 스크롤 없이 다 보이게 한다.
+          그래도 넘치는 저해상도에서는 overflow-y-auto 로 최하단까지 닿을 수 있다(현장 7/28). */}
+      <aside className="flex flex-col overflow-y-auto bg-[color:var(--nav-bg)] py-2 text-white">
         <div
           className={cn(
-            'flex items-center gap-2 px-4 pb-3.5 font-extrabold',
+            'flex items-center gap-2 px-4 pb-2.5 font-extrabold',
             collapsed && 'justify-center px-0',
           )}
         >
@@ -121,7 +126,7 @@ export function AppShell() {
           {visibleNav.map((group) => (
             <div key={group.title}>
               {!collapsed && (
-                <div className="px-4 pb-1 pt-3 text-[9px] font-bold uppercase tracking-[1px] text-[color:var(--nav-grp)]">
+                <div className="px-4 pb-1 pt-2.5 text-[9px] font-bold uppercase tracking-[1px] text-[color:var(--nav-grp)]">
                   {group.title}
                 </div>
               )}
@@ -135,7 +140,7 @@ export function AppShell() {
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
                       cn(
-                        'relative flex items-center gap-2.5 px-4 py-[7px] text-[color:var(--nav-fg)] transition-colors',
+                        'relative flex items-center gap-2.5 px-4 py-[5px] text-[color:var(--nav-fg)] transition-colors',
                         'hover:bg-white/5 hover:text-white',
                         collapsed && 'justify-center px-0',
                         isActive &&

@@ -6,9 +6,11 @@
 // 읽기는 서버 RPC가 회원·상품 조인과 필터·집계·페이지네이션을 처리한다.
 // TODO(live-verify): 다중 테이블 갱신은 원자성 보장을 위해 RPC(트랜잭션)로 이관 권장.
 import { addMonths } from 'date-fns'
-import type { Grade, Member, Payment, Product } from '@/types/db'
+import type { Grade, Member, Payment, Product, SiteSettings, SmsTemplate } from '@/types/db'
 import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, sb } from '@/lib/db/remote'
+import { renderSms } from '@/lib/sms'
+import { sendOneShot } from '@/lib/oneshot'
 import type {
   ManualPaymentInput,
   MemberOption,
@@ -101,6 +103,66 @@ async function promoteMember(memberId: string, grade: Grade): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * 가입환영문자 자동발송(현장 피드백 7/28, 정의현 차장) — "가입환영문자도 결제승인이 되면
+ * 자동으로 나갈수 있도록". site_settings.join_sms_auto 가 켜져 있고, 이 결제가 이 회원의
+ * *첫* 승인 결제일 때만 1회 발송한다(갱신결제엔 나가지 않음 — "환영" 문구 성격상).
+ * approvePayment · createManualPayment(approveNow) 두 승인 경로에서만 호출한다
+ * (updatePayment 의 상품변경 분기는 이미 승인된 결제의 플랜 변경이라 신규 승인이 아니므로 제외).
+ */
+async function maybeSendJoinSms(memberId: string, approvedPaymentId: string, actor: string | null): Promise<void> {
+  const { data: setData } = await sb().from('site_settings').select('join_sms_auto, sms').eq('id', 1).maybeSingle()
+  const settings = setData as Pick<SiteSettings, 'join_sms_auto' | 'sms'> | null
+  if (!settings?.join_sms_auto) return
+
+  // 이 결제 말고 이미 승인된 결제가 있으면 갱신결제 — 환영문자 대상 아님.
+  const { data: prior, error: pe } = await sb()
+    .from('payments')
+    .select('id')
+    .eq('member_id', memberId)
+    .eq('status', 'approved')
+    .neq('id', approvedPaymentId)
+    .limit(1)
+  if (pe) throw pe
+  if ((prior ?? []).length > 0) return
+
+  const member = await fetchMember(memberId)
+  if (!member || !member.phone) return
+  const { data: tplData } = await sb().from('sms_templates').select('*').eq('key', 'join').maybeSingle()
+  const tpl = tplData as SmsTemplate | null
+  if (!tpl || !tpl.body.trim()) return
+
+  const body = renderSms(tpl.body, member)
+  const realSend = !!settings.sms?.oneshot_enabled && !!settings.sms?.sender_no
+  let status = '미발송'
+  if (realSend) {
+    const r = await sendOneShot({ dest_phone: member.phone, msg_body: body, send_phone: settings.sms.sender_no })
+    status = r.ok ? '발송완료' : `실패(${r.code ?? '?'})`
+  }
+  const { error: se } = await sb().from('sms_sends').insert({
+    id: genId('sms'),
+    member_id: member.id,
+    template_key: 'join',
+    phone: member.phone,
+    body,
+    type: 'join',
+    status,
+    sent_at: nowIso(),
+  })
+  if (se) {
+    console.warn('[join-sms] sms_sends insert 실패(발송내역 미기록):', se.message)
+    return
+  }
+  await insertLog({
+    kind: 'sms',
+    actor,
+    action: 'sms.join_auto',
+    target_type: 'member',
+    target_id: member.id,
+    meta: { payment_id: approvedPaymentId, real: realSend },
+  })
+}
+
 /** 결제 승인 (대기/실패 → 승인). 반환=영향 회원 id(무효화 대상). */
 export async function approvePayment(id: string, actor: string | null): Promise<string | null> {
   const p = await fetchPayment(id)
@@ -115,6 +177,12 @@ export async function approvePayment(id: string, actor: string | null): Promise<
   const { error } = await sb().from('payments').update(upd).eq('id', id)
   if (error) throw error
   if (product) await promoteMember(p.member_id, product.grade_granted)
+  // best-effort — 문자 발송 실패로 결제 승인 자체가 실패 처리되면 안 된다.
+  try {
+    await maybeSendJoinSms(p.member_id, id, actor)
+  } catch (e) {
+    console.warn('[join-sms] 자동발송 실패:', e instanceof Error ? e.message : e)
+  }
   await insertLog({
     kind: 'payment',
     actor,
@@ -242,6 +310,13 @@ export async function createManualPayment(v: ManualPaymentInput, actor: string |
   const { error } = await sb().from('payments').insert(row)
   if (error) throw error
   if (v.approveNow && product) await promoteMember(v.memberId, product.grade_granted)
+  if (v.approveNow) {
+    try {
+      await maybeSendJoinSms(v.memberId, id, actor)
+    } catch (e) {
+      console.warn('[join-sms] 자동발송 실패:', e instanceof Error ? e.message : e)
+    }
+  }
   await insertLog({
     kind: 'payment',
     actor,

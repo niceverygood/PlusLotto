@@ -11,6 +11,80 @@ const DH_API = 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do'
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
+// 당첨 안내문자 자동발송(현장 피드백 7/28, 정의현 차장) — 설정(site_settings.win_sms)에서 체크한
+// 등수 × 회원분류(유료/무료)에만 발송. 판정 규칙 원본은 src/lib/winSms.ts (서버함수라 자급자족 복제).
+const PAID_GRADES = ['gold', 'goldp', 'vip', 'royal']
+interface WinSmsCfg {
+  enabled: boolean
+  ranks: number[]
+  paid: boolean
+  free: boolean
+}
+interface SiteSettingsLite {
+  sms?: { oneshot_enabled?: boolean; sender_no?: string }
+  win_messages?: { rank: number; body: string }[]
+  win_sms?: Partial<WinSmsCfg>
+}
+interface MemberRow {
+  id: string
+  name: string | null
+  phone: string | null
+  grade: string
+  win_history: string | null
+  is_suspended: boolean | null
+  is_withdrawn: boolean | null
+  meta: Record<string, unknown> | null
+}
+
+/** 문자 본문 변수 치환 — src/lib/sms.ts renderSms 와 동일 규칙($id=전화번호, $pw=뒷4자리). */
+function renderWinSms(body: string, m: MemberRow, contents: string): string {
+  const digits = (m.phone ?? '').replace(/\D/g, '')
+  const vars: Record<string, string> = {
+    name: m.name ?? '',
+    id: digits,
+    pw: (typeof m.meta?.homepage_pw === 'string' ? (m.meta.homepage_pw as string) : '') || digits.slice(-4),
+    num: '',
+    contents,
+    link: '',
+  }
+  return body.replace(/\$(name|id|pw|num|contents|link)/g, (_, k: string) => vars[k] ?? '')
+}
+
+/** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts 와 동기화) */
+function koByteLength(s: string): number {
+  let n = 0
+  for (let i = 0; i < s.length; i++) n += s.charCodeAt(i) > 0x7f ? 2 : 1
+  return n
+}
+
+/** 검증된 발송 함수(/api/send-sms, Fixie 프록시 경유) 재사용 — weekly-reco.ts 와 동일 경로. */
+async function sendWinSms(
+  base: string,
+  dest: string,
+  body: string,
+  sender: string,
+): Promise<{ ok: boolean; code?: string }> {
+  try {
+    const r = await fetch(`${base}/api/send-sms`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(process.env.CRON_SECRET ? { 'x-internal-secret': process.env.CRON_SECRET } : {}),
+      },
+      body: JSON.stringify({
+        dest_phone: dest,
+        msg_body: body,
+        send_phone: sender,
+        msgType: koByteLength(body) <= 90 ? 'SMS' : 'LMS',
+      }),
+    })
+    const d = (await r.json()) as { ok?: boolean; code?: string }
+    return { ok: !!d.ok, code: d.code }
+  } catch {
+    return { ok: false, code: 'NET' }
+  }
+}
+
 interface DhRow {
   ltEpsd: number // 회차
   tm1WnNo: number
@@ -115,14 +189,33 @@ export default async function handler(req: any, res: any) {
       if (m === 3) return 5
       return null
     }
-    const mem: { id: string; meta: Record<string, unknown> | null }[] = []
+    const mem: MemberRow[] = []
     for (let from = 0; ; from += 1000) {
-      const { data: md } = await sb.from('members').select('id, meta').eq('is_deleted', false).range(from, from + 999)
-      const pg = (md ?? []) as typeof mem
+      const { data: md } = await sb
+        .from('members')
+        .select('id, name, phone, grade, win_history, is_suspended, is_withdrawn, meta')
+        .eq('is_deleted', false)
+        .range(from, from + 999)
+      const pg = (md ?? []) as MemberRow[]
       mem.push(...pg)
       if (pg.length < 1000) break
     }
+
+    // 당첨 안내문자 자동발송 설정(현장 7/28) — 꺼져 있으면 종전처럼 집계만 하고 문자는 보내지 않는다.
+    const { data: setData } = await sb.from('site_settings').select('sms, win_messages, win_sms').eq('id', 1).maybeSingle()
+    const settings = (setData ?? {}) as SiteSettingsLite
+    const winCfg: WinSmsCfg = {
+      enabled: !!settings.win_sms?.enabled,
+      ranks: Array.isArray(settings.win_sms?.ranks) ? (settings.win_sms!.ranks as number[]) : [],
+      paid: !!settings.win_sms?.paid,
+      free: !!settings.win_sms?.free,
+    }
+    const senderNo = settings.sms?.sender_no ?? ''
+    const winSmsOn = winCfg.enabled && !!settings.sms?.oneshot_enabled && !!senderNo
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${process.env.PORT ?? 3000}`
+
     let tallied = 0
+    let smsSent = 0
     for (const row of rows) {
       for (const m of mem) {
         const recos = Array.isArray(m.meta?.weekly_recos)
@@ -139,9 +232,43 @@ export default async function handler(req: any, res: any) {
             if (best === null || rk < best) best = rk
           }
         }
-        if (best != null) {
-          await sb.from('members').update({ win_history: `${row.round_no}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}` }).eq('id', m.id)
-          tallied += 1
+        if (best == null) continue
+        const winHistory = `${row.round_no}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`
+
+        // 자동발송 대상: 체크한 등수 + 체크한 회원분류(유료/무료), 이 회차 미발송, 정지/탈퇴 제외.
+        const sentRounds = Array.isArray(m.meta?.win_sms_rounds) ? (m.meta!.win_sms_rounds as number[]) : []
+        const gradeOk = PAID_GRADES.includes(m.grade) ? winCfg.paid : winCfg.free
+        const eligible =
+          winSmsOn &&
+          winCfg.ranks.includes(best) &&
+          gradeOk &&
+          !sentRounds.includes(row.round_no) &&
+          !!m.phone &&
+          !m.is_suspended &&
+          !m.is_withdrawn
+        const tpl = eligible ? (settings.win_messages ?? []).find((w) => w.rank === best) : undefined
+        const body = tpl?.body?.trim() ? renderWinSms(tpl.body, m, winHistory) : null
+
+        const patch: Record<string, unknown> = { win_history: winHistory }
+        if (body) {
+          patch.meta = { ...(m.meta ?? {}), win_sms_rounds: [...sentRounds, row.round_no].slice(-40) }
+        }
+        await sb.from('members').update(patch).eq('id', m.id)
+        tallied += 1
+
+        if (body) {
+          const r = await sendWinSms(base, m.phone as string, body, senderNo)
+          await sb.from('sms_sends').insert({
+            id: `sms_${row.round_no}_${m.id}`.slice(0, 60),
+            member_id: m.id,
+            template_key: 'win',
+            phone: m.phone,
+            body,
+            type: 'win',
+            status: r.ok ? '발송완료' : `실패(${r.code ?? '?'})`,
+            sent_at: new Date().toISOString(),
+          })
+          if (r.ok) smsSent += 1
         }
       }
     }
@@ -153,10 +280,19 @@ export default async function handler(req: any, res: any) {
       action: 'lotto.auto_sync',
       target_type: 'lotto_round',
       target_id: null,
-      meta: { added: rows.length, skipped, rounds: rows.map((x) => x.round_no), maxBefore: maxRound, winners: tallied },
+      meta: {
+        added: rows.length,
+        skipped,
+        rounds: rows.map((x) => x.round_no),
+        maxBefore: maxRound,
+        winners: tallied,
+        win_sms: smsSent,
+      },
       created_at: new Date().toISOString(),
     })
-    return res.status(200).json({ ok: true, maxRound, added: rows.length, skipped, rounds: rows.map((x) => x.round_no), winners: tallied })
+    return res
+      .status(200)
+      .json({ ok: true, maxRound, added: rows.length, skipped, rounds: rows.map((x) => x.round_no), winners: tallied, winSms: smsSent })
   } catch (e) {
     return res.status(500).json({ ok: false, code: 'ERROR', message: e instanceof Error ? e.message : String(e) })
   }

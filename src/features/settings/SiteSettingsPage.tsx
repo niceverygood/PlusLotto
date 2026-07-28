@@ -16,6 +16,7 @@ import { genId } from '@/lib/db/store'
 import { cn } from '@/lib/cn'
 import { datetime, num } from '@/lib/format'
 import { normalizeWinnerStats, upsertWinnerRound, winnerTotal, WINNER_RANKS } from '@/lib/winnerStats'
+import { readWinSms } from '@/lib/winSms'
 import {
   FieldRow,
   SaveBar,
@@ -67,6 +68,19 @@ const formSchema = z.object({
     ad_optout: z.string(),
   }),
   win_messages: z.array(z.object({ rank: z.number(), body: z.string().min(1, '문구를 입력하세요.') })),
+  // 당첨 안내문자 자동발송(현장 7/28) — 등수별 체크 + 유료/무료 체크. 선택한 분류만 발송.
+  win_sms: z.object({
+    enabled: z.boolean(),
+    rank1: z.boolean(),
+    rank2: z.boolean(),
+    rank3: z.boolean(),
+    rank4: z.boolean(),
+    rank5: z.boolean(),
+    paid: z.boolean(),
+    free: z.boolean(),
+  }),
+  // 가입환영문자 자동발송(현장 7/28) — 첫 결제 승인 시 1회.
+  join_sms_auto: z.boolean(),
   call_keywords: z.string(), // 통화 녹음 자동탐지 특정 단어(쉼표 구분) — 현장 피드백 7/3
   call_volume_alert_threshold: z.string(), // 월 통화량(상담상태 변경 건수) 경고 기준
   call_script: z.string(), // AI 통화분석 기준 스크립트(선택) — 현장 피드백 7/10
@@ -88,6 +102,7 @@ type FormValues = z.infer<typeof formSchema>
 
 function toForm(s: SiteSettings): FormValues {
   const winner = normalizeWinnerStats(s.winner_stats)
+  const winSms = readWinSms(s)
   return {
     bank: { ...s.bank },
     grade_colors: structuredClone(s.grade_colors),
@@ -108,6 +123,17 @@ function toForm(s: SiteSettings): FormValues {
       ad_optout: s.sms.ad_optout ?? '',
     },
     win_messages: s.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
+    win_sms: {
+      enabled: winSms.enabled,
+      rank1: winSms.ranks.includes(1),
+      rank2: winSms.ranks.includes(2),
+      rank3: winSms.ranks.includes(3),
+      rank4: winSms.ranks.includes(4),
+      rank5: winSms.ranks.includes(5),
+      paid: winSms.paid,
+      free: winSms.free,
+    },
+    join_sms_auto: !!s.join_sms_auto,
     call_keywords: (s.call_keywords ?? ['보장']).join(', '),
     call_volume_alert_threshold: String(s.call_volume_alert_threshold ?? 1000),
     call_script: s.call_script ?? '',
@@ -171,6 +197,19 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
       ad_optout: v.sms.ad_optout.trim(),
     },
     win_messages: v.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
+    win_sms: {
+      enabled: v.win_sms.enabled,
+      ranks: [
+        ...(v.win_sms.rank1 ? [1] : []),
+        ...(v.win_sms.rank2 ? [2] : []),
+        ...(v.win_sms.rank3 ? [3] : []),
+        ...(v.win_sms.rank4 ? [4] : []),
+        ...(v.win_sms.rank5 ? [5] : []),
+      ],
+      paid: v.win_sms.paid,
+      free: v.win_sms.free,
+    },
+    join_sms_auto: v.join_sms_auto,
     business: {
       name: v.business.name.trim(),
       reg_no: v.business.reg_no.trim(),
@@ -500,6 +539,16 @@ export function SiteSettingsPage() {
             설정이 필요합니다. 실발송은 캐쉬가 차감됩니다.
           </p>
         </FieldRow>
+        <FieldRow label="가입환영문자 자동발송" align="start">
+          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+            <input type="checkbox" className="h-4 w-4 accent-primary-600" {...register('join_sms_auto')} /> 첫 결제 승인 시 자동발송
+          </label>
+          <p className="mt-1 text-[11.5px] text-gray-400">
+            회원의 첫 결제가 승인되는 순간 ‘가입’ 템플릿(아래 <b>기본 문자 멘트 템플릿</b>)을 1회 자동
+            발송합니다. 이미 유료 이력이 있는 회원의 재결제(갱신)에는 나가지 않습니다. 실발송은 위 ‘실발송
+            사용’ · 발신번호가 켜져 있어야 합니다.
+          </p>
+        </FieldRow>
         <FieldRow label="무료수신거부 번호" htmlFor="ad_optout">
           <input id="ad_optout" className={cn(inputCls, 'max-w-[220px] font-mono')} {...register('sms.ad_optout')} />
           <p className="mt-1 text-[11.5px] text-gray-400">
@@ -555,8 +604,48 @@ export function SiteSettingsPage() {
         </FieldRow>
       </SectionCard>
 
-      {/* ── 1~5등 당첨문자 ───────────────────────────── */}
-      <SectionCard title="당첨 안내문자 (1~5등)" desc="당첨 확정 시 등수별로 발송되는 문자입니다. $name · $contents 변수 사용 가능.">
+      {/* ── 1~5등 당첨문자 + 자동발송 조건(현장 7/28) ───────────────────────────── */}
+      <SectionCard
+        title="당첨 안내문자 (1~5등)"
+        desc="당첨 확정 시 등수별로 발송되는 문자입니다. $name · $contents 변수 사용 가능."
+      >
+        {/* 자동발송 — 체크한 등수 × 체크한 회원분류에만 나간다. 끄면 종전처럼 담당자 수동발송만. */}
+        <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <label className="flex items-center gap-2 text-[13px] font-bold text-ink-900">
+            <input type="checkbox" className="h-4 w-4 accent-primary-600" {...register('win_sms.enabled')} />
+            당첨 안내문자 자동발송 사용
+          </label>
+          <p className="mt-1 text-[11.5px] text-gray-400">
+            회차 당첨이 확정되면(수기 확정 · 매일 자동적재 모두) 아래에서 체크한 등수 · 회원분류의 당첨자에게
+            등수별 문구가 자동 발송됩니다. 같은 회차는 한 번만 발송합니다. (실발송은 문자 설정의 ‘실발송 사용’ ·
+            발신번호가 켜져 있어야 합니다.)
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-[12px] font-semibold text-gray-600">발송 등수</span>
+            {([1, 2, 3, 4, 5] as const).map((r) => (
+              <label key={r} className="flex items-center gap-1.5 text-[12.5px] text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary-600"
+                  {...register(`win_sms.rank${r}` as const)}
+                />
+                {r}등
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-[12px] font-semibold text-gray-600">발송 대상</span>
+            <label className="flex items-center gap-1.5 text-[12.5px] text-gray-700">
+              <input type="checkbox" className="h-4 w-4 accent-primary-600" {...register('win_sms.paid')} />
+              유료회원 <span className="text-[11px] text-gray-400">(골드 · 골드플러스 · VIP · 로얄)</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-[12.5px] text-gray-700">
+              <input type="checkbox" className="h-4 w-4 accent-primary-600" {...register('win_sms.free')} />
+              무료회원 <span className="text-[11px] text-gray-400">(간편가입 · 무료 등)</span>
+            </label>
+          </div>
+        </div>
+
         <div className="space-y-2.5">
           {winArray.fields.map((field, i) => (
             <FieldRow key={field.id} label={`${field.rank}등`} align="start">

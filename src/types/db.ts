@@ -246,6 +246,16 @@ export interface WinMessage {
   body: string // $변수 사용 가능
 }
 
+// 당첨 안내문자 자동발송(현장 피드백 7/28, 정의현 차장) — 회차 당첨 확정 시(수기 확정·크론 자동적재)
+// 아래 조건에 해당하는 당첨자에게 등수별 문구(win_messages)를 자동 발송한다.
+// 종전엔 담당자가 '당첨 안내' 템플릿을 회원별로 골라 수동 발송하는 방법뿐이었다(D112 조사).
+export interface WinSmsSettings {
+  enabled: boolean // 자동발송 사용(꺼두면 종전처럼 수동발송만)
+  ranks: number[] // 자동발송할 등수(1~5) — 선택한 등수만 발송
+  paid: boolean // 유료회원(골드·골드플러스·VIP·로얄) 대상 여부
+  free: boolean // 무료회원(간편가입·무료 등 그 외 등급) 대상 여부
+}
+
 // 정기 리포트(운영 지표 자동 발송) 설정. TODO(live-verify): 실제 발송 채널/지표 항목 라이브 확정.
 export type ReportFrequency = 'daily' | 'weekly' | 'monthly'
 export interface ReportSettings {
@@ -376,6 +386,10 @@ export interface SiteSettings {
   pg_providers: PgProvider[]
   sms: SmsSettings
   win_messages: WinMessage[] // 1~5등 당첨문자
+  win_sms?: WinSmsSettings // 당첨문자 자동발송 조건(등수·유료/무료) — 미설정 시 lib/winSms 기본값(꺼짐)
+  // 가입환영(join) 문자 자동발송(현장 피드백 7/28) — 회원의 첫 결제가 승인되는 순간 1회 발송.
+  // 갱신결제(이미 유료 이력이 있는 회원의 재승인)에는 나가지 않는다 — "환영"이라는 문구 성격상.
+  join_sms_auto?: boolean
   report: ReportSettings
   lotto_exclude: LottoExcludeSettings // 현재 적용 스냅샷(폴백)
   lotto_exclude_history: LottoExcludeRule[] // 회차별 이력 + 효력일자(§V2-5)

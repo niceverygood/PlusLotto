@@ -93,7 +93,17 @@ interface Layout {
 const MIN_W = 380
 const lsKey = (k: string) => `pluslotto-drawer:${k}`
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi))
-const maxW = () => (typeof window !== 'undefined' ? window.innerWidth - 64 : 9999)
+/** 전산 확대(html zoom, tokens.css) 보정 — 포인터 좌표·window.inner* 는 확대된 실측(visual)px 이고
+ *  style 에 넣는 left/top/width 는 다시 확대되는 CSS px 이라, 배율로 나눠 같은 단위로 맞춘다.
+ *  보정 전에는 확대 상태에서 패널을 드래그하면 커서보다 12% 더 움직여 화면 밖으로 튀었다(현장 7/28). */
+function zoomFactor(): number {
+  if (typeof window === 'undefined') return 1
+  const z = parseFloat(getComputedStyle(document.documentElement).zoom || '1')
+  return Number.isFinite(z) && z > 0 ? z : 1
+}
+const viewW = () => (typeof window !== 'undefined' ? window.innerWidth / zoomFactor() : 9999)
+const viewH = () => (typeof window !== 'undefined' ? window.innerHeight / zoomFactor() : 9999)
+const maxW = () => viewW() - 64
 
 function loadLayout(key: string, defWidth: number): Layout {
   const fallback: Layout = { mode: 'dock-right', x: 96, y: 64, width: defWidth }
@@ -133,8 +143,8 @@ function MovablePanel({ onClose, title, children, footer, width = 620, storageKe
       setLayout((l) => ({
         ...l,
         width: clamp(l.width, MIN_W, maxW()),
-        x: clamp(l.x, 0, Math.max(0, window.innerWidth - 140)),
-        y: clamp(l.y, 8, Math.max(8, window.innerHeight - 160)),
+        x: clamp(l.x, 0, Math.max(0, viewW() - 140)),
+        y: clamp(l.y, 8, Math.max(8, viewH() - 160)),
       }))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -151,18 +161,19 @@ function MovablePanel({ onClose, title, children, footer, width = 620, storageKe
     const rect = panelRef.current?.getBoundingClientRect()
     if (!rect) return
     e.preventDefault()
-    const sx = e.clientX
-    const sy = e.clientY
-    const ox = rect.left
-    const oy = rect.top
-    const w = rect.width
+    const z = zoomFactor() // 확대 배율 보정 — 좌표를 전부 CSS px 단위로 환산해서 계산
+    const sx = e.clientX / z
+    const sy = e.clientY / z
+    const ox = rect.left / z
+    const oy = rect.top / z
+    const w = rect.width / z
     const onMove = (ev: PointerEvent) =>
       setLayout((l) => ({
         ...l,
         mode: 'float',
         width: w,
-        x: clamp(ox + ev.clientX - sx, 0, window.innerWidth - w),
-        y: clamp(oy + ev.clientY - sy, 8, Math.max(8, window.innerHeight - 160)),
+        x: clamp(ox + ev.clientX / z - sx, 0, viewW() - w),
+        y: clamp(oy + ev.clientY / z - sy, 8, Math.max(8, viewH() - 160)),
       }))
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
@@ -178,11 +189,12 @@ function MovablePanel({ onClose, title, children, footer, width = 620, storageKe
     (e: ReactPointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const sx = e.clientX
+      const z = zoomFactor()
+      const sx = e.clientX / z
       const startW = layout.width
       const dir = layout.mode === 'dock-right' ? -1 : 1 // 우측 도킹은 왼쪽 모서리(왼쪽으로 끌수록 넓어짐)
       const onMove = (ev: PointerEvent) =>
-        setLayout((l) => ({ ...l, width: clamp(startW + dir * (ev.clientX - sx), MIN_W, maxW()) }))
+        setLayout((l) => ({ ...l, width: clamp(startW + dir * (ev.clientX / z - sx), MIN_W, maxW()) }))
       const onUp = () => {
         window.removeEventListener('pointermove', onMove)
         window.removeEventListener('pointerup', onUp)
@@ -193,12 +205,15 @@ function MovablePanel({ onClose, title, children, footer, width = 620, storageKe
     [layout.mode, layout.width],
   )
 
+  // 높이는 100vh 가 아니라 배율 보정된 --app-vh (tokens.css) — 전산 확대(zoom 1.12)에서 패널이 창보다
+  // 12% 길어져, 안쪽 스크롤을 끝까지 내려도 하단 약 86px(=회원상세 기본정보 탭 최하단의 '메모' 목록)이
+  // 화면 밖에 남아 영영 보이지 않던 문제(현장 7/28 "팀장이 쓴 메모가 안 보인다").
   const style: CSSProperties =
     layout.mode === 'float'
-      ? { left: layout.x, top: layout.y, width: layout.width, height: 'min(calc(100vh - 24px), 760px)' }
+      ? { left: layout.x, top: layout.y, width: layout.width, height: 'min(calc(var(--app-vh) - 24px), 760px)' }
       : {
           top: 0,
-          height: '100vh',
+          height: 'var(--app-vh)',
           width: layout.width,
           ...(layout.mode === 'dock-left' ? { left: 0 } : { right: 0 }),
         }
