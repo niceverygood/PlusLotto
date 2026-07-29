@@ -3,7 +3,7 @@
 // 규칙은 lib/revenueRules 의 REVENUE_RULES 한 곳에서 교체 가능. 컴포넌트 직접 fetch 금지 — 훅 경유.
 import { useQuery } from '@tanstack/react-query'
 import { eachDayOfInterval, format, parseISO } from 'date-fns'
-import type { Member, Payment } from '@/types/db'
+import type { Member, Payment, Staff } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { sb } from '@/lib/db/remote'
@@ -85,6 +85,29 @@ function inRange(day: string, from: string | null, to: string | null): boolean {
   return true
 }
 
+/**
+ * 담당자 역할 조회(현장 피드백 7/29) — "팀장매출"/"실장매출" 뷰는 1차결제(신규전환) 여부가 아니라
+ * 담당자 역할로 갈라야 한다: 팀장매출=담당자 역할이 팀장(rep), 실장매출=실장 이상(leader/manager/admin).
+ * 예전엔 이 두 뷰가 "신규전환 결제인지"로 갈려 있어(D93 7/23) 관리자가 처리한 신규전환도 팀장매출에,
+ * 팀장이 처리한 갱신결제도 실장매출(팀 전체)에 섞여 나왔다.
+ */
+function staffRoleById(staffList: readonly Staff[]): Record<string, Staff['role']> {
+  const out: Record<string, Staff['role']> = {}
+  for (const s of staffList) out[s.id] = s.role
+  return out
+}
+
+/** 이 결제가 view(팀장매출=conversion/실장매출=team)에 속하는지 — 담당자 역할 기준. */
+function inRoleView(
+  p: Payment,
+  view: 'conversion' | 'team',
+  roleById: Record<string, Staff['role']>,
+): boolean {
+  const role = p.staff_id ? roleById[p.staff_id] : undefined
+  if (!role) return false // 담당 미배정은 두 뷰 다 제외(전체매출에만 포함)
+  return view === 'conversion' ? role === 'rep' : role !== 'rep'
+}
+
 /** 회원별 첫 승인 유료결제 id 집합(= 무료→유료 전환 시점). REVENUE_RULES.conversion. */
 function conversionIds(approved: readonly Payment[]): Set<string> {
   const firstByMember = new Map<string, Payment>()
@@ -159,17 +182,17 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
 
       const scoped = scopeApproved(db.payments, user)
       const convIds = conversionIds(scoped)
+      const roleById = staffRoleById(db.staff)
 
-      // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환(1차결제).
+      // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환(1차결제) — "신규전환율"
+      // KPI 전용(뷰 선택과 무관, 아래 activeSet 필터와는 별개 지표).
       const periodAll = scoped.filter((p) => inRange(dayOf(recognitionIso(p)), q.from, q.to))
       const periodConv = periodAll.filter((p) => convIds.has(p.id))
-      // 실장매출(team) = 1차결제(신규전환) 제외한 모든 매출(현장 피드백 7/23) — 팀장매출(conversion)의 여집합.
+      // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const activeSet =
-        q.view === 'conversion'
-          ? periodConv
-          : q.view === 'team'
-            ? periodAll.filter((p) => !convIds.has(p.id))
-            : periodAll
+        q.view === 'conversion' || q.view === 'team'
+          ? periodAll.filter((p) => inRoleView(p, q.view as 'conversion' | 'team', roleById))
+          : periodAll
 
       // 요약
       const total = activeSet.reduce((s, p) => s + p.amount, 0)
@@ -270,13 +293,12 @@ export function useRevenueCalendar(month: string, view: RevenueView = 'real') {
       for (const s of db.staff) staffNames[s.id] = s.name
 
       const scoped = scopeApproved(db.payments, user)
-      const convIds = conversionIds(scoped)
+      const roleById = staffRoleById(db.staff)
+      // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const viewScoped =
-        view === 'conversion'
-          ? scoped.filter((p) => convIds.has(p.id))
-          : view === 'team'
-            ? scoped.filter((p) => !convIds.has(p.id))
-            : scoped
+        view === 'conversion' || view === 'team'
+          ? scoped.filter((p) => inRoleView(p, view, roleById))
+          : scoped
       const inMonth = viewScoped.filter((p) => dayOf(recognitionIso(p)).startsWith(month))
 
       const byDay = new Map<string, Map<string, { label: string; count: number; amount: number }>>()
@@ -353,13 +375,12 @@ export function useRevenueDayPayments(date: string | null, view: RevenueView = '
       for (const pr of db.products) productNames[pr.id] = pr.name
 
       const scoped = scopeApproved(db.payments, user)
-      const convIds = conversionIds(scoped)
+      const roleById = staffRoleById(db.staff)
+      // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const viewScoped =
-        view === 'conversion'
-          ? scoped.filter((p) => convIds.has(p.id))
-          : view === 'team'
-            ? scoped.filter((p) => !convIds.has(p.id))
-            : scoped
+        view === 'conversion' || view === 'team'
+          ? scoped.filter((p) => inRoleView(p, view, roleById))
+          : scoped
 
       return viewScoped
         .filter((p) => dayOf(recognitionIso(p)) === date)

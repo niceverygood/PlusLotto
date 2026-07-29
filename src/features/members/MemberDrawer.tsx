@@ -759,9 +759,10 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
 
       {tab === 'sms' && (
         <div>
-          {/* 문자 발송 */}
-          <div className="mb-3 flex items-center gap-2 rounded-lg border border-accent-100 bg-accent-50 p-2.5">
-            <MessageSquare className="h-4 w-4 text-accent-600" />
+          {/* 문자 발송 — 템플릿 발송은 투명(무채색), 문자발송(자유본문)은 주황으로 강조
+              (현장 피드백 7/29: "발송>투명 / 직접발송>주황", "직접발송>문자발송"). */}
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
+            <MessageSquare className="h-4 w-4 text-gray-500" />
             <select className={selectCls} value={smsTpl} onChange={(e) => setSmsTpl(e.target.value)}>
               {templates.map((t) => (
                 <option key={t.key} value={t.key}>
@@ -771,7 +772,7 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
             </select>
             <Button
               size="sm"
-              variant="acc"
+              variant="gho"
               icon={<Send className="h-3.5 w-3.5" />}
               disabled={!smsTpl || sendSms.isPending}
               onClick={() =>
@@ -785,14 +786,15 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
             </Button>
           </div>
           {/* 직접 입력 발송(현장 피드백 <회원정보창> 3) — 상시 텍스트박스 대신 아이콘 클릭 시 팝업으로
-              여는 방식으로 변경(현장 피드백 7/24: 실무자 실수 발송 방지). */}
+              여는 방식으로 변경(현장 피드백 7/24: 실무자 실수 발송 방지). 명칭 "직접발송"→"문자발송",
+              색상은 위 템플릿 발송과 반대로 주황 강조(현장 피드백 7/29). */}
           <button
             type="button"
             onClick={() => setCustomSmsOpen(true)}
-            className="mb-3 flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-[12px] font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800"
+            className="mb-3 flex items-center gap-1.5 rounded-lg border border-accent-100 bg-accent-50 px-2.5 py-2 text-[12px] font-semibold text-accent-600 transition-colors hover:bg-accent-100"
           >
             <PenLine className="h-3.5 w-3.5" />
-            직접발송
+            문자발송
           </button>
           <TabList
             rows={sms}

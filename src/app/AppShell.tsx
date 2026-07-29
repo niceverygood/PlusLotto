@@ -275,6 +275,35 @@ export function AppShell() {
       {/* 회원상세 Drawer 전역 인스턴스(현장 피드백 7/23) — 어느 화면이든 memberDrawerStore.open() 만
           호출하면 라우트 이동 없이 여기서 뜬다(§8 허브를 화면 전환 없이 공유). */}
       <MemberDrawer memberId={drawerMemberId} onClose={closeMemberDrawer} />
+
+      {/* 통화예약 알림 — 화면 우측 하단 고정 팝업(현장 피드백 7/29: "최상단 알람을 실무자들이
+          놓치는 경우가 많다"). 상단바 벨(클릭해야 보임)과 별개로, 도래한 예약이 있으면 클릭 없이도
+          항상 눈에 띄는 위치에 노출한다. 회원상세 Drawer(z-50)보다 위(z-60)라 열려 있어도 가려지지
+          않는다. */}
+      {alerts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-[60] w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5">
+            <Bell className="h-4 w-4 text-danger" />
+            <span className="text-[12.5px] font-bold text-ink-900">통화예약 알림</span>
+            <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
+              {alerts.length}
+            </span>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-1.5">
+            {alerts.map((a) => (
+              <button
+                key={a.member_id}
+                type="button"
+                onClick={() => navigate(`/admin/members?member=${encodeURIComponent(a.member_id)}`)}
+                className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-gray-50"
+              >
+                <span className="text-[12.5px] font-semibold text-ink-900">{a.member_name}</span>
+                <span className="font-mono text-[11px] tabular-nums text-gray-500">예약 {datetime(a.reserved_at)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
