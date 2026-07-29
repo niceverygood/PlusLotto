@@ -817,3 +817,9 @@
 - **구현**: 설정 화면(`설정 > 고객 홈페이지 홍보 슬라이드`)에 이미지 추가/캡션 편집/순서변경(위·아래)/삭제 카드를 추가했다(`PromoSlidesCard.tsx`, 업로드·삭제·캡션·순서변경마다 즉시 반영 — 다른 설정처럼 '저장' 버튼을 기다리지 않음). 이미지는 Supabase Storage 공개버킷 `promo-slides`(신규, `call-recordings`와 동일한 RLS 패턴이나 이번엔 `public=true`라 고객은 로그인 없이 공개 URL로 바로 본다)에 올리고, `site_settings.promo_slides`에는 `{id, url, caption}` 경량 목록만 저장한다. 공개 노출은 기존 `portal_site_public()` RPC(bank/business/winner_stats 반환)에 `promo_slides`를 추가하는 방식으로 확장했다. 고객 홈페이지(`HomePage.tsx`)는 히어로 섹션 바로 아래에 5초 자동전환 캐러셀(이전/다음 버튼 + 점 인디케이터, 캡션 오버레이)로 노출하며, 등록된 슬라이드가 없으면 섹션 자체가 렌더되지 않는다. mock 모드는 실 Storage가 없어 업로드 파일을 `data:` URI로 인코딩해 그대로 저장한다(공개 URL 대체재).
 - **부수 발견/수정**: `promo_slides`·`auto_assign_cursor`(D115) 두 필드는 설정 폼이 다루지 않는 값인데, `useSaveSiteSettings`의 mock 경로가 `db.site_settings = value`로 통째로 교체하고 있어 **다른 설정을 저장할 때마다 두 필드가 조용히 사라지는** 잠재 버그를 이번에 발견해 함께 고쳤다(기존 값을 이어받아 병합). supabase 경로(`saveSiteSettings`)는 이미 명시적 컬럼 피킹 구조라 두 필드를 애초에 페이로드에서 제외하기만 하면 됐다.
 - **검증**: typecheck·build green. mock으로 이미지 업로드→캡션 입력→저장을 실제 UI로 수행해 `site_settings.promo_slides`에 정확히 반영됨을 확인했고, 고객 홈페이지에서 캐러셀과 캡션이 히어로 섹션 바로 아래 의도한 위치에 노출됨을 확인했다(스크린샷 렌더링 이슈로 페이지 텍스트 추출로 위치·내용 재확인).
+- **후속(라이브 DB 반영)**: 이 기능은 `storage.buckets`(promo-slides 공개버킷)·`site_settings.promo_slides` 컬럼·`portal_site_public()` RPC 확장까지 마이그레이션(`20260729100000_promo_slides.sql`) 적용이 필요해 코드 배포와 별개로 라이브 Supabase에 SQL을 직접 실행해 반영을 완료했다(세 가지 모두 존재 확인).
+
+### D118. 통화예약 알림 우측하단 고정 팝업에 닫기버튼 추가 (현장 7/29, 정의현 차장)
+- **요청**: D116에서 추가한 "우측하단 고정 팝업"(도래한 통화예약을 벨 클릭 없이도 항상 노출)이 닫을 방법이 없어 화면에 계속 떠 있는 게 불편하다는 후속 피드백.
+- **조치**: `AppShell.tsx`에 로컬 dismiss 상태(`dismissedIds`)를 추가해 팝업에만 X 닫기 버튼을 넣었다. 상단바 벨 아이콘의 배지·드롭다운 목록은 dismiss와 무관하게 항상 전체 건수를 보여준다(팝업만 조용히 넣어두고 싶을 때와, 실제로 처리했는지 나중에 확인하고 싶을 때를 분리). 닫은 뒤에도 새로 도래하는 예약(다른 회원)이 생기면 그 건은 다시 팝업에 노출된다 — 이미 닫은 건들만 계속 숨겨진다.
+- **검증**: typecheck·build green.

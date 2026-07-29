@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, LogOut, PanelLeft } from 'lucide-react'
+import { Bell, LogOut, PanelLeft, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
@@ -79,6 +79,10 @@ export function AppShell() {
   const [notifOpen, setNotifOpen] = useState(false)
   const { data: callAlerts } = useCallReservationAlerts()
   const alerts = callAlerts ?? []
+  // 우측하단 고정 팝업만 닫기(현장 피드백 7/29) — 상단바 벨 배지/목록은 계속 전체를 보여준다.
+  // 닫아도 새로 도래한 예약이 있으면(=id 다름) 팝업이 다시 노출된다.
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const popupAlerts = alerts.filter((a) => !dismissedIds.has(a.member_id))
   const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
 
@@ -279,18 +283,27 @@ export function AppShell() {
       {/* 통화예약 알림 — 화면 우측 하단 고정 팝업(현장 피드백 7/29: "최상단 알람을 실무자들이
           놓치는 경우가 많다"). 상단바 벨(클릭해야 보임)과 별개로, 도래한 예약이 있으면 클릭 없이도
           항상 눈에 띄는 위치에 노출한다. 회원상세 Drawer(z-50)보다 위(z-60)라 열려 있어도 가려지지
-          않는다. */}
-      {alerts.length > 0 && (
+          않는다. 닫기버튼(현장 피드백 7/29 — 계속 고정돼 있어 불편하다는 후속 요청)으로 현재 목록만
+          닫을 수 있고, 새로 도래한 예약이 생기면(=다른 회원) 다시 노출된다. */}
+      {popupAlerts.length > 0 && (
         <div className="fixed bottom-4 right-4 z-[60] w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
           <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5">
             <Bell className="h-4 w-4 text-danger" />
             <span className="text-[12.5px] font-bold text-ink-900">통화예약 알림</span>
-            <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
-              {alerts.length}
+            <span className="ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
+              {popupAlerts.length}
             </span>
+            <button
+              type="button"
+              aria-label="닫기"
+              onClick={() => setDismissedIds((prev) => new Set([...prev, ...popupAlerts.map((a) => a.member_id)]))}
+              className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="max-h-64 overflow-y-auto p-1.5">
-            {alerts.map((a) => (
+            {popupAlerts.map((a) => (
               <button
                 key={a.member_id}
                 type="button"
