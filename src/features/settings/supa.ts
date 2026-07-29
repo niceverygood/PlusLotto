@@ -1,8 +1,9 @@
 // 설정(site_settings·sms_templates) — supabase 쓰기 경로 (M7). mock 의 mutateDb + adminLog 미러링.
 // site_settings 는 단일행(id=1) 업데이트, sms_templates 는 key 기준 upsert.
 // 읽기는 api.ts 가 fetchSiteSettings/fetchTables 로 분기(여기선 쓰기만).
-import type { SiteSettings, SmsTemplate } from '@/types/db'
+import type { PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
 import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
+import { genId } from '@/lib/db/store'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
 import { DEFAULT_WIN_SMS } from '@/lib/winSms'
 
@@ -12,9 +13,9 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
   const afterWinner = normalizeWinnerStats(next.winner_stats).current
   // 실 컬럼만 명시 picking(D68 #6). update({...next}) 는 폼이 실은 여분키(id 등)·신규 타입필드를
   // 그대로 PATCH 해 D60 처럼 마이그레이션 누락 시 PGRST204 로 전 설정 저장이 통째 실패하던 구조를 방지.
-  // auto_assign_cursor 는 이 폼이 다루지 않는 내부 운영 상태(자동배분 라운드로빈, 현장 7/28) —
-  // 여기서 빼야 설정 저장할 때마다 조용히 null 로 덮어써 커서가 리셋되는 걸 막는다.
-  const payload: Record<Exclude<keyof SiteSettings, 'auto_assign_cursor'>, unknown> = {
+  // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)는
+  // 이 폼이 다루지 않는다 — 여기서 빼야 설정 저장할 때마다 조용히 null/빈 배열로 덮어쓰지 않는다.
+  const payload: Record<Exclude<keyof SiteSettings, 'auto_assign_cursor' | 'promo_slides'>, unknown> = {
     bank: next.bank,
     grade_colors: next.grade_colors,
     pg_providers: next.pg_providers,
@@ -94,4 +95,70 @@ export async function saveSmsTemplates(
     target_id: null,
     meta: { keys: templates.map((t) => t.key) },
   })
+}
+
+// ── 고객 홈페이지 홍보 슬라이드(현장 피드백 7/29) ────────────────────────────
+// 특허사진·1등당첨자 사진 등을 어드민에서 업로드 → Storage 공개버킷(promo-slides) +
+// site_settings.promo_slides(경량 목록만). 이미지 자체는 Storage 에 두고 site_settings 에는
+// 완성 공개 URL 만 저장해, 고객 홈페이지(anon, portal_site_public RPC)가 그대로 쓸 수 있게 한다.
+async function readPromoSlides(): Promise<PromoSlide[]> {
+  const { data, error } = await sb().from('site_settings').select('promo_slides').eq('id', 1).maybeSingle()
+  if (error) throw error
+  const list = (data as { promo_slides: PromoSlide[] | null } | null)?.promo_slides
+  return Array.isArray(list) ? list : []
+}
+
+async function writePromoSlides(list: PromoSlide[], actor: string | null, action: string): Promise<void> {
+  const { error } = await sb().from('site_settings').update({ promo_slides: list }).eq('id', 1)
+  if (error) throw error
+  await insertLog({
+    kind: 'admin',
+    actor,
+    action,
+    target_type: 'site_settings',
+    target_id: null,
+    meta: { count: list.length },
+  })
+}
+
+/** 홍보 슬라이드 이미지 업로드 — Storage 에 올리고 공개 URL 을 목록 끝에 추가. */
+export async function uploadPromoSlide(file: File, actor: string | null): Promise<PromoSlide[]> {
+  const id = genId('slide')
+  const path = `${id}_${file.name}`
+  const { error: upErr } = await sb().storage.from('promo-slides').upload(path, file)
+  if (upErr) throw upErr
+  const { data: pub } = sb().storage.from('promo-slides').getPublicUrl(path)
+  const list = await readPromoSlides()
+  const next = [...list, { id, url: pub.publicUrl, caption: null }]
+  await writePromoSlides(next, actor, 'settings.promo_slide_add')
+  return next
+}
+
+/** 홍보 슬라이드 삭제 — 목록에서 제거만 한다(Storage 원본 파일은 실수 복구 여지를 위해 남겨둔다). */
+export async function deletePromoSlide(id: string, actor: string | null): Promise<PromoSlide[]> {
+  const list = await readPromoSlides()
+  const next = list.filter((s) => s.id !== id)
+  await writePromoSlides(next, actor, 'settings.promo_slide_delete')
+  return next
+}
+
+/** 홍보 슬라이드 캡션 수정. */
+export async function updatePromoSlideCaption(
+  id: string,
+  caption: string,
+  actor: string | null,
+): Promise<PromoSlide[]> {
+  const list = await readPromoSlides()
+  const next = list.map((s) => (s.id === id ? { ...s, caption: caption.trim() || null } : s))
+  await writePromoSlides(next, actor, 'settings.promo_slide_update')
+  return next
+}
+
+/** 홍보 슬라이드 순서 변경 — 배열 순서 그대로가 노출 순서라 통째로 다시 쓴다. */
+export async function reorderPromoSlides(ids: string[], actor: string | null): Promise<PromoSlide[]> {
+  const list = await readPromoSlides()
+  const byId = new Map(list.map((s) => [s.id, s]))
+  const next = ids.map((id) => byId.get(id)).filter((s): s is PromoSlide => !!s)
+  await writePromoSlides(next, actor, 'settings.promo_slide_reorder')
+  return next
 }

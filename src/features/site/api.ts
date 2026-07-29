@@ -18,7 +18,7 @@
 //   InquiryInput = { name:string; phone?:string; category?:string; title:string; body:string }
 // ─────────────────────────────────────────────────────────────────────────
 import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query'
-import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTier, Notice, WinnerStats } from '@/types/db'
+import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTier, Notice, PromoSlide, WinnerStats } from '@/types/db'
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
@@ -31,6 +31,7 @@ export interface PublicSiteInfo {
   bank: BankTransferSettings
   business: BusinessInfo
   winner_stats: WinnerStats
+  promo_slides: PromoSlide[]
 }
 
 const EMPTY_BANK: BankTransferSettings = { bank_name: '', account_no: '', holder: '', guide: '' }
@@ -50,6 +51,7 @@ export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
           bank: { ...EMPTY_BANK, ...d.bank },
           business: { ...EMPTY_BUSINESS, ...d.business },
           winner_stats: normalizeWinnerStats(d.winner_stats),
+          promo_slides: Array.isArray(d.promo_slides) ? d.promo_slides : [],
         }
       }
       const s = readDb().site_settings
@@ -57,6 +59,7 @@ export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
         bank: { ...EMPTY_BANK, ...s.bank },
         business: { ...EMPTY_BUSINESS, ...s.business },
         winner_stats: normalizeWinnerStats(s.winner_stats),
+        promo_slides: Array.isArray(s.promo_slides) ? s.promo_slides : [],
       }
     },
     staleTime: 10 * 60 * 1000,

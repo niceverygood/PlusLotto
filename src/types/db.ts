@@ -246,6 +246,15 @@ export interface WinMessage {
   body: string // $변수 사용 가능
 }
 
+// 고객 홈페이지 홍보 슬라이드 1건(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등.
+// url 은 이미 바로 쓸 수 있는 완성 URL(Storage 공개버킷 promo-slides 의 공개 URL,
+// mock 모드는 data: URI) — 화면(HomePage)이 모드를 몰라도 되게 한다.
+export interface PromoSlide {
+  id: string
+  url: string
+  caption: string | null
+}
+
 // 당첨 안내문자 자동발송(현장 피드백 7/28, 정의현 차장) — 회차 당첨 확정 시(수기 확정·크론 자동적재)
 // 아래 조건에 해당하는 당첨자에게 등수별 문구(win_messages)를 자동 발송한다.
 // 종전엔 담당자가 '당첨 안내' 템플릿을 회원별로 골라 수동 발송하는 방법뿐이었다(D112 조사).
@@ -394,6 +403,9 @@ export interface SiteSettings {
   // features/members/{api,supa}.ts autoAssign() 이 매 호출마다 여기서 이어받는다. 설정 화면에는
   // 노출되지 않는 내부 운영 상태 — 사람이 직접 편집할 값 아님.
   auto_assign_cursor?: string | null
+  // 고객 홈페이지 홍보 슬라이드(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등, 어드민에서 업로드
+  // 하면 고객 홈페이지 상단에 슬라이드(캐러셀)로 노출. 배열 순서 = 노출 순서(별도 order 필드 없음).
+  promo_slides?: PromoSlide[]
   report: ReportSettings
   lotto_exclude: LottoExcludeSettings // 현재 적용 스냅샷(폴백)
   lotto_exclude_history: LottoExcludeRule[] // 회차별 이력 + 효력일자(§V2-5)

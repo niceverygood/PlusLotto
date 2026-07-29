@@ -601,6 +601,8 @@ function buildSiteSettings(): SiteSettings {
     join_sms_auto: false,
     // 자동배분 라운드로빈 커서(현장 7/28) — 아직 아무도 배정 안 함.
     auto_assign_cursor: null,
+    // 고객 홈페이지 홍보 슬라이드(현장 7/29) — 아직 미등록.
+    promo_slides: [],
     report: {
       enabled: true,
       frequency: 'weekly',

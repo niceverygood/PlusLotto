@@ -9,7 +9,7 @@
 //   - useMemberAuth(): 로그인 여부에 따라 CTA(회원가입/로그인 ↔ 마이페이지) 분기.
 //   - useRecentRounds(1): 최근 회차 1건 미리보기. 로딩/빈/에러는 모두 graceful 처리.
 // ─────────────────────────────────────────────────────────────────────────
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { BRAND } from '@/lib/brand'
 import { Link } from 'react-router-dom'
 import {
@@ -17,12 +17,15 @@ import {
   Banknote,
   BellRing,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   MessageSquareText,
   ShieldCheck,
   Sparkles,
   Trophy,
   Users,
 } from 'lucide-react'
+import type { PromoSlide } from '@/types/db'
 import { Badge, LottoBalls } from '@/design-system/components'
 import { date } from '@/lib/format'
 import { cn } from '@/lib/cn'
@@ -81,6 +84,76 @@ function SectionHeading({
   )
 }
 
+// ── 홍보 슬라이드 캐러셀(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등, 어드민(설정 > 고객
+// 홈페이지 홍보 슬라이드)에서 업로드한 이미지를 5초 자동전환 캐러셀로 노출. 등록된 게 없으면
+// 아무것도 렌더하지 않는다(graceful).
+function PromoCarousel({ slides }: { slides: PromoSlide[] }) {
+  const [index, setIndex] = useState(0)
+
+  useEffect(() => {
+    if (slides.length <= 1) return
+    const timer = setInterval(() => setIndex((i) => (i + 1) % slides.length), 5000)
+    return () => clearInterval(timer)
+  }, [slides.length])
+
+  if (slides.length === 0) return null
+  const safeIndex = index % slides.length
+  const slide = slides[safeIndex]
+
+  return (
+    <section className="bg-gray-50 py-12 sm:py-16">
+      <div className="mx-auto max-w-[900px] px-4 sm:px-6">
+        <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <img
+            src={slide.url}
+            alt={slide.caption ?? ''}
+            className="aspect-[16/9] w-full bg-gray-100 object-cover"
+          />
+          {slide.caption && (
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink-900/75 to-transparent px-5 pb-4 pt-10">
+              <p className="text-[13.5px] font-semibold text-white">{slide.caption}</p>
+            </div>
+          )}
+          {slides.length > 1 && (
+            <>
+              <button
+                type="button"
+                aria-label="이전 슬라이드"
+                onClick={() => setIndex((i) => (i - 1 + slides.length) % slides.length)}
+                className="absolute left-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink-900 shadow transition-colors hover:bg-white"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                aria-label="다음 슬라이드"
+                onClick={() => setIndex((i) => (i + 1) % slides.length)}
+                className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink-900 shadow transition-colors hover:bg-white"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+              <div className="absolute inset-x-0 bottom-2.5 flex justify-center gap-1.5">
+                {slides.map((s, i) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-label={`${i + 1}번째 슬라이드`}
+                    onClick={() => setIndex(i)}
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full transition-colors',
+                      i === safeIndex ? 'bg-white' : 'bg-white/50',
+                    )}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /** 로그인 상태에 맞춰 1차 CTA 경로/문구를 결정. */
 function usePrimaryCta(): { to: string; label: string } {
   const { member } = useMemberAuth()
@@ -101,6 +174,7 @@ export function HomePage() {
   const winnerStats = publicInfo?.winner_stats
   const winnerCurrent = winnerStats?.current
   const bank = publicInfo?.bank
+  const promoSlides = publicInfo?.promo_slides ?? []
 
   return (
     <div className="font-sans">
@@ -160,6 +234,9 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ── 홍보 슬라이드(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등, 등록 없으면 미노출 ── */}
+      <PromoCarousel slides={promoSlides} />
 
       {/* ── 3대 강점 ───────────────────────────────────────────── */}
       <section className="mx-auto max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20">

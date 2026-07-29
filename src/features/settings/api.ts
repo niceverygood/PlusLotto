@@ -3,7 +3,7 @@
 // gradeTheme(useGradeColorSync)가 재적용 → 전 화면 <Badge grade> 토큰이 즉시 바뀐다(§3 검수).
 // sms_templates 는 members(드로어·일괄·나의문자)와 공유 키 → 저장 시 그쪽도 함께 갱신(§8).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LogEntry, LottoRound, SiteSettings, SmsTemplate, WinnerRoundStats } from '@/types/db'
+import type { LogEntry, LottoRound, PromoSlide, SiteSettings, SmsTemplate, WinnerRoundStats } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
@@ -84,7 +84,12 @@ export function useSaveSiteSettings() {
       mutateDb((db) => {
         const before = normalizeWinnerStats(db.site_settings.winner_stats).current
         const after = normalizeWinnerStats(value.winner_stats).current
-        db.site_settings = value
+        // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)는
+        // 이 폼이 다루지 않는 필드라 next 에는 없다 — 통째로 교체하면 조용히 사라지므로 이어받는다
+        // (supa.ts saveSiteSettings 도 같은 이유로 이 두 필드를 update 페이로드에서 뺀다).
+        const preservedCursor = db.site_settings.auto_assign_cursor
+        const preservedSlides = db.site_settings.promo_slides
+        db.site_settings = { ...value, auto_assign_cursor: preservedCursor, promo_slides: preservedSlides }
         if (after && after.updated_at !== before?.updated_at) {
           db.logs.push(
             adminLog(user?.id ?? null, 'settings.winner_stats.upsert', 'winner_stats', String(after.round_no), {
@@ -148,5 +153,97 @@ export function useSaveSmsTemplates() {
       })
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: smsTemplateKeys.all }),
+  })
+}
+
+// ── 고객 홈페이지 홍보 슬라이드(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등 ─────────────
+// mock 은 실 Storage 가 없어 파일을 data: URI 로 인코딩해 site_settings.promo_slides 에 직접
+// 저장한다(§lib/db 는 브라우저 로컬 데이터 계층이라 이 방식이 유일한 선택지 — supabase 모드는
+// 실제로 Storage 공개버킷에 업로드하고 공개 URL 만 저장한다, features/settings/supa.ts 참조).
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error instanceof Error ? reader.error : new Error('파일을 읽지 못했습니다.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+export function useUploadPromoSlide() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (file: File): Promise<PromoSlide[]> => {
+      if (dataSource === 'supabase') return supa.uploadPromoSlide(file, user?.id ?? null)
+      const url = await fileToDataUrl(file)
+      const entry: PromoSlide = { id: genId('slide'), url, caption: null }
+      let next: PromoSlide[] = []
+      mutateDb((db) => {
+        next = [...(db.site_settings.promo_slides ?? []), entry]
+        db.site_settings.promo_slides = next
+        db.logs.push(adminLog(user?.id ?? null, 'settings.promo_slide_add', 'site_settings', null, { count: next.length }))
+      })
+      return next
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+  })
+}
+
+export function useDeletePromoSlide() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string): Promise<PromoSlide[]> => {
+      if (dataSource === 'supabase') return supa.deletePromoSlide(id, user?.id ?? null)
+      let next: PromoSlide[] = []
+      mutateDb((db) => {
+        next = (db.site_settings.promo_slides ?? []).filter((s) => s.id !== id)
+        db.site_settings.promo_slides = next
+        db.logs.push(adminLog(user?.id ?? null, 'settings.promo_slide_delete', 'site_settings', null, { id }))
+      })
+      return next
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+  })
+}
+
+export function useUpdatePromoSlideCaption() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { id: string; caption: string }): Promise<PromoSlide[]> => {
+      if (dataSource === 'supabase') return supa.updatePromoSlideCaption(v.id, v.caption, user?.id ?? null)
+      let next: PromoSlide[] = []
+      mutateDb((db) => {
+        next = (db.site_settings.promo_slides ?? []).map((s) =>
+          s.id === v.id ? { ...s, caption: v.caption.trim() || null } : s,
+        )
+        db.site_settings.promo_slides = next
+        db.logs.push(adminLog(user?.id ?? null, 'settings.promo_slide_update', 'site_settings', null, { id: v.id }))
+      })
+      return next
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+  })
+}
+
+export function useReorderPromoSlides() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]): Promise<PromoSlide[]> => {
+      if (dataSource === 'supabase') return supa.reorderPromoSlides(ids, user?.id ?? null)
+      let next: PromoSlide[] = []
+      mutateDb((db) => {
+        const byId = new Map((db.site_settings.promo_slides ?? []).map((s) => [s.id, s]))
+        next = ids.map((id) => byId.get(id)).filter((s): s is PromoSlide => !!s)
+        db.site_settings.promo_slides = next
+        db.logs.push(
+          adminLog(user?.id ?? null, 'settings.promo_slide_reorder', 'site_settings', null, { count: next.length }),
+        )
+      })
+      return next
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
   })
 }
