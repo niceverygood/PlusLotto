@@ -390,6 +390,10 @@ export interface SiteSettings {
   // 가입환영(join) 문자 자동발송(현장 피드백 7/28) — 회원의 첫 결제가 승인되는 순간 1회 발송.
   // 갱신결제(이미 유료 이력이 있는 회원의 재승인)에는 나가지 않는다 — "환영"이라는 문구 성격상.
   join_sms_auto?: boolean
+  // 자동배분(자동할당) 라운드로빈 커서(현장 피드백 7/28) — 마지막으로 배정한 staff_id.
+  // features/members/{api,supa}.ts autoAssign() 이 매 호출마다 여기서 이어받는다. 설정 화면에는
+  // 노출되지 않는 내부 운영 상태 — 사람이 직접 편집할 값 아님.
+  auto_assign_cursor?: string | null
   report: ReportSettings
   lotto_exclude: LottoExcludeSettings // 현재 적용 스냅샷(폴백)
   lotto_exclude_history: LottoExcludeRule[] // 회차별 이력 + 효력일자(§V2-5)

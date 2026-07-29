@@ -599,6 +599,8 @@ function buildSiteSettings(): SiteSettings {
     win_sms: { enabled: false, ranks: [1, 2, 3, 4, 5], paid: true, free: false },
     // 가입환영문자 자동발송(현장 7/28) — 실제 고객에게 나가는 문자라 기본은 꺼짐, 설정에서 켠다.
     join_sms_auto: false,
+    // 자동배분 라운드로빈 커서(현장 7/28) — 아직 아무도 배정 안 함.
+    auto_assign_cursor: null,
     report: {
       enabled: true,
       frequency: 'weekly',

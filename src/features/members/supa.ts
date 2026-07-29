@@ -666,8 +666,25 @@ export async function autoAssign(
   if (re) throw re
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
   if (reps.length === 0) return
+
+  // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — 이 함수는 호출마다
+  // i=0 부터 다시 시작해, 같은(또는 겹치는) 대상을 나눠서 여러 번 자동배분하면 매번 배치 내 같은
+  // 상대 위치의 회원이 같은 담당자로만 몰렸다(예: 리셋 직후 그 회원만 다시 자동배분 → 항상 직전
+  // 담당자로 복귀). site_settings.auto_assign_cursor 에 마지막으로 배정한 staff_id 를 남겨 다음
+  // 호출이 그 다음 사람부터 이어받게 한다. 컬럼 마이그레이션 전이면(구버전 배포 호환) 조용히
+  // 기존 동작(항상 0번부터)으로 폴백 — 배분 자체는 실패하면 안 된다.
+  let startAt = 0
+  try {
+    const { data: setData } = await sb().from('site_settings').select('auto_assign_cursor').eq('id', 1).maybeSingle()
+    const cursor = (setData as { auto_assign_cursor: string | null } | null)?.auto_assign_cursor ?? null
+    const cursorIdx = cursor ? reps.findIndex((r) => r.id === cursor) : -1
+    startAt = cursorIdx === -1 ? 0 : (cursorIdx + 1) % reps.length
+  } catch {
+    /* 컬럼 없음 등 — 폴백 유지 */
+  }
+
   const ts = nowIso()
-  const repOf = ids.map((_, i) => reps[i % reps.length])
+  const repOf = ids.map((_, i) => reps[(startAt + i) % reps.length])
   const asg = ids.map((mid, i) => ({
     id: genId('as'),
     member_id: mid,
@@ -689,6 +706,18 @@ export async function autoAssign(
     const memberIds = idsByRep.get(rep.id)
     if (!memberIds || memberIds.length === 0) continue
     await updateByIds('members', { assigned_staff_id: rep.id, team_id: rep.team_id }, memberIds)
+  }
+  // 다음 호출이 이어받을 커서 — best-effort(컬럼 없으면 조용히 무시). 배분 자체는 이미 끝났으니
+  // 이 저장이 실패해도 throw 하지 않는다(그러면 성공한 배분이 "실패"로 잘못 보고된다).
+  if (repOf.length > 0) {
+    try {
+      await sb()
+        .from('site_settings')
+        .update({ auto_assign_cursor: repOf[repOf.length - 1].id })
+        .eq('id', 1)
+    } catch {
+      /* 컬럼 없음 등 — 다음 호출은 그냥 0번부터 다시 시작 */
+    }
   }
   await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length } })
 }

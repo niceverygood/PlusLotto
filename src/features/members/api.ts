@@ -1055,11 +1055,20 @@ export function useAutoAssign() {
       if (pool.length === 0) return v.ids
       mutateDb((db) => {
         const ts = nowIso()
+        // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — supa.ts autoAssign
+        // 과 동일 이유: i 를 매 호출 0부터 다시 세면, 같은(또는 겹치는) 대상을 나눠서 여러 번
+        // 자동배분할 때 배치 내 같은 상대 위치의 회원이 매번 같은 담당자로만 몰린다. 마지막으로
+        // 배정한 staff_id 를 site_settings 에 남겨 다음 호출이 그 다음 사람부터 이어받게 한다.
+        const cursor = db.site_settings.auto_assign_cursor ?? null
+        const cursorIdx = cursor ? pool.findIndex((s) => s.id === cursor) : -1
+        const startAt = cursorIdx === -1 ? 0 : (cursorIdx + 1) % pool.length
         let i = 0
+        let last: string | null = null
         for (const m of db.members) {
           if (!v.ids.includes(m.id)) continue
-          const rep = pool[i % pool.length]
+          const rep = pool[(startAt + i) % pool.length]
           i++
+          last = rep.id
           m.assigned_staff_id = rep.id
           m.team_id = rep.team_id
           db.assignments.push({
@@ -1071,6 +1080,7 @@ export function useAutoAssign() {
             created_at: ts,
           })
         }
+        if (last) db.site_settings.auto_assign_cursor = last
         db.logs.push(
           adminLog(user?.id ?? null, 'member.auto_assign', null, {
             count: v.ids.length,

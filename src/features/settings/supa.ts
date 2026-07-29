@@ -12,7 +12,9 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
   const afterWinner = normalizeWinnerStats(next.winner_stats).current
   // 실 컬럼만 명시 picking(D68 #6). update({...next}) 는 폼이 실은 여분키(id 등)·신규 타입필드를
   // 그대로 PATCH 해 D60 처럼 마이그레이션 누락 시 PGRST204 로 전 설정 저장이 통째 실패하던 구조를 방지.
-  const payload: Record<keyof SiteSettings, unknown> = {
+  // auto_assign_cursor 는 이 폼이 다루지 않는 내부 운영 상태(자동배분 라운드로빈, 현장 7/28) —
+  // 여기서 빼야 설정 저장할 때마다 조용히 null 로 덮어써 커서가 리셋되는 걸 막는다.
+  const payload: Record<Exclude<keyof SiteSettings, 'auto_assign_cursor'>, unknown> = {
     bank: next.bank,
     grade_colors: next.grade_colors,
     pg_providers: next.pg_providers,
