@@ -6,6 +6,7 @@ import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, Pay
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
+import { lastAssignedAt, planAutoAssign } from '@/lib/autoAssign'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
@@ -1054,21 +1055,18 @@ export function useAutoAssign() {
           : assignableReps()
       if (pool.length === 0) return v.ids
       mutateDb((db) => {
-        const ts = nowIso()
-        // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — supa.ts autoAssign
-        // 과 동일 이유: i 를 매 호출 0부터 다시 세면, 같은(또는 겹치는) 대상을 나눠서 여러 번
-        // 자동배분할 때 배치 내 같은 상대 위치의 회원이 매번 같은 담당자로만 몰린다. 마지막으로
-        // 배정한 staff_id 를 site_settings 에 남겨 다음 호출이 그 다음 사람부터 이어받게 한다.
-        const cursor = db.site_settings.auto_assign_cursor ?? null
-        const cursorIdx = cursor ? pool.findIndex((s) => s.id === cursor) : -1
-        const startAt = cursorIdx === -1 ? 0 : (cursorIdx + 1) % pool.length
-        let i = 0
-        let last: string | null = null
-        for (const m of db.members) {
-          if (!v.ids.includes(m.id)) continue
-          const rep = pool[(startAt + i) % pool.length]
-          i++
-          last = rep.id
+        // 배치 안의 배정 시각은 1ms 씩 벌린다(supa.ts autoAssign 과 동일) — 전원이 같은 시각이면
+        // 다음 호출의 "마지막 배정이 오래된 순"이 동률이 돼 순번이 늘 풀 첫 사람부터 다시 시작한다.
+        const baseMs = Date.parse(nowIso())
+        // 분배 순서는 배정 이력에서 매 호출 새로 도출 — 마지막 배정이 가장 오래된 담당자부터
+        // (supa.ts autoAssign 과 동일 규칙, lib/autoAssign.ts). 호출마다 0번부터 다시 세던 초기
+        // 구현도, 그 뒤 site_settings 커서로 이어받던 D115 방식도 "리셋 → 같은 회원만 다시
+        // 자동배분"에서 직전 담당자로 되돌아갈 수 있었다(현장 7/28·7/30). 이력 기반은 방금 준
+        // 사람이 순번 맨 뒤로 밀리므로 1건씩 반복 실행해도 다음 사람에게 간다.
+        const targets = db.members.filter((m) => v.ids.includes(m.id))
+        const repOf = planAutoAssign(targets.length, pool, lastAssignedAt(db.assignments))
+        targets.forEach((m, i) => {
+          const rep = repOf[i]
           m.assigned_staff_id = rep.id
           m.team_id = rep.team_id
           db.assignments.push({
@@ -1077,10 +1075,9 @@ export function useAutoAssign() {
             staff_id: rep.id,
             assigned_by: user?.id ?? null,
             type: 'auto',
-            created_at: ts,
+            created_at: new Date(baseMs + i).toISOString(),
           })
-        }
-        if (last) db.site_settings.auto_assign_cursor = last
+        })
         db.logs.push(
           adminLog(user?.id ?? null, 'member.auto_assign', null, {
             count: v.ids.length,

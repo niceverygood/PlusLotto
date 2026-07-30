@@ -8,6 +8,11 @@ import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { fetchSiteSettings, ID_IN_CHUNK, paginateAll, selectAll, selectByIds, updateByIds } from '@/lib/db/remote'
+import { lastAssignedAt, planAutoAssign, type AssignmentLike } from '@/lib/autoAssign'
+
+// 자동배분 순번 계산 시 훑을 최근 배정 이력 건수 — 담당자별 '마지막 배정 시각'만 알면 되므로
+// 전체를 읽을 필요가 없다. 풀 규모(수십 명) 대비 넉넉한 상한.
+const RECENT_ASSIGN_SCAN = 500
 import { mapPool } from '@/lib/async'
 
 // 단체문자 동시 발송 한도(브라우저). 너무 높이면 Fixie 동시연결·OneShot 레이트리밋 위험 → 보수적 6
@@ -672,31 +677,36 @@ export async function autoAssign(
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
   if (reps.length === 0) return
 
-  // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — 이 함수는 호출마다
-  // i=0 부터 다시 시작해, 같은(또는 겹치는) 대상을 나눠서 여러 번 자동배분하면 매번 배치 내 같은
-  // 상대 위치의 회원이 같은 담당자로만 몰렸다(예: 리셋 직후 그 회원만 다시 자동배분 → 항상 직전
-  // 담당자로 복귀). site_settings.auto_assign_cursor 에 마지막으로 배정한 staff_id 를 남겨 다음
-  // 호출이 그 다음 사람부터 이어받게 한다. 컬럼 마이그레이션 전이면(구버전 배포 호환) 조용히
-  // 기존 동작(항상 0번부터)으로 폴백 — 배분 자체는 실패하면 안 된다.
-  let startAt = 0
-  try {
-    const { data: setData } = await sb().from('site_settings').select('auto_assign_cursor').eq('id', 1).maybeSingle()
-    const cursor = (setData as { auto_assign_cursor: string | null } | null)?.auto_assign_cursor ?? null
-    const cursorIdx = cursor ? reps.findIndex((r) => r.id === cursor) : -1
-    startAt = cursorIdx === -1 ? 0 : (cursorIdx + 1) % reps.length
-  } catch {
-    /* 컬럼 없음 등 — 폴백 유지 */
-  }
+  // 분배 순서는 배정 이력에서 매 호출 새로 도출한다 — 마지막으로 배정받은 지 가장 오래된 담당자부터
+  // (현장 피드백 7/28·7/30 "이전 분배자에게 재분배되는 상황", 근거는 lib/autoAssign.ts 주석).
+  // D115 의 site_settings.auto_assign_cursor 방식은 컬럼 마이그레이션과 설정 쓰기 권한
+  // (admin·manager)이 둘 다 갖춰져야 동작하고, 어긋나면 조용히 "항상 0번부터" 로 폴백해 증상이
+  // 그대로 재현됐다. 최근 이력만 보면 되므로 조회는 상한을 두고(RECENT_ASSIGN_SCAN) 최신순으로
+  // 훑는다 — 그 안에 없는 담당자는 "가장 오래 못 받은 사람" 으로 취급돼 순번 맨 앞으로 온다.
+  // 조회가 실패해도 배분은 그대로 진행(이력 없음 = 풀 순서대로) — 부가 상태가 배분을 막지 않는다.
+  // 주의: assignments 는 RLS 로 "볼 수 있는 회원" 범위만 읽히므로 팀장 계정이 실행하면 자기 스코프
+  // 안에서의 순환이 된다(설정 커서와 달리 권한 부족으로 아예 무력화되지는 않는다).
+  let lastAt: Record<string, string> = {}
+  const { data: recentAsg, error: ae } = await sb()
+    .from('assignments')
+    .select('staff_id, created_at')
+    .in('staff_id', reps.map((r) => r.id))
+    .order('created_at', { ascending: false })
+    .limit(RECENT_ASSIGN_SCAN)
+  if (!ae) lastAt = lastAssignedAt((recentAsg ?? []) as AssignmentLike[])
 
-  const ts = nowIso()
-  const repOf = ids.map((_, i) => reps[(startAt + i) % reps.length])
+  const repOf = planAutoAssign(ids.length, reps, lastAt)
+  // 배치 안의 배정 시각을 1ms 씩 벌린다 — 한 배치 전원이 같은 시각이면 다음 호출에서 "마지막 배정이
+  // 오래된 순"이 전부 동률이 돼 순번이 늘 풀 첫 사람부터 다시 시작한다. 실제로도 순차 배정이고,
+  // 화면(배정이력·금일 배분디비)은 분 단위 표시라 ms 차이는 보이지 않는다.
+  const baseMs = Date.parse(nowIso())
   const asg = ids.map((mid, i) => ({
     id: genId('as'),
     member_id: mid,
     staff_id: repOf[i].id,
     assigned_by: actor,
     type: 'auto' as const,
-    created_at: ts,
+    created_at: new Date(baseMs + i).toISOString(),
   }))
   const { error: e2 } = await sb().from('assignments').insert(asg)
   if (e2) throw e2
@@ -712,18 +722,8 @@ export async function autoAssign(
     if (!memberIds || memberIds.length === 0) continue
     await updateByIds('members', { assigned_staff_id: rep.id, team_id: rep.team_id }, memberIds)
   }
-  // 다음 호출이 이어받을 커서 — best-effort(컬럼 없으면 조용히 무시). 배분 자체는 이미 끝났으니
-  // 이 저장이 실패해도 throw 하지 않는다(그러면 성공한 배분이 "실패"로 잘못 보고된다).
-  if (repOf.length > 0) {
-    try {
-      await sb()
-        .from('site_settings')
-        .update({ auto_assign_cursor: repOf[repOf.length - 1].id })
-        .eq('id', 1)
-    } catch {
-      /* 컬럼 없음 등 — 다음 호출은 그냥 0번부터 다시 시작 */
-    }
-  }
+  // 다음 호출은 위에서 방금 insert 한 assignments 를 실적으로 읽어 이어서 분배한다 —
+  // 별도 커서를 남길 필요가 없다(D121).
   await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length } })
 }
 
