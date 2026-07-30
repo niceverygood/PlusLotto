@@ -810,22 +810,16 @@ function generateIssueSetsForGrade(
 // 유료 등급(골드/골드+/VIP/로얄)만 대상. 무료는 발급만(문자 X).
 const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
 
-// 멀티테넌트 브랜드(배포별 VITE_BRAND/VITE_BRAND_SHORT). 서버함수라 process.env 사용
-// (클라 lib/brand.ts 와 동일 로직 — api/ 밖 모듈 import 불가라 인라인 복제, DECISIONS 참조).
-const BRAND_NAME = process.env.VITE_BRAND || '플러스로또'
-const BRAND_SHORT =
-  process.env.VITE_BRAND_SHORT || (BRAND_NAME.endsWith('로또') ? BRAND_NAME.slice(0, -2) : BRAND_NAME)
-
 /**
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 포맷(자급자족 중복, 상단 참조).
- * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33으로 표기하고(현장 7/22), "회차"라는
- * 단어도 같은 이유로 "번째"로 표기한다(현장 7/27).
+ * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33으로 표기한다(현장 7/22). 최상단 문구도
+ * 같은 이유로 "plus No. <회차>" 한 줄로 표기한다(현장 7/30 — 기존 브랜드태그+회차 2줄을 대체).
  */
 function formatComboSms(name: string, roundNo: number, sets: number[][]): string {
   const digits = String(Math.max(0, Math.trunc(roundNo)))
   const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
-  return `[${BRAND_SHORT}]\n${safeRound}번째\n${name || '회원'}님\n${lines.join('\n')}`
+  return `plus No. ${safeRound}\n${name || '회원'}님\n${lines.join('\n')}`
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
