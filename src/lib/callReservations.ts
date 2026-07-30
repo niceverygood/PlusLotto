@@ -1,11 +1,32 @@
 // 통화예약 알림(현장 피드백 7/23) — 회원상세 <통화예약> 일시가 도래하면 AppShell 벨 알림에 노출.
 // lib/todayDb.ts 와 동일한 mock/supabase 분기 패턴(§2, lib 경유 공유)을 재사용한다.
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Member } from '@/types/db'
 import { readDb } from './db/store'
 import { dataSource } from './supabase'
 import { sb } from './db/remote'
 import { useCurrentUser, type CurrentUser } from './auth'
+
+// 우측하단 고정 팝업 켜기/끄기(현장 피드백 7/30) — 실무자마다 선호가 달라 브라우저별 로컬 설정으로
+// 둔다(site_settings 전역 설정이 아님). 상단바 벨 배지/드롭다운은 이 설정과 무관하게 항상 동작한다.
+const POPUP_PREF_KEY = 'call-reservation-popup-enabled'
+
+export function useCallPopupEnabled(): [boolean, (v: boolean) => void] {
+  const [enabled, setEnabledState] = useState(() => localStorage.getItem(POPUP_PREF_KEY) !== '0')
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === POPUP_PREF_KEY) setEnabledState(e.newValue !== '0')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+  const setEnabled = (v: boolean) => {
+    localStorage.setItem(POPUP_PREF_KEY, v ? '1' : '0')
+    setEnabledState(v)
+  }
+  return [enabled, setEnabled]
+}
 
 export interface CallReservationAlert {
   member_id: string

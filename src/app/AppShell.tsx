@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, LogOut, PanelLeft, X } from 'lucide-react'
+import { Bell, BellOff, LogOut, PanelLeft, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
-import { useCallReservationAlerts } from '@/lib/callReservations'
+import { useCallPopupEnabled, useCallReservationAlerts } from '@/lib/callReservations'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
@@ -82,9 +82,11 @@ export function AppShell() {
   // 우측하단 고정 팝업만 닫기(현장 피드백 7/29) — 상단바 벨 배지/목록은 계속 전체를 보여준다.
   // 닫아도 새로 도래한 예약이 있으면(=id 다름) 팝업이 다시 노출된다.
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
-  const popupAlerts = alerts.filter((a) => !dismissedIds.has(a.member_id))
+  const [popupEnabled, setPopupEnabled] = useCallPopupEnabled()
+  const popupAlerts = popupEnabled ? alerts.filter((a) => !dismissedIds.has(a.member_id)) : []
   const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
+  const openMemberDrawer = useMemberDrawerStore((s) => s.open)
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
@@ -222,7 +224,7 @@ export function AppShell() {
                           type="button"
                           onClick={() => {
                             setNotifOpen(false)
-                            navigate(`/admin/members?member=${encodeURIComponent(a.member_id)}`)
+                            openMemberDrawer(a.member_id)
                           }}
                           className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-gray-50"
                         >
@@ -256,7 +258,17 @@ export function AppShell() {
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-10 z-20 w-40 rounded-lg border border-gray-200 bg-white p-1.5 shadow-md">
+                <div className="absolute right-0 top-10 z-20 w-52 rounded-lg border border-gray-200 bg-white p-1.5 shadow-md">
+                  {/* 우측하단 고정 팝업 켜기/끄기(현장 피드백 7/30) — 브라우저별 개인 설정. */}
+                  <button
+                    type="button"
+                    onClick={() => setPopupEnabled(!popupEnabled)}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    {popupEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                    통화예약 알림팝업 {popupEnabled ? '끄기' : '켜기'}
+                  </button>
+                  <div className="my-1 border-t border-gray-100" />
                   <button
                     type="button"
                     onClick={handleLogout}
@@ -307,7 +319,7 @@ export function AppShell() {
               <button
                 key={a.member_id}
                 type="button"
-                onClick={() => navigate(`/admin/members?member=${encodeURIComponent(a.member_id)}`)}
+                onClick={() => openMemberDrawer(a.member_id)}
                 className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-gray-50"
               >
                 <span className="text-[12.5px] font-semibold text-ink-900">{a.member_name}</span>

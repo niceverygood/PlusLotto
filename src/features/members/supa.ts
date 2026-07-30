@@ -315,7 +315,12 @@ export async function bulkImportMembers(
       })
     }
   }
-  const CHUNK = 500
+  // 청크 100건(현장 피드백 7/30, "250건 이상이면 입력이 안된다") — members INSERT 는 행마다
+  // BEFORE INSERT 트리거(전화번호 중복 검사, advisory lock + 서브쿼리)가 도는데, 이게 한 INSERT
+  // 문 안에서 500행씩 직렬로 실행되며 커넥션 풀러/PostgREST 요청 타임아웃을 넘겨 큰 배치가 통째로
+  // 실패했다. 청크를 작게 쪼개면 실패해도 그 청크만 재시도 가능하고, 총 건수는 루프가 처리하므로
+  // 500건이든 그 이상이든 동일하게 동작한다.
+  const CHUNK = 100
   const createdIds = new Set<string>()
   for (let i = 0; i < memberRows.length; i += CHUNK) {
     const { data, error } = await sb().from('members').insert(memberRows.slice(i, i + CHUNK)).select('id')
