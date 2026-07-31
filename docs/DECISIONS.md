@@ -846,8 +846,8 @@
 ### D-88lotto (별도 저장소) 도메인 별칭 정리 — plus-lotto.vercel.app → 88-lotto.vercel.app (현장 7/31)
 - **증상**: "88로또 어드민 주소가 https://plus-lotto.vercel.app 인데 88-lotto.vercel.app 로 바꿔달라."
 - **조사**: Vercel 프로젝트를 직접 조회한 결과 `88lotto` 프로젝트(정상 프로덕션 도메인 `88lotto.vercel.app`)에 `plus-lotto.vercel.app` 이라는 예전 별칭이 그대로 남아 같은 배포를 가리키고 있었다 — 이 저장소(PlusLotto)의 실제 프로덕션 도메인은 `lotto-plus.co.kr`/`pluslotto.vercel.app`로 별개이며 충돌은 없었지만, "plus-lotto"라는 이름의 주소가 실제로는 88로또 화면을 보여주는 상태라 브랜드 혼동·오접속 위험이 있었다.
-- **조치**: `vercel alias set 88lotto.vercel.app 88-lotto.vercel.app`으로 새 별칭을 추가해 정상 동작 확인 후, `vercel alias remove plus-lotto.vercel.app`으로 옛 별칭을 제거했다. PlusLotto 쪽 별칭(`pluslotto.vercel.app`, `lotto-plus.co.kr`)은 그대로 유지·정상 확인.
-- **검증**: `curl`로 `88-lotto.vercel.app`(200)·`plus-lotto.vercel.app`(404, 제거 확인)·`lotto-plus.co.kr`(200, 영향 없음) 모두 확인. (이 항목은 PlusLotto 코드 변경이 아니라 Vercel 프로젝트 설정 변경이라 이 저장소에는 커밋할 코드가 없다 — 기록용으로만 남긴다.)
+- **조치**: `vercel alias set 88lotto.vercel.app 88-lotto.vercel.app`으로 새 별칭을 추가해 정상 동작 확인. 처음엔 `plus-lotto.vercel.app`을 `vercel alias remove`로 함께 제거했으나, 88lotto 자체 `docs/DECISIONS.md`(D86, 7/14)에 "제거 시 제3자가 그 이름을 선점해 피싱 등에 악용할 수 있어 **의도적으로 유지**"라는 기존 결정이 남아있는 것을 뒤늦게 확인해 `vercel alias set 88lotto.vercel.app plus-lotto.vercel.app`으로 즉시 복구했다 — 88로또 작업 전에 그쪽 DECISIONS.md를 먼저 확인했어야 했는데 놓친 부분. 최종적으로 `plus-lotto.vercel.app`(보안 목적 유지)·`88-lotto.vercel.app`(신규, 안내용) 둘 다 살아있고 `88lotto.vercel.app`을 함께 가리킨다. PlusLotto 쪽 별칭(`pluslotto.vercel.app`, `lotto-plus.co.kr`)은 처음부터 그대로 유지·정상 확인.
+- **검증**: `curl`로 `plus-lotto.vercel.app`·`88-lotto.vercel.app`·`88lotto.vercel.app`·`lotto-plus.co.kr` 전부 200 확인. (이 항목은 PlusLotto 코드 변경이 아니라 Vercel 프로젝트 설정 변경이라 이 저장소에는 커밋할 코드가 없다 — 기록용으로만 남긴다.)
 
 ### D122. 문자발송 세션 만료 시 자동 재시도 (형제 프로젝트 88lotto 현장 피드백 7/31 선제 적용)
 - **배경**: 88lotto에서 "문자발송이 계속 실패로 나온다"는 제보를 조사한 결과, `/api/send-sms`에 직접 진단 호출을 넣어보니 발송 인프라(OneShot+고정IP 프록시) 자체는 정상(실제 발송 성공)이었고, 실제 원인은 오래 열려있던 브라우저 탭의 Supabase 세션 토큰이 만료된 채로 `getSession()`이 캐시된 옛 토큰을 그대로 돌려줘 서버가 401(AUTH)로 거절하고 있었던 것이었다 — 앞서 D121과 같은 "오래 열린 탭" 계열 문제.
