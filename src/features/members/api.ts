@@ -1062,12 +1062,24 @@ export function useAutoAssign() {
         const cursor = db.site_settings.auto_assign_cursor ?? null
         const cursorIdx = cursor ? pool.findIndex((s) => s.id === cursor) : -1
         const startAt = cursorIdx === -1 ? 0 : (cursorIdx + 1) % pool.length
+        // 회원별 직전 담당자 — 라운드로빈이 리셋 직전 담당자로 그대로 복귀시키는 우연의 일치를
+        // 피한다(현장 피드백 7/31: "자동배정인데 동일 상담원에게 배분됐다"). supa.ts autoAssign 과 동일 로직.
+        const lastStaffByMember = new Map<string, string>()
+        for (const a of [...db.assignments].sort((x, y) => y.created_at.localeCompare(x.created_at))) {
+          if (a.staff_id && v.ids.includes(a.member_id) && !lastStaffByMember.has(a.member_id)) {
+            lastStaffByMember.set(a.member_id, a.staff_id)
+          }
+        }
         let i = 0
         let last: string | null = null
         for (const m of db.members) {
           if (!v.ids.includes(m.id)) continue
-          const rep = pool[(startAt + i) % pool.length]
+          let rep = pool[(startAt + i) % pool.length]
           i++
+          if (pool.length > 1 && rep.id === lastStaffByMember.get(m.id)) {
+            rep = pool[(startAt + i) % pool.length]
+            i++
+          }
           last = rep.id
           m.assigned_staff_id = rep.id
           m.team_id = rep.team_id

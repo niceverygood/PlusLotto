@@ -688,8 +688,32 @@ export async function autoAssign(
     /* 컬럼 없음 등 — 폴백 유지 */
   }
 
+  // 회원별 직전 담당자(리셋 전 마지막 실배정) — 라운드로빈이 우연히 그 회원을 그대로 다시 배정하는
+  // 걸 막기 위함(현장 피드백 7/31: "자동배정인데 동일 상담원에게 배분됐다"). 리셋 직후 그 회원만
+  // 다시 자동배분하면 커서가 그대로 그 사람으로 돌아오는 경우가 실제로 재현됐다. reps 가 1명뿐이면
+  // 피할 방법이 없으니 그대로 둔다.
+  const lastAssignRows = await selectByIds<{ member_id: string; staff_id: string | null; created_at: string }>(
+    'assignments',
+    'member_id, staff_id, created_at',
+    ids,
+    'member_id',
+  )
+  const lastStaffByMember = new Map<string, string>()
+  for (const row of lastAssignRows.sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+    if (row.staff_id && !lastStaffByMember.has(row.member_id)) lastStaffByMember.set(row.member_id, row.staff_id)
+  }
+
   const ts = nowIso()
-  const repOf = ids.map((_, i) => reps[(startAt + i) % reps.length])
+  let cursor = startAt
+  const repOf = ids.map((mid) => {
+    let rep = reps[cursor % reps.length]
+    if (reps.length > 1 && rep.id === lastStaffByMember.get(mid)) {
+      cursor++
+      rep = reps[cursor % reps.length]
+    }
+    cursor++
+    return rep
+  })
   const asg = ids.map((mid, i) => ({
     id: genId('as'),
     member_id: mid,
