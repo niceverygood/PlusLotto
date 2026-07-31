@@ -1007,6 +1007,13 @@ export default async function handler(req: any, res: any) {
       eligible.push({ r, meta, recos, count })
     }
 
+    // 유료회원 우선 처리(현장 피드백 7/31) — 금요일은 무료회원 기본요일과 겹쳐 대상이 수천 명대로
+    // 커지는데, 실제로 이 함수가 Vercel maxDuration(300초)에 걸려 중간에 강제 종료되면서 뒤쪽 순서의
+    // 회원은 그날 발급·문자를 통째로 못 받는 사고가 있었다(이 실행분은 마지막 로그 기록조차 남기지
+    // 못한 채 끊겼다 — 완주 실패의 증거). 유료(결제) 회원은 수가 훨씬 적으니 배열 맨 앞으로 보내
+    // 타임아웃이 나더라도 무료회원 쪽에서 잘리게 한다(유료회원 발급 누락을 최소화).
+    eligible.sort((a, b) => Number(PAID_GRADES.has(b.r.grade)) - Number(PAID_GRADES.has(a.r.grade)))
+
     // 2) 발급 + (유료)SMS — 동시성 제한 병렬. 순차로는 1000+명 발송이 함수 타임아웃(수십분)에 걸려
     //    일부만 나가던 위험을 차단(현장 6/24, 이윤선 1883명 대비). 단건 실패는 격리(잔여 진행).
     const CONC = 12
