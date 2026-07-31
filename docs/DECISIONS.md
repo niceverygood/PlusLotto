@@ -848,3 +848,8 @@
 - **조사**: Vercel 프로젝트를 직접 조회한 결과 `88lotto` 프로젝트(정상 프로덕션 도메인 `88lotto.vercel.app`)에 `plus-lotto.vercel.app` 이라는 예전 별칭이 그대로 남아 같은 배포를 가리키고 있었다 — 이 저장소(PlusLotto)의 실제 프로덕션 도메인은 `lotto-plus.co.kr`/`pluslotto.vercel.app`로 별개이며 충돌은 없었지만, "plus-lotto"라는 이름의 주소가 실제로는 88로또 화면을 보여주는 상태라 브랜드 혼동·오접속 위험이 있었다.
 - **조치**: `vercel alias set 88lotto.vercel.app 88-lotto.vercel.app`으로 새 별칭을 추가해 정상 동작 확인 후, `vercel alias remove plus-lotto.vercel.app`으로 옛 별칭을 제거했다. PlusLotto 쪽 별칭(`pluslotto.vercel.app`, `lotto-plus.co.kr`)은 그대로 유지·정상 확인.
 - **검증**: `curl`로 `88-lotto.vercel.app`(200)·`plus-lotto.vercel.app`(404, 제거 확인)·`lotto-plus.co.kr`(200, 영향 없음) 모두 확인. (이 항목은 PlusLotto 코드 변경이 아니라 Vercel 프로젝트 설정 변경이라 이 저장소에는 커밋할 코드가 없다 — 기록용으로만 남긴다.)
+
+### D122. 문자발송 세션 만료 시 자동 재시도 (형제 프로젝트 88lotto 현장 피드백 7/31 선제 적용)
+- **배경**: 88lotto에서 "문자발송이 계속 실패로 나온다"는 제보를 조사한 결과, `/api/send-sms`에 직접 진단 호출을 넣어보니 발송 인프라(OneShot+고정IP 프록시) 자체는 정상(실제 발송 성공)이었고, 실제 원인은 오래 열려있던 브라우저 탭의 Supabase 세션 토큰이 만료된 채로 `getSession()`이 캐시된 옛 토큰을 그대로 돌려줘 서버가 401(AUTH)로 거절하고 있었던 것이었다 — 앞서 D121과 같은 "오래 열린 탭" 계열 문제.
+- **조치**: `lib/oneshot.ts sendOneShot()`이 첫 시도에서 `code:'AUTH'`를 받으면 `supabase.auth.refreshSession()`으로 세션을 강제 갱신해 한 번만 재시도하도록 수정했다. 같은 패턴을 공유하는 이 저장소에도 동일 버그가 잠재해 있어 88lotto와 함께 선제 반영했다(§ CLAUDE.md 공용 컴포넌트 버그 동시 반영 원칙).
+- **검증**: typecheck·build green. 88lotto 쪽은 `/api/send-sms`에 CRON 내부시크릿으로 진단 호출을 보내 실제 발송 성공(`cmid` 발급)까지 확인했다.

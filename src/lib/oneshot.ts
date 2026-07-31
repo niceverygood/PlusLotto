@@ -34,20 +34,35 @@ export interface OneShotSendInput {
   tran_id?: string
 }
 
-/** Vercel 함수 '/api/send-sms'(고정 IP 프록시 경유) 호출. 본문 길이로 SMS/LMS 자동 분류. */
+async function sendOnce(input: OneShotSendInput, msgType: 'SMS' | 'LMS' | 'MMS', token: string | undefined) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (token) headers.authorization = `Bearer ${token}`
+  const r = await fetch('/api/send-sms', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...input, msgType }),
+  })
+  return (await r.json()) as OneShotResult
+}
+
+/** Vercel 함수 '/api/send-sms'(고정 IP 프록시 경유) 호출. 본문 길이로 SMS/LMS 자동 분류.
+ *  탭을 오래 띄워두면(백그라운드) Supabase 세션 토큰이 만료됐는데도 getSession() 이 캐시된
+ *  옛 토큰을 그대로 돌려줘 서버가 401(AUTH)로 거절하는 경우가 있다(형제 프로젝트 88lotto 현장
+ *  피드백 7/31 — "문자 발송이 계속 실패로 나온다", 실제 발송 인프라는 정상이었고 브라우저 세션만
+ *  만료돼 있었다. 동일 패턴이라 이쪽에도 선제 적용). AUTH 실패 시 세션을 강제로 새로고침해 한
+ *  번만 재시도한다. */
 export async function sendOneShot(input: OneShotSendInput): Promise<OneShotResult> {
   const msgType = input.msgType ?? classifyMsgType(input.msg_body)
   try {
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
     // 로그인 운영자 세션 토큰 첨부 — 서버가 staff 인증 후에만 실발송(보안 D68). mock 모드는 세션 없음.
     const token = (await supabase?.auth.getSession())?.data.session?.access_token
-    if (token) headers.authorization = `Bearer ${token}`
-    const r = await fetch('/api/send-sms', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ ...input, msgType }),
-    })
-    return (await r.json()) as OneShotResult
+    const first = await sendOnce(input, msgType, token)
+    if (first.ok || first.code !== 'AUTH' || !supabase) return first
+
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    const freshToken = refreshed.session?.access_token
+    if (!freshToken || freshToken === token) return first
+    return await sendOnce(input, msgType, freshToken)
   } catch (e) {
     return { ok: false, code: 'NET_ERR', message: e instanceof Error ? e.message : '네트워크 오류' }
   }
