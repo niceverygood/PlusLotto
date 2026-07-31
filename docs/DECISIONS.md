@@ -836,3 +836,15 @@
 - **조치**: `lib/sms.ts recoSmsBody`·`api/weekly-reco.ts formatComboSms`의 첫 2줄("[플러스]"·"12.35번째")을 한 줄 "plus No. 12.35"로 교체했다. 회차 숫자의 점(.) 표기(7/22 확정, 스팸 필터 회피)는 그대로 유지하고, 그 뒤에 오던 "회원님" 줄과 조합 리스트(`[1] ...`)는 손대지 않았다. `formatComboSms`에서 더는 안 쓰는 `BRAND_NAME`/`BRAND_SHORT` 인라인 상수도 함께 정리했다.
 - **참고**: 조합문자 최상단 문구는 이번이 세 번째 조정(7/22 점 표기 → 7/27 "회차"→"번째" 단어 교체 → 이번 "plus No." 포맷)이라, 배포 후 실제 예시("plus No. 12.35\n홍길동님\n[1] 1,2,3,4,5,6")를 카톡으로 다시 확인받았다.
 - **검증**: typecheck·build green.
+
+### D121. 새 버전 배포 안내 배너 — 수동발송 옛 포맷 오인 사고 원인/재발방지 (현장 7/31, 정의현 차장)
+- **증상**: "자동 조합발송은 D120대로 잘 나가는데, 수동으로 보낼 때는 옛 포맷("[플러스]\n이름님\n...")으로 나간다"는 제보.
+- **원인 조사**: 라이브 `sms_sends`를 직접 조회해 확인한 결과 크론(`api/weekly-reco.ts`)이 보낸 건은 전부 예외 없이 "plus No. 12.35" 새 포맷이었고, 사람이 수동으로 보낸 건은 새 포맷과 옛 포맷이 섞여 있었다 — 즉 서버 코드는 100% 일관되게 동작 중이었고, 문제는 배포 이전부터 열려있던 일부 직원 브라우저 탭이 새로고침되지 않아 옛 JS 번들로 계속 발송하고 있었던 것(코드 버그 아님).
+- **조치**: `lib/versionCheck.ts`(신규) — `index.html`을 주기적으로(5분·창 포커스 시) 다시 받아 현재 로드된 진입 스크립트 경로와 다르면 "새 버전이 배포되었습니다" 배너를 상단에 띄우고 새로고침 버튼을 제공한다. 이번 건 자체를 되돌릴 방법은 없지만(이미 발송됨), 이후 배포마다 같은 유형의 혼선을 막는다.
+- **검증**: typecheck·build green.
+
+### D-88lotto (별도 저장소) 도메인 별칭 정리 — plus-lotto.vercel.app → 88-lotto.vercel.app (현장 7/31)
+- **증상**: "88로또 어드민 주소가 https://plus-lotto.vercel.app 인데 88-lotto.vercel.app 로 바꿔달라."
+- **조사**: Vercel 프로젝트를 직접 조회한 결과 `88lotto` 프로젝트(정상 프로덕션 도메인 `88lotto.vercel.app`)에 `plus-lotto.vercel.app` 이라는 예전 별칭이 그대로 남아 같은 배포를 가리키고 있었다 — 이 저장소(PlusLotto)의 실제 프로덕션 도메인은 `lotto-plus.co.kr`/`pluslotto.vercel.app`로 별개이며 충돌은 없었지만, "plus-lotto"라는 이름의 주소가 실제로는 88로또 화면을 보여주는 상태라 브랜드 혼동·오접속 위험이 있었다.
+- **조치**: `vercel alias set 88lotto.vercel.app 88-lotto.vercel.app`으로 새 별칭을 추가해 정상 동작 확인 후, `vercel alias remove plus-lotto.vercel.app`으로 옛 별칭을 제거했다. PlusLotto 쪽 별칭(`pluslotto.vercel.app`, `lotto-plus.co.kr`)은 그대로 유지·정상 확인.
+- **검증**: `curl`로 `88-lotto.vercel.app`(200)·`plus-lotto.vercel.app`(404, 제거 확인)·`lotto-plus.co.kr`(200, 영향 없음) 모두 확인. (이 항목은 PlusLotto 코드 변경이 아니라 Vercel 프로젝트 설정 변경이라 이 저장소에는 커밋할 코드가 없다 — 기록용으로만 남긴다.)

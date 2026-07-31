@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, BellOff, LogOut, PanelLeft, X } from 'lucide-react'
+import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
 import { useCallPopupEnabled, useCallReservationAlerts } from '@/lib/callReservations'
+import { useNewVersionAvailable } from '@/lib/versionCheck'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
@@ -87,6 +88,7 @@ export function AppShell() {
   const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
   const openMemberDrawer = useMemberDrawerStore((s) => s.open)
+  const newVersionAvailable = useNewVersionAvailable()
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
@@ -104,16 +106,33 @@ export function AppShell() {
   }
 
   return (
-    <div
-      // 높이는 h-screen(100vh) 이 아니라 배율 보정된 --app-vh (tokens.css) — 전산 확대(zoom 1.12)에서
-      // 100vh 가 창보다 12% 커져 사이드바 최하단 메뉴가 화면 밖으로 밀려나던 문제(현장 7/28).
-      className="grid overflow-hidden bg-white text-[13px]"
-      style={{
-        height: 'var(--app-vh)',
-        gridTemplateColumns: `${collapsed ? 64 : 248}px 1fr`,
-        gridTemplateRows: 'minmax(0, 1fr)',
-      }}
-    >
+    <>
+      {/* 새 버전 배포 안내(현장 피드백 7/31) — "자동발송은 새 포맷인데 수동발송은 옛 포맷"의 실제
+          원인이 배포 전부터 열려있던 탭의 캐시된 JS였음이 확인돼, SPA 특성상 새로고침 없이는
+          새 배포를 알 수 없는 문제를 보완한다. */}
+      {newVersionAvailable && (
+        <div className="fixed inset-x-0 top-0 z-[100] flex items-center justify-center gap-2 bg-primary-600 px-3 py-1.5 text-[12px] font-semibold text-white">
+          <RefreshCw className="h-3.5 w-3.5" />
+          새 버전이 배포되었습니다. 새로고침해야 최신 기능(예: 문자 발송 형식)이 정확히 적용됩니다.
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="ml-1 rounded bg-white/20 px-2 py-0.5 font-bold transition-colors hover:bg-white/30"
+          >
+            새로고침
+          </button>
+        </div>
+      )}
+      <div
+        // 높이는 h-screen(100vh) 이 아니라 배율 보정된 --app-vh (tokens.css) — 전산 확대(zoom 1.12)에서
+        // 100vh 가 창보다 12% 커져 사이드바 최하단 메뉴가 화면 밖으로 밀려나던 문제(현장 7/28).
+        className="grid overflow-hidden bg-white text-[13px]"
+        style={{
+          height: 'var(--app-vh)',
+          gridTemplateColumns: `${collapsed ? 64 : 248}px 1fr`,
+          gridTemplateRows: 'minmax(0, 1fr)',
+        }}
+      >
       {/* ── 사이드바 ───────────────────────────── */}
       {/* 세로 여백을 줄여 최고관리자(전 메뉴 15개)도 1280×720 확대 화면에서 스크롤 없이 다 보이게 한다.
           그래도 넘치는 저해상도에서는 overflow-y-auto 로 최하단까지 닿을 수 있다(현장 7/28). */}
@@ -329,6 +348,7 @@ export function AppShell() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
