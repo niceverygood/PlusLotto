@@ -880,6 +880,9 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ ok: false, code: 'CONFIG', message: 'SUPABASE_URL/SERVICE_ROLE_KEY 미설정' })
   }
   const force = String(req.query?.force ?? '') === '1'
+  // 시간예산 초과로 나눠 실행될 때 무한 연쇄를 막는 안전장치(자기 재호출 횟수).
+  const chain = Math.max(0, Number(req.query?.chain ?? 0) || 0)
+  const startedAt = Date.now()
   const sb = createClient(url, key, { auth: { persistSession: false } })
 
   try {
@@ -1050,9 +1053,20 @@ export default async function handler(req: any, res: any) {
         else smsFail++
       }
     }
+    // 시간예산 가드(현장 피드백 7/31) — 대상이 수천 명이면 전체 처리가 Vercel maxDuration(300초)을
+    // 넘겨 함수가 통째로 강제 종료되고, 뒤쪽 회원은 발급도 로그도 없이 조용히 누락됐다(7/31 사고).
+    // 예산을 넘기면 남은 대상을 남겨둔 채 정상 종료(로그 기록)하고, 이어서 처리할 후속 실행을
+    // 스스로 트리거한다 — 한 번에 다 못 해도 여러 번에 나눠 반드시 완주하게 한다.
+    // (재실행은 위 멱등 검사(recos[0].round_no === targetRound)로 이미 처리된 회원을 건너뛴다.)
+    const BUDGET_MS = 240_000 // maxDuration 300초 중 안전 여유를 남긴 값
+    let processed = 0
     for (let i = 0; i < eligible.length; i += CONC) {
-      await Promise.all(eligible.slice(i, i + CONC).map(processOne))
+      if (Date.now() - startedAt > BUDGET_MS) break
+      const slice = eligible.slice(i, i + CONC)
+      await Promise.all(slice.map(processOne))
+      processed += slice.length
     }
+    const remaining = Math.max(0, eligible.length - processed)
 
     // 회차·등급별 로직 스냅샷 — 특정 회원 조합은 저장하지 않고 공통 제외 과정만 1건씩 기록한다.
     if (issuedByGrade.size > 0) {
@@ -1141,11 +1155,26 @@ export default async function handler(req: any, res: any) {
       action: 'reco.weekly_issue',
       target_type: 'member',
       target_id: null,
-      meta: { count: issued, skipped: skippedRound, skipped_day: skippedDay, errors: errCount, round_no: targetRound, stale_round: staleRound, channel: 'cron', force, sms_sent: smsSent, sms_fail: smsFail },
+      meta: { count: issued, skipped: skippedRound, skipped_day: skippedDay, errors: errCount, round_no: targetRound, stale_round: staleRound, channel: 'cron', force, sms_sent: smsSent, sms_fail: smsFail, remaining, chain },
       created_at: ts,
     })
 
-    return res.status(200).json({ ok: true, round_no: targetRound, issued, skippedRound, skippedDay, errors: errCount, staleRound, smsSent, smsFail })
+    // 남은 대상이 있으면 후속 실행을 트리거해 이어서 처리한다(연쇄 상한으로 폭주 방지).
+    // 응답을 기다리지 않고(자기 자신을 await 하면 타임아웃) 요청만 띄운다.
+    const MAX_CHAIN = 20
+    if (remaining > 0 && chain < MAX_CHAIN) {
+      try {
+        const nextUrl = `${selfBase}/api/weekly-reco?chain=${chain + 1}${force ? '&force=1' : ''}`
+        await Promise.race([
+          fetch(nextUrl, { method: 'GET', headers: { authorization: `Bearer ${secret}` } }),
+          new Promise((resolve) => setTimeout(resolve, 1500)),
+        ])
+      } catch {
+        /* 후속 트리거 실패는 다음 크론 주기가 회수 — 이번 실행 결과를 실패로 만들지 않는다 */
+      }
+    }
+
+    return res.status(200).json({ ok: true, round_no: targetRound, issued, skippedRound, skippedDay, errors: errCount, staleRound, smsSent, smsFail, remaining, chain })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     return res.status(500).json({ ok: false, code: 'ERROR', message })
