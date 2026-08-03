@@ -4,6 +4,7 @@
 import type { Grade, Member, MemberStatus, Role } from '@/types/db'
 import { CONSULT_STATUSES, type ConsultStatus } from '@/lib/consultStatus'
 import { INFLOW_TYPES, sameInflowType, type InflowType } from '@/lib/inflow'
+import { readWinRecords } from '@/lib/winHistory'
 
 export { CONSULT_STATUSES, type ConsultStatus }
 export { INFLOW_TYPES, type InflowType }
@@ -20,6 +21,8 @@ export interface MemberFilter {
   is_deleted?: boolean
   is_withdrawn?: boolean
   hasWin?: boolean
+  winRound?: number // 당첨회차(현장 피드백 <당첨자 조회>) — winRank 와 함께 걸리면 같은 당첨건 AND
+  winRank?: number // 당첨등수(1~5)
   hasMemo?: boolean
   outcall?: boolean // 아웃콜 처리 여부
   tendency?: string
@@ -277,6 +280,14 @@ export function filterMembers(
     if (filter.is_deleted !== undefined && m.is_deleted !== filter.is_deleted) return false
     if (filter.is_withdrawn !== undefined && m.is_withdrawn !== filter.is_withdrawn) return false
     if (filter.hasWin === true && !m.win_history) return false
+    if (filter.winRound !== undefined || filter.winRank !== undefined) {
+      const hit = readWinRecords(m.meta).some(
+        (w) =>
+          (filter.winRound === undefined || w.round_no === filter.winRound) &&
+          (filter.winRank === undefined || w.rank === filter.winRank),
+      )
+      if (!hit) return false
+    }
     if (filter.hasMemo === true && !m.memo) return false
     if (filter.outcall !== undefined && m.outcall_done !== filter.outcall) return false
     if (filter.tendency && m.tendency !== filter.tendency) return false

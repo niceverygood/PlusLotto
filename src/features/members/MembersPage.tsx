@@ -97,6 +97,8 @@ export function MembersPage() {
   const dupF = get('dup') === '1' // 중복 디비만(현장 피드백)
   const regFromF = get('rf') // 가입일 from (YYYY-MM-DD)
   const regToF = get('rt') // 가입일 to
+  const winRoundF = get('wr') // 당첨회차(<당첨자 조회> 현장 피드백 8/3)
+  const winRankF = get('wk') // 당첨등수(1~5)
 
   const extra: MemberFilter = {
     grade: gradeF,
@@ -108,6 +110,8 @@ export function MembersPage() {
     dupPhone: dupF || undefined,
     registeredFrom: regFromF,
     registeredTo: regToF,
+    winRound: winRoundF ? Number(winRoundF) : undefined,
+    winRank: winRankF ? Number(winRankF) : undefined,
   }
 
   const query: MembersQuery = {
@@ -195,6 +199,8 @@ export function MembersPage() {
       label: `가입일: ${regFromF ?? '…'} ~ ${regToF ?? '…'}`,
       onRemove: () => setMany({ rf: null, rt: null }, { resetPage: true }),
     })
+  if (winRoundF) chips.push({ key: 'wr', label: `당첨회차: ${winRoundF}`, onRemove: () => remove('wr') })
+  if (winRankF) chips.push({ key: 'wk', label: `당첨등수: ${winRankF}등`, onRemove: () => remove('wk') })
 
   const clearAll = () => clear(['view'])
 
@@ -416,6 +422,31 @@ export function MembersPage() {
               />
               중복 입력된 디비만
             </label>
+          </Field>
+          {/* <당첨자 조회> 회차/등수 필터 — 현장 피드백 8/3 */}
+          <Field label="당첨회차">
+            <input
+              type="number"
+              inputMode="numeric"
+              placeholder="예: 1180"
+              className={selectCls + ' w-full'}
+              value={winRoundF ?? ''}
+              onChange={(e) => set('wr', e.target.value || null, { resetPage: true })}
+            />
+          </Field>
+          <Field label="당첨등수">
+            <select
+              className={selectCls}
+              value={winRankF ?? ''}
+              onChange={(e) => set('wk', e.target.value || null, { resetPage: true })}
+            >
+              <option value="">전체</option>
+              {[1, 2, 3, 4, 5].map((r) => (
+                <option key={r} value={r}>
+                  {r}등
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
       </FilterBar>
