@@ -4,13 +4,14 @@
 // 전 화면 <Badge grade>·도트가 즉시 반영된다(Phase 10 검수: "등급색 변경이 전 화면 Badge 에 반영").
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Grade, GradeColorMap, MembershipTier } from '@/types/db'
+import type { Grade, GradeColorMap, MembershipTier, StatusColorMap } from '@/types/db'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { readDb } from './db/store'
 import { dataSource } from './supabase'
 import { fetchSiteSettings } from './db/remote'
 import { settingsKeys } from './queryKeys'
 import { resolveTiers, tierLabelMap } from './membership'
+import { STATUS_KEY_ORDER, normalizeStatusColors } from './statusColors'
 
 // Grade 키가 곧 토큰 접미사(--g-free, --g-gold …)와 1:1 이므로 별도 매핑 불필요.
 export function applyGradeColors(colors: GradeColorMap): void {
@@ -21,6 +22,21 @@ export function applyGradeColors(colors: GradeColorMap): void {
     if (!c) continue
     root.style.setProperty(`--g-${g}`, c.fg)
     root.style.setProperty(`--g-${g}-bg`, c.bg)
+  }
+}
+
+// 상태(회원/결제) 뱃지 색 — StatusChip 이 `--st-{key}`/`--st-{key}-bg` 를 읽는다(현장 8/3).
+// GradeColorMap 과 달리 상태값끼리 톤을 공유해서(§3) 등급처럼 키=토큰 접미사가 아니라 STATUS_KEY_ORDER
+// 로 순회하며 개별 세팅한다.
+export function applyStatusColors(colors: StatusColorMap | null | undefined): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  const normalized = normalizeStatusColors(colors)
+  for (const key of STATUS_KEY_ORDER) {
+    const c = normalized[key]
+    if (!c) continue
+    root.style.setProperty(`--st-${key}`, c.fg)
+    root.style.setProperty(`--st-${key}-bg`, c.bg)
   }
 }
 
@@ -46,6 +62,7 @@ export function useGradeColorSync(): void {
     if (data) {
       applyGradeColors(data.grade_colors)
       applyGradeLabels(data.membership_tiers)
+      applyStatusColors(data.status_colors) // 같은 site_settings 행이라 여기서 함께 동기화(현장 8/3)
     }
   }, [data])
 }

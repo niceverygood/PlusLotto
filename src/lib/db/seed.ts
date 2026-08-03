@@ -21,6 +21,7 @@ import type {
 } from '@/types/db'
 import { gradeRank, lottoSum, oddEven, prizeForRank } from '@/lib/lotto'
 import { DEFAULT_NAV_ACCESS, type NavAccessMap } from '@/lib/permissions'
+import { defaultStatusColors } from '@/lib/statusColors'
 import type { DbShape } from './store'
 
 // ── 결정적 PRNG (xorshift32) — 매 빌드 동일 분포 ──────────────────
@@ -573,6 +574,7 @@ function buildSiteSettings(): SiteSettings {
       ovr: { fg: '#0f1420', bg: '#e5e7eb' },
       toss: { fg: '#0ea5e9', bg: '#e4f4fd' },
     },
+    status_colors: defaultStatusColors(),
     pg_providers: [
       { id: 'pg_welcome', name: '웰컴페이먼츠', enabled: true, mid: 'welcome_pllotto', api_key: 'wc_live_8f3a2b1c9d7e4a6b', tids: ['TID0012345678'], memo: null },
       { id: 'pg_payhub', name: '페이허브', enabled: true, mid: 'payhub_pllotto', api_key: 'ph_live_4c6d8e2f1a3b5c7d', tids: ['PH99001122'], memo: null },

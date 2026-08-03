@@ -241,6 +241,11 @@ export interface GradeColor {
 }
 export type GradeColorMap = Record<Grade, GradeColor>
 
+// 회원·결제 상태 뱃지 색(현장 피드백 8/3 — "취소 > 빨강"처럼 상태값 하나만 골라 바꿀 수 있어야 해서
+// GradeColorMap 처럼 톤(success/danger 등) 공유가 아니라 상태값별로 독립 저장한다). 키 누락 시
+// lib/statusColors.ts normalizeStatusColors() 가 톤 기본색으로 채운다.
+export type StatusColorMap = Partial<Record<MemberStatus | PaymentStatus, GradeColor>>
+
 export interface WinMessage {
   rank: number // 1..5등
   body: string // $변수 사용 가능
@@ -433,6 +438,7 @@ export interface SiteSettings {
   generation_records?: GenerationRecord[] // 조합 생성 과정 기록(현장 피드백 7/3) — 미설정 시 빈 배열
   business?: BusinessInfo // 사업자 정보(고객 홈페이지 하단 노출, 현장 피드백 7/20) — 미설정 시 공란
   winner_stats?: WinnerStats // 회차별 당첨자 수 수동 기록(고객 홈페이지에는 최신 회차만 노출)
+  status_colors?: StatusColorMap // 회원·결제 상태 뱃지 색(현장 피드백 8/3) — 미설정 키는 톤 기본색 폴백
 }
 
 // 공개 안전 필드 — security-definer RPC portal_site_public() 로 anon 공개(bank·winner_stats 와 동행).

@@ -358,10 +358,12 @@ export async function updateMember(id: string, patch: MemberPatch, actor: string
 
 /** 콜메모 1건 append(리스트형). meta.memos 에 누적하고 members.memo(최신)를 동기화. */
 export async function addMemo(id: string, body: string, actor: string | null): Promise<void> {
-  const { data: cur } = await sb().from('members').select('meta').eq('id', id).maybeSingle()
-  const meta = ((cur as { meta: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>
+  const { data: cur } = await sb().from('members').select('meta, consult_status').eq('id', id).maybeSingle()
+  const row = cur as { meta: Record<string, unknown>; consult_status: string | null } | null
+  const meta = (row?.meta ?? {}) as Record<string, unknown>
   const list = Array.isArray(meta.memos) ? (meta.memos as unknown[]) : []
-  const entry = { id: genId('memo'), body, author: actor, created_at: nowIso() }
+  // 저장 당시 상담상태 스냅샷(현장 피드백 8/3) — 메모 이력과 함께 표시.
+  const entry = { id: genId('memo'), body, author: actor, created_at: nowIso(), consult_status: row?.consult_status ?? null }
   const nextMeta = { ...meta, memos: [...list, entry] }
   const { error } = await sb().from('members').update({ meta: nextMeta, memo: body }).eq('id', id)
   if (error) throw error
@@ -779,9 +781,19 @@ export async function resetMembers(ids: string[], actor: string | null): Promise
   for (const r of rows) {
     const archive = (((r.meta?.reset_memos as unknown[] | undefined) ?? []) as unknown[]).slice()
     // 리스트형 콜메모 전체 보존 후 비움. 없으면 단건 메모 폴백.
-    const memos = Array.isArray(r.meta?.memos) ? (r.meta!.memos as { body: string }[]) : []
+    const memos = Array.isArray(r.meta?.memos)
+      ? (r.meta!.memos as { body: string; author?: string | null; consult_status?: string | null }[])
+      : []
     if (memos.length > 0) {
-      for (const e of memos) archive.push({ body: e.body, archived_at: ts, reset_by: actor })
+      for (const e of memos) {
+        archive.push({
+          body: e.body,
+          archived_at: ts,
+          reset_by: actor,
+          author: e.author,
+          consult_status: e.consult_status,
+        })
+      }
     } else if (r.memo && r.memo.trim()) {
       archive.push({ body: r.memo, archived_at: ts, reset_by: actor })
     }

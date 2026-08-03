@@ -10,13 +10,14 @@ import { z } from 'zod'
 import { ExternalLink, Plus, Trash2 } from 'lucide-react'
 import type { Grade, PgProvider, SiteSettings } from '@/types/db'
 import { Button } from '@/design-system/components'
-import { GRADE_LABEL } from '@/design-system/labels'
+import { GRADE_LABEL, STATUS_META, type StatusKey } from '@/design-system/labels'
 import { usePageMeta } from '@/app/uiStore'
 import { genId } from '@/lib/db/store'
 import { cn } from '@/lib/cn'
 import { datetime, num } from '@/lib/format'
 import { normalizeWinnerStats, upsertWinnerRound, winnerTotal, WINNER_RANKS } from '@/lib/winnerStats'
 import { readWinSms } from '@/lib/winSms'
+import { STATUS_KEY_ORDER, normalizeStatusColors } from '@/lib/statusColors'
 import {
   FieldRow,
   SaveBar,
@@ -50,6 +51,17 @@ const formSchema = z.object({
     royal: gradeColorSchema,
     ovr: gradeColorSchema,
     toss: gradeColorSchema,
+  }),
+  // 회원·결제 상태 뱃지 색(현장 8/3) — grade_colors 와 같은 {fg,bg} 형태, 상태값 8개 전부 명시.
+  status_colors: z.object({
+    active: gradeColorSchema,
+    suspended: gradeColorSchema,
+    deleted: gradeColorSchema,
+    withdrawn: gradeColorSchema,
+    wait: gradeColorSchema,
+    approved: gradeColorSchema,
+    failed: gradeColorSchema,
+    cancelled: gradeColorSchema,
   }),
   pg: z.array(
     z.object({
@@ -108,6 +120,7 @@ function toForm(s: SiteSettings): FormValues {
   return {
     bank: { ...s.bank },
     grade_colors: structuredClone(s.grade_colors),
+    status_colors: normalizeStatusColors(s.status_colors) as FormValues['status_colors'],
     pg: s.pg_providers.map((p) => ({
       id: p.id,
       name: p.name,
@@ -182,6 +195,7 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
   return {
     bank: { ...v.bank },
     grade_colors: v.grade_colors,
+    status_colors: v.status_colors,
     pg_providers: v.pg.map((r) => ({
       id: r.id,
       name: r.name.trim(),
@@ -264,6 +278,7 @@ export function SiteSettingsPage() {
   }, [settings, reset])
 
   const gradeColors = watch('grade_colors')
+  const statusColors = watch('status_colors')
   const winnerCurrentRound = normalizeWinnerStats(settings?.winner_stats).current?.round_no
   async function onSubmit(v: FormValues) {
     if (!settings) return
@@ -440,6 +455,46 @@ export function SiteSettingsPage() {
                     배경
                     <input type="color" className="h-7 w-9 cursor-pointer rounded border border-gray-200 bg-white p-0.5" {...register(`grade_colors.${g}.bg`)} />
                     <input className={cn(inputCls, 'h-8 w-[92px] font-mono text-[11.5px]')} {...register(`grade_colors.${g}.bg`)} />
+                  </label>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </SectionCard>
+
+      {/* ── 상태색(회원·결제 상태 뱃지) ──────────────── */}
+      <SectionCard
+        title="상태색"
+        desc="회원·결제 상태 뱃지 색입니다(예: 취소 → 빨강). 저장 시 모든 화면의 상태 표시에 즉시 반영됩니다."
+      >
+        <div className="space-y-2">
+          {STATUS_KEY_ORDER.map((key) => {
+            const c = statusColors?.[key as keyof FormValues['status_colors']]
+            return (
+              <div
+                key={key}
+                className="grid items-center gap-3 border-b border-gray-50 py-2 last:border-b-0 sm:grid-cols-[120px_1fr]"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-[5px] rounded-md px-[9px] py-[3px] text-[11px] font-bold"
+                    style={c ? { backgroundColor: c.bg, color: c.fg } : undefined}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={c ? { backgroundColor: c.fg } : undefined} />
+                    {STATUS_META[key as StatusKey].label}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2 text-[12px] text-gray-500">
+                    글자
+                    <input type="color" className="h-7 w-9 cursor-pointer rounded border border-gray-200 bg-white p-0.5" {...register(`status_colors.${key}.fg`)} />
+                    <input className={cn(inputCls, 'h-8 w-[92px] font-mono text-[11.5px]')} {...register(`status_colors.${key}.fg`)} />
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] text-gray-500">
+                    배경
+                    <input type="color" className="h-7 w-9 cursor-pointer rounded border border-gray-200 bg-white p-0.5" {...register(`status_colors.${key}.bg`)} />
+                    <input className={cn(inputCls, 'h-8 w-[92px] font-mono text-[11.5px]')} {...register(`status_colors.${key}.bg`)} />
                   </label>
                 </div>
               </div>

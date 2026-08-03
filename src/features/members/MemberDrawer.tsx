@@ -950,6 +950,11 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
                       <div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-gray-400">
                         <span className="font-mono tnum">{datetime(m.created_at)}</span>
                         {m.author && <span>· {staffName[m.author] ?? m.author}</span>}
+                        {m.consult_status && (
+                          <span className="rounded bg-primary-50 px-1 font-semibold text-primary-600">
+                            {m.consult_status}
+                          </span>
+                        )}
                         {m.deleted_at && (
                           <span className="rounded bg-gray-200 px-1 font-semibold text-gray-500">
                             삭제됨 · {datetime(m.deleted_at)}
@@ -977,9 +982,19 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
                       .slice()
                       .reverse()
                       .map((a, i) => (
-                        <li key={i} className="flex flex-wrap gap-x-1.5 text-[12.5px]">
+                        <li key={i} className="flex flex-wrap items-center gap-x-1.5 text-[12.5px]">
                           <span className="text-gray-800">{a.body}</span>
-                          <span className="text-[11px] text-gray-400">· {datetime(a.archived_at)}</span>
+                          {a.author && (
+                            <span className="text-[11px] text-gray-500">
+                              · 작성 {staffName[a.author] ?? a.author}
+                            </span>
+                          )}
+                          {a.consult_status && (
+                            <span className="rounded bg-primary-50 px-1 text-[11px] font-semibold text-primary-600">
+                              {a.consult_status}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-gray-400">· 초기화 {datetime(a.archived_at)}</span>
                         </li>
                       ))}
                   </ul>

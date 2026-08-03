@@ -140,6 +140,7 @@ export interface MemoEntry {
   body: string
   author: string | null // 작성 staff id
   created_at: string
+  consult_status?: string | null // 저장 당시 상담상태 스냅샷(현장 피드백 8/3) — 메모 이력과 함께 표시
   deleted_at?: string | null
   deleted_by?: string | null
 }
@@ -462,6 +463,7 @@ export function useAddMemo() {
           body,
           author: user?.id ?? null,
           created_at: nowIso(),
+          consult_status: m.consult_status, // 저장 당시 상담상태 스냅샷(현장 피드백 8/3)
         }
         const list = (Array.isArray(m.meta?.memos) ? (m.meta!.memos as MemoEntry[]) : []).slice()
         list.push(entry)
@@ -1145,7 +1147,9 @@ export function useResetAssign() {
 export interface ResetMemo {
   body: string
   archived_at: string
-  reset_by: string | null
+  reset_by: string | null // 초기화를 실행한 사람
+  author?: string | null // 메모를 원래 작성한 사람(현장 피드백 8/3) — reset_by 와 다를 수 있음
+  consult_status?: string | null // 작성 당시 상담상태 스냅샷
 }
 
 /**
@@ -1167,7 +1171,15 @@ export function useResetMembers() {
           // 리스트형 콜메모 전체를 보존 후 비운다. 리스트가 없으면 단건 메모로 폴백.
           const memos = Array.isArray(m.meta?.memos) ? (m.meta!.memos as MemoEntry[]) : []
           if (memos.length > 0) {
-            for (const e of memos) archive.push({ body: e.body, archived_at: ts, reset_by: user?.id ?? null })
+            for (const e of memos) {
+              archive.push({
+                body: e.body,
+                archived_at: ts,
+                reset_by: user?.id ?? null,
+                author: e.author,
+                consult_status: e.consult_status,
+              })
+            }
           } else if (m.memo && m.memo.trim()) {
             archive.push({ body: m.memo, archived_at: ts, reset_by: user?.id ?? null })
           }

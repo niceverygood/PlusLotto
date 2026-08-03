@@ -6,6 +6,7 @@ import { dateShort, datetime, phone } from '@/lib/format'
 import type { Member, MemberStatus, Role } from '@/types/db'
 import { STATUS_META } from '@/design-system/labels'
 import { CONSULT_STATUSES } from './views'
+import { readMemos } from './api'
 
 const STATUS_OPTIONS: InlineSelectOption[] = (
   ['active', 'suspended', 'deleted', 'withdrawn'] as MemberStatus[]
@@ -34,6 +35,8 @@ const TEND_TONE: Record<string, string> = {
 }
 
 export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
+  const staffNameById: Record<string, string> = {}
+  for (const o of ctx.staffOptions) if (o.value) staffNameById[o.value] = o.label
   const cols: ColumnDef<Member>[] = [
     {
       id: 'no',
@@ -159,8 +162,15 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
       cell: (info) => {
         const memo = info.row.original.memo
         if (!memo) return <span className="text-gray-300">-</span>
+        // 커서를 올리면 메모 이력 전체(작성자·시각순)를 보여준다(현장 피드백 8/3) — 최신 1건이 아니라 이력만.
+        const history = readMemos(info.row.original)
+          .filter((m) => !m.deleted_at)
+          .slice()
+          .reverse()
+          .map((m) => `${datetime(m.created_at)} ${m.author ? (staffNameById[m.author] ?? m.author) : ''}: ${m.body}`)
+          .join('\n')
         return (
-          <span className="block max-w-[140px] truncate text-[12px] text-gray-600" title={memo}>
+          <span className="block max-w-[140px] truncate text-[12px] text-gray-600" title={history || memo}>
             {memo}
           </span>
         )

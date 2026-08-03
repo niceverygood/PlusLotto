@@ -6,6 +6,7 @@ import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
 import { genId } from '@/lib/db/store'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
 import { DEFAULT_WIN_SMS } from '@/lib/winSms'
+import { defaultStatusColors } from '@/lib/statusColors'
 
 /** 사이트 설정 전체 저장(단일행 id=1). 등급색 변경은 gradeTheme 가 토큰으로 전파(§3). */
 export async function saveSiteSettings(next: SiteSettings, actor: string | null): Promise<void> {
@@ -22,6 +23,7 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
   > = {
     bank: next.bank,
     grade_colors: next.grade_colors,
+    status_colors: next.status_colors ?? defaultStatusColors(),
     pg_providers: next.pg_providers,
     sms: next.sms,
     win_messages: next.win_messages,
@@ -54,6 +56,7 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
     'winner_stats',
     'win_sms',
     'join_sms_auto',
+    'status_colors',
   ] as const
   let attempt: Record<string, unknown> = payload
   for (let i = 0; i <= OPTIONAL_COLUMNS.length; i++) {
