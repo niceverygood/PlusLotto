@@ -229,8 +229,9 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
         return { date: k, label: format(d, 'MM-dd'), amount: v?.amount ?? 0, count: v?.count ?? 0 }
       })
 
-      // 그룹 분해(뷰별 차원 고정 / real 은 선택).
-      const dim: GroupDim = q.view === 'team' ? 'team' : q.view === 'conversion' ? 'staff' : q.groupBy
+      // 그룹 분해(뷰별 차원 고정 / real 은 선택). 팀장매출·실장매출 둘 다 담당자(개인) 기준으로
+      // 이름·금액을 보여준다(현장 피드백 8/3 — 실장매출이 팀 단위로 뭉쳐 나오던 것을 담당자별로 분리).
+      const dim: GroupDim = q.view === 'team' || q.view === 'conversion' ? 'staff' : q.groupBy
       const acc = new Map<string, { label: string; amount: number; count: number }>()
       for (const p of activeSet) {
         const g = groupOf(p, dim, members, staffNames, teamNames, productNames)
