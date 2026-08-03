@@ -3,7 +3,15 @@
 // gradeTheme(useGradeColorSync)가 재적용 → 전 화면 <Badge grade> 토큰이 즉시 바뀐다(§3 검수).
 // sms_templates 는 members(드로어·일괄·나의문자)와 공유 키 → 저장 시 그쪽도 함께 갱신(§8).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LogEntry, LottoRound, PromoSlide, SiteSettings, SmsTemplate, WinnerRoundStats } from '@/types/db'
+import type {
+  AppDownload,
+  LogEntry,
+  LottoRound,
+  PromoSlide,
+  SiteSettings,
+  SmsTemplate,
+  WinnerRoundStats,
+} from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
@@ -84,12 +92,19 @@ export function useSaveSiteSettings() {
       mutateDb((db) => {
         const before = normalizeWinnerStats(db.site_settings.winner_stats).current
         const after = normalizeWinnerStats(value.winner_stats).current
-        // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)는
-        // 이 폼이 다루지 않는 필드라 next 에는 없다 — 통째로 교체하면 조용히 사라지므로 이어받는다
-        // (supa.ts saveSiteSettings 도 같은 이유로 이 두 필드를 update 페이로드에서 뺀다).
+        // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)·
+        // app_download(동반앱 APK 메타, 현장 8/3)는 이 폼이 다루지 않는 필드라 next 에는 없다 —
+        // 통째로 교체하면 조용히 사라지므로 이어받는다(supa.ts saveSiteSettings 도 같은 이유로
+        // 이 필드들을 update 페이로드에서 뺀다).
         const preservedCursor = db.site_settings.auto_assign_cursor
         const preservedSlides = db.site_settings.promo_slides
-        db.site_settings = { ...value, auto_assign_cursor: preservedCursor, promo_slides: preservedSlides }
+        const preservedApp = db.site_settings.app_download
+        db.site_settings = {
+          ...value,
+          auto_assign_cursor: preservedCursor,
+          promo_slides: preservedSlides,
+          app_download: preservedApp,
+        }
         if (after && after.updated_at !== before?.updated_at) {
           db.logs.push(
             adminLog(user?.id ?? null, 'settings.winner_stats.upsert', 'winner_stats', String(after.round_no), {
@@ -243,6 +258,50 @@ export function useReorderPromoSlides() {
         )
       })
       return next
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+  })
+}
+
+// ── 통화녹음 동반앱(APK) 배포 (현장 피드백 8/3, 정의현 차장) ─────────────────────
+// "어드민페이지에서 다운받을 수 있게" — APK 를 카톡으로 돌리지 않고 전산에서 각자 받아간다.
+// 다운로드는 활성 staff 전원(상담원이 본인 폰에 설치), 새 버전 업로드는 최고관리자만.
+
+/** 현재 배포본 메타(없으면 null). 계정메뉴·설정 카드가 함께 쓴다. */
+export function useAppDownload() {
+  return useQuery({
+    queryKey: settingsKeys.site(),
+    queryFn: async (): Promise<SiteSettings> =>
+      dataSource === 'supabase' ? fetchSiteSettings() : readDb().site_settings,
+    select: (s: SiteSettings): AppDownload | null => {
+      const d = s.app_download
+      return d && d.path ? d : null
+    },
+  })
+}
+
+/** 다운로드 실행 — 매번 서명 URL(10분)을 새로 발급받아 연다. mock 은 실 Storage 가 없어 미지원. */
+export function useDownloadApp() {
+  return useMutation({
+    mutationFn: async (path: string): Promise<string> => {
+      if (dataSource !== 'supabase') {
+        throw new Error('로컬(mock) 모드에서는 앱 다운로드를 사용할 수 없습니다.')
+      }
+      return supa.signAppDownloadUrl(path)
+    },
+  })
+}
+
+/** 새 APK 업로드(최고관리자). 같은 경로로 덮어써서 기존 다운로드 링크가 그대로 최신본을 가리킨다. */
+export function useUploadAppDownload() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { file: File; version: string }): Promise<AppDownload> => {
+      if (dataSource !== 'supabase') {
+        throw new Error('로컬(mock) 모드에서는 앱 업로드를 사용할 수 없습니다.')
+      }
+      return supa.uploadAppDownload(v.file, v.version, user?.id ?? null)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
   })

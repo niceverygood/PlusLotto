@@ -255,6 +255,16 @@ export interface PromoSlide {
   caption: string | null
 }
 
+/** 통화녹음 자동업로드 앱(APK) 배포본 메타(현장 피드백 8/3) — 실제 파일은 app-downloads 버킷. */
+export interface AppDownload {
+  path: string // 버킷 내 경로
+  name: string // 표시명
+  version: string
+  size: number // bytes
+  uploaded_at: string // ISO
+  uploaded_by: string | null // staff.id
+}
+
 // 당첨 안내문자 자동발송(현장 피드백 7/28, 정의현 차장) — 회차 당첨 확정 시(수기 확정·크론 자동적재)
 // 아래 조건에 해당하는 당첨자에게 등수별 문구(win_messages)를 자동 발송한다.
 // 종전엔 담당자가 '당첨 안내' 템플릿을 회원별로 골라 수동 발송하는 방법뿐이었다(D112 조사).
@@ -406,6 +416,10 @@ export interface SiteSettings {
   // 고객 홈페이지 홍보 슬라이드(현장 피드백 7/29) — 특허사진·1등당첨자 사진 등, 어드민에서 업로드
   // 하면 고객 홈페이지 상단에 슬라이드(캐러셀)로 노출. 배열 순서 = 노출 순서(별도 order 필드 없음).
   promo_slides?: PromoSlide[]
+  // 통화녹음 자동업로드 동반앱(APK) 배포본 메타(현장 피드백 8/3) — 파일 자체는 비공개 스토리지
+  // 버킷(app-downloads)에 있고 여기엔 경량 정보만. 전산 계정메뉴의 '앱 다운로드'가 이걸 읽어
+  // 서명 URL 을 발급한다. 비어 있으면(=업로드 전) 메뉴가 뜨지 않는다.
+  app_download?: AppDownload
   report: ReportSettings
   lotto_exclude: LottoExcludeSettings // 현재 적용 스냅샷(폴백)
   lotto_exclude_history: LottoExcludeRule[] // 회차별 이력 + 효력일자(§V2-5)

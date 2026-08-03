@@ -1,7 +1,7 @@
 // 설정(site_settings·sms_templates) — supabase 쓰기 경로 (M7). mock 의 mutateDb + adminLog 미러링.
 // site_settings 는 단일행(id=1) 업데이트, sms_templates 는 key 기준 upsert.
 // 읽기는 api.ts 가 fetchSiteSettings/fetchTables 로 분기(여기선 쓰기만).
-import type { PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
+import type { AppDownload, PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
 import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
 import { genId } from '@/lib/db/store'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
@@ -13,9 +13,13 @@ export async function saveSiteSettings(next: SiteSettings, actor: string | null)
   const afterWinner = normalizeWinnerStats(next.winner_stats).current
   // 실 컬럼만 명시 picking(D68 #6). update({...next}) 는 폼이 실은 여분키(id 등)·신규 타입필드를
   // 그대로 PATCH 해 D60 처럼 마이그레이션 누락 시 PGRST204 로 전 설정 저장이 통째 실패하던 구조를 방지.
-  // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)는
-  // 이 폼이 다루지 않는다 — 여기서 빼야 설정 저장할 때마다 조용히 null/빈 배열로 덮어쓰지 않는다.
-  const payload: Record<Exclude<keyof SiteSettings, 'auto_assign_cursor' | 'promo_slides'>, unknown> = {
+  // auto_assign_cursor(자동배분 라운드로빈, 현장 7/28)·promo_slides(홍보 슬라이드, 현장 7/29)·
+  // app_download(동반앱 APK 메타, 현장 8/3)는 이 폼이 다루지 않는다 — 여기서 빼야 설정 저장할
+  // 때마다 조용히 null/빈 값으로 덮어쓰지 않는다(D117 에서 실제로 겪은 유형).
+  const payload: Record<
+    Exclude<keyof SiteSettings, 'auto_assign_cursor' | 'promo_slides' | 'app_download'>,
+    unknown
+  > = {
     bank: next.bank,
     grade_colors: next.grade_colors,
     pg_providers: next.pg_providers,
@@ -161,4 +165,50 @@ export async function reorderPromoSlides(ids: string[], actor: string | null): P
   const next = ids.map((id) => byId.get(id)).filter((s): s is PromoSlide => !!s)
   await writePromoSlides(next, actor, 'settings.promo_slide_reorder')
   return next
+}
+
+// ── 통화녹음 동반앱(APK) 배포 (현장 피드백 8/3) ─────────────────────────────────
+// APK 파일은 비공개 버킷(app-downloads)에 두고 site_settings.app_download 에는 경량 메타만.
+// 다운로드는 매번 서명 URL 을 발급한다(call-recordings 와 동일 패턴) — 사내 앱이 공개 URL 로
+// 노출되지 않게. 활성 staff 면 누구나 받을 수 있고(상담원이 본인 폰에 설치), 업로드는 최고관리자만.
+
+/** 현재 배포본 다운로드용 서명 URL(10분 유효). 배포본이 없으면 null. */
+export async function signAppDownloadUrl(path: string): Promise<string> {
+  const { data, error } = await sb().storage.from('app-downloads').createSignedUrl(path, 600)
+  if (error) throw error
+  return data.signedUrl
+}
+
+/** 새 APK 업로드(같은 경로로 덮어쓰기) + 메타 갱신. 최고관리자만(스토리지 정책으로도 이중 통제). */
+export async function uploadAppDownload(
+  file: File,
+  version: string,
+  actor: string | null,
+): Promise<AppDownload> {
+  const path = 'pluslotto-call-uploader.apk'
+  const { error: upErr } = await sb()
+    .storage
+    .from('app-downloads')
+    .upload(path, file, { upsert: true, contentType: 'application/vnd.android.package-archive' })
+  if (upErr) throw upErr
+
+  const meta: AppDownload = {
+    path,
+    name: '플러스로또 통화녹음 업로더',
+    version: version.trim() || '0.1.0',
+    size: file.size,
+    uploaded_at: new Date().toISOString(),
+    uploaded_by: actor,
+  }
+  const { error } = await sb().from('site_settings').update({ app_download: meta }).eq('id', 1)
+  if (error) throw error
+  await insertLog({
+    kind: 'admin',
+    actor,
+    action: 'settings.app_download_upload',
+    target_type: 'site_settings',
+    target_id: null,
+    meta: { version: meta.version, size: meta.size },
+  })
+  return meta
 }

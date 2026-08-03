@@ -29,6 +29,7 @@ import {
 import { useSaveSiteSettings, useSiteSettings, useWinnerHistory } from './api'
 import { TemplatesCard } from './TemplatesCard'
 import { PromoSlidesCard } from './PromoSlidesCard'
+import { AppDownloadCard } from './AppDownloadCard'
 
 const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 
@@ -664,6 +665,9 @@ export function SiteSettingsPage() {
 
       {/* ── 고객 홈페이지 홍보 슬라이드(현장 피드백 7/29) — site_settings.promo_slides, 즉시 반영 ── */}
       <PromoSlidesCard slides={settings.promo_slides ?? []} />
+
+      {/* 통화녹음 자동업로드 앱 배포(현장 피드백 8/3) — 상담원 다운로드 입구는 계정메뉴에 있다. */}
+      <AppDownloadCard current={settings.app_download ?? null} />
 
       {/* ── FAQ · 공지 설정(기존 모듈 연결) ───────────── */}
       <SectionCard title="FAQ · 공지 설정" desc="FAQ 와 공지사항은 고객센터 · 커뮤니티에서 관리합니다.">

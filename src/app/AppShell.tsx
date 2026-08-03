@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, X } from 'lucide-react'
+import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, Smartphone, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
 import { useCallPopupEnabled, useCallReservationAlerts } from '@/lib/callReservations'
 import { useNewVersionAvailable } from '@/lib/versionCheck'
+import { useAppDownload, useDownloadApp } from '@/features/settings/api'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
@@ -89,6 +90,8 @@ export function AppShell() {
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
   const openMemberDrawer = useMemberDrawerStore((s) => s.open)
   const newVersionAvailable = useNewVersionAvailable()
+  const { data: appDownload } = useAppDownload()
+  const downloadApp = useDownloadApp()
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
@@ -287,6 +290,30 @@ export function AppShell() {
                     {popupEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
                     통화예약 알림팝업 {popupEnabled ? '끄기' : '켜기'}
                   </button>
+                  {/* 통화녹음 자동업로드 앱 다운로드(현장 피드백 8/3) — 상담원이 본인 폰에 설치해야
+                      하는데 '설정' 은 관리자·실장만 보여서, 전 역할이 보는 계정메뉴에 둔다.
+                      배포본이 업로드되기 전(app_download 비어있음)에는 아예 노출하지 않는다. */}
+                  {appDownload && (
+                    <button
+                      type="button"
+                      disabled={downloadApp.isPending}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        downloadApp.mutate(appDownload.path, {
+                          onSuccess: (url) => window.open(url, '_blank', 'noopener'),
+                          onError: (e) =>
+                            window.alert(e instanceof Error ? e.message : '다운로드 링크를 만들지 못했습니다.'),
+                        })
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <Smartphone className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">
+                        통화녹음 앱 설치
+                        <span className="block text-[10.5px] text-gray-400">v{appDownload.version} 내려받기</span>
+                      </span>
+                    </button>
+                  )}
                   <div className="my-1 border-t border-gray-100" />
                   <button
                     type="button"
