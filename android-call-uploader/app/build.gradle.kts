@@ -18,8 +18,10 @@ android {
         applicationId = "kr.bottlecorp.lottoplus.recuploader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        // 0.1.1(현장 8/4 "자동 업로드 안됨" 수정 2건): ① 번호 파싱 실패 녹음도 업로드(미매칭함행)
+        // ② 업로드 성공 전까지 매 스캔 재시도(예전엔 첫 시도 실패 후 영구 SKIPPED_DUP 로 방치).
+        versionName = "0.1.1"
 
         // 플러스로또 라이브 Supabase 프로젝트(웹 어드민과 동일) — publishable key 는 공개 임베드 전제(RLS 로 보호).
         buildConfigField("String", "SUPABASE_URL", "\"https://xmfdbmlpvvqqkhqemfay.supabase.co\"")

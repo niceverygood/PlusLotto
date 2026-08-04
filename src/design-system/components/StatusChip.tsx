@@ -12,6 +12,16 @@ const TONE_VAR: Record<StatusTone, { fg: string; bg: string }> = {
   stop: { fg: 'var(--danger)', bg: 'var(--danger-bg)' },
 }
 
+/** 상태값의 색 CSS 값(설정 커스터마이즈 --st-{key} 우선, 톤 기본색 폴백) — 칩 밖(이용자 목록의
+ *  상태 인라인 셀렉트 등)에서도 같은 색을 쓰기 위한 공용 헬퍼(현장 8/4 "목록에서도 설정한 색으로"). */
+export function statusColorVars(status: StatusKey): { color: string; backgroundColor: string } {
+  const t = TONE_VAR[STATUS_META[status].tone]
+  return {
+    color: `var(--st-${status}, ${t.fg})`,
+    backgroundColor: `var(--st-${status}-bg, ${t.bg})`,
+  }
+}
+
 type StatusChipProps =
   | { status: StatusKey; tone?: never; label?: never; className?: string }
   | { status?: never; tone: StatusTone; label: string; className?: string }

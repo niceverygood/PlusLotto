@@ -17,7 +17,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result {
         val path = inputData.getString(KEY_PATH) ?: return Result.failure()
-        val phone = inputData.getString(KEY_PHONE) ?: return Result.failure()
+        // 빈 번호 허용(현장 8/4) — 번호 파싱 실패 녹음도 올려 미매칭 보관함으로 보낸다.
+        val phone = inputData.getString(KEY_PHONE) ?: ""
         val recordedAt = inputData.getString(KEY_RECORDED_AT) ?: ""
         val size = inputData.getLong(KEY_SIZE, -1)
         val lastModified = inputData.getLong(KEY_LAST_MODIFIED, -1)

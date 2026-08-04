@@ -1,6 +1,6 @@
 export { Button, type ButtonVariant, type ButtonSize } from './Button'
 export { Badge } from './Badge'
-export { StatusChip } from './StatusChip'
+export { StatusChip, statusColorVars } from './StatusChip'
 export { EmptyState } from './EmptyState'
 export { Skeleton, SkeletonRows } from './Skeleton'
 export { PageHeader } from './PageHeader'
