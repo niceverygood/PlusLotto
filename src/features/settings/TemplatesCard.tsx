@@ -1,6 +1,6 @@
 // 기본 문자 멘트 템플릿(sms_templates) 편집 카드 — site_settings 와 별도 엔터티.
 // 저장 시 members(드로어·일괄·나의문자)의 동일 키 캐시도 함께 갱신(§8).
-// 변수: $name $id $pw $num $contents $link (lib/sms.renderSms 와 동일).
+// 변수: $name $id $pw $num $contents $link (lib/sms.renderSms 와 동일) + $round(조합문자 전용, 현장 8/4).
 import { useEffect, useState } from 'react'
 import type { SmsTemplate } from '@/types/db'
 import { Button } from '@/design-system/components'
@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { SectionCard, hintCls, inputCls, labelCls, textareaCls } from './ui'
 import { useSaveSmsTemplates, useSmsTemplates } from './api'
 
-const VARS = ['$name', '$id', '$pw', '$num', '$contents', '$link']
+const VARS = ['$name', '$id', '$pw', '$num', '$round', '$contents', '$link']
 
 export function TemplatesCard() {
   const { data: templates } = useSmsTemplates()
@@ -65,6 +65,13 @@ export function TemplatesCard() {
               <p className={cn(hintCls, 'mb-1.5 mt-0')}>
                 $link 는 회원 등급의 공개 약관 페이지 주소로 자동 치환됩니다. 약관 전문은 문자에
                 포함하지 않습니다. 기존 $contents 변수도 호환을 위해 같은 링크로 치환됩니다.
+              </p>
+            )}
+            {t.key === 'recommend' && (
+              <p className={cn(hintCls, 'mb-1.5 mt-0')}>
+                조합문자(수동발급·일괄발송·유료회원 자동발송)가 모두 이 본문으로 나갑니다. $round 는
+                스팸필터 회피 회차 표기(1233→12.33), $num 은 발급 조합 리스트로 치환됩니다. 스팸 차단이
+                잦으면 여기서 문구를 바꾸면 즉시 반영됩니다.
               </p>
             )}
             <textarea

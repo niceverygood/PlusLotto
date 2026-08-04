@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, Smartphone, X } from 'lucide-react'
+import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
 import { useCurrentUser, useSignOut } from '@/lib/auth'
 import { useCallPopupEnabled, useCallReservationAlerts } from '@/lib/callReservations'
 import { useNewVersionAvailable } from '@/lib/versionCheck'
-import { useAppDownload, useDownloadApp } from '@/features/settings/api'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
@@ -86,12 +85,10 @@ export function AppShell() {
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [popupEnabled, setPopupEnabled] = useCallPopupEnabled()
   const popupAlerts = popupEnabled ? alerts.filter((a) => !dismissedIds.has(a.member_id)) : []
-  const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
+  const drawerMemberIds = useMemberDrawerStore((s) => s.memberIds)
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
   const openMemberDrawer = useMemberDrawerStore((s) => s.open)
   const newVersionAvailable = useNewVersionAvailable()
-  const { data: appDownload } = useAppDownload()
-  const downloadApp = useDownloadApp()
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
@@ -290,30 +287,8 @@ export function AppShell() {
                     {popupEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
                     통화예약 알림팝업 {popupEnabled ? '끄기' : '켜기'}
                   </button>
-                  {/* 통화녹음 자동업로드 앱 다운로드(현장 피드백 8/3) — 상담원이 본인 폰에 설치해야
-                      하는데 '설정' 은 관리자·실장만 보여서, 전 역할이 보는 계정메뉴에 둔다.
-                      배포본이 업로드되기 전(app_download 비어있음)에는 아예 노출하지 않는다. */}
-                  {appDownload && (
-                    <button
-                      type="button"
-                      disabled={downloadApp.isPending}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        downloadApp.mutate(appDownload.path, {
-                          onSuccess: (url) => window.open(url, '_blank', 'noopener'),
-                          onError: (e) =>
-                            window.alert(e instanceof Error ? e.message : '다운로드 링크를 만들지 못했습니다.'),
-                        })
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      <Smartphone className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0">
-                        통화녹음 앱 설치
-                        <span className="block text-[10.5px] text-gray-400">v{appDownload.version} 내려받기</span>
-                      </span>
-                    </button>
-                  )}
+                  {/* 통화녹음 앱 다운로드 버튼은 계정메뉴에서 제거(현장 피드백 8/4, 정의현 차장 —
+                      "다운로드 버튼은 없애주시고"). 배포는 설정 > 통화녹음 앱 카드(관리자 이상)에서만. */}
                   <div className="my-1 border-t border-gray-100" />
                   <button
                     type="button"
@@ -335,8 +310,18 @@ export function AppShell() {
       </div>
 
       {/* 회원상세 Drawer 전역 인스턴스(현장 피드백 7/23) — 어느 화면이든 memberDrawerStore.open() 만
-          호출하면 라우트 이동 없이 여기서 뜬다(§8 허브를 화면 전환 없이 공유). */}
-      <MemberDrawer memberId={drawerMemberId} onClose={closeMemberDrawer} />
+          호출하면 라우트 이동 없이 여기서 뜬다(§8 허브를 화면 전환 없이 공유).
+          여러 개 동시 오픈(현장 피드백 8/4) — 열린 회원마다 창 하나씩, 두 번째부터는 계단식으로
+          비껴 띄운다. Esc 는 맨 위(마지막에 연) 창만 닫는다. */}
+      {drawerMemberIds.map((mid, i) => (
+        <MemberDrawer
+          key={mid}
+          memberId={mid}
+          onClose={() => closeMemberDrawer(mid)}
+          cascadeIndex={i}
+          closeOnEsc={i === drawerMemberIds.length - 1}
+        />
+      ))}
 
       {/* 통화예약 알림 — 화면 우측 하단 고정 팝업(현장 피드백 7/29: "최상단 알람을 실무자들이
           놓치는 경우가 많다"). 상단바 벨(클릭해야 보임)과 별개로, 도래한 예약이 있으면 클릭 없이도

@@ -811,15 +811,28 @@ function generateIssueSetsForGrade(
 const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
 
 /**
- * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 포맷(자급자족 중복, 상단 참조).
- * 회차 숫자는 통신사 스팸 필터 회피를 위해 1233 → 12.33으로 표기한다(현장 7/22). 최상단 문구도
- * 같은 이유로 "plus No. <회차>" 한 줄로 표기한다(현장 7/30 — 기존 브랜드태그+회차 2줄을 대체).
+ * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 규칙(자급자족 중복, 상단 참조).
+ * 본문은 sms_templates 'recommend' 템플릿에서 온다(현장 피드백 8/4, 정의현 차장 — "조합문자 발송
+ * 내용을 설정 > 기본문자 템플릿에서 수정하면 변경할수 있도록. 스팸관련해서 지속적으로 변경").
+ * 변수: $round(스팸회피 회차표기 1233→12.33, 현장 7/22) · $name · $num(조합 리스트).
+ * 템플릿이 비었으면 기존 하드코딩 포맷(plus No. 한 줄, 현장 7/30)으로 폴백.
  */
-function formatComboSms(name: string, roundNo: number, sets: number[][]): string {
+const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
+
+function formatComboSms(
+  name: string,
+  roundNo: number,
+  sets: number[][],
+  templateBody?: string | null,
+): string {
   const digits = String(Math.max(0, Math.trunc(roundNo)))
   const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
-  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
-  return `plus No. ${safeRound}\n${name || '회원'}님\n${lines.join('\n')}`
+  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
+  const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
+  return body
+    .replace(/\$round/g, safeRound)
+    .replace(/\$name/g, name || '회원')
+    .replace(/\$num/g, lines)
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
@@ -901,6 +914,12 @@ export default async function handler(req: any, res: any) {
     const smsCfg = settings.sms ?? {}
     const paidSmsOn = !!smsCfg.oneshot_enabled && !!smsCfg.sender_no && !!cfg.paid_sms
     const sender = smsCfg.sender_no ?? ''
+    // 조합문자 본문 템플릿(설정 > 기본문자 템플릿 'recommend', 현장 8/4) — 발송 전 1회 조회.
+    let recoTplBody: string | null = null
+    if (paidSmsOn) {
+      const { data: tplData } = await sb.from('sms_templates').select('body').eq('key', 'recommend').maybeSingle()
+      recoTplBody = (tplData as { body?: string } | null)?.body ?? null
+    }
     const selfBase =
       process.env.SELF_BASE_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
@@ -1036,7 +1055,7 @@ export default async function handler(req: any, res: any) {
 
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
-        const smsBody = formatComboSms(r.name ?? '', targetRound, sets)
+        const smsBody = formatComboSms(r.name ?? '', targetRound, sets, recoTplBody)
         const sres = await sendComboSms(selfBase, r.phone, smsBody, sender)
         await sb.from('sms_sends').insert({
           // 병렬 동시삽입 PK 충돌 방지: 시간+난수+회원 꼬리.

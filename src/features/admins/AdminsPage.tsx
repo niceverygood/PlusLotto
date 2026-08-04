@@ -12,7 +12,7 @@ import { usePageMeta } from '@/app/uiStore'
 import { useCurrentUser } from '@/lib/auth'
 import { useStaff, useTeams } from '@/lib/staff'
 import { datetime } from '@/lib/format'
-import { assignableRoles, canManageStaff, ROLE_LABEL, ROLE_ORDER } from '@/lib/permissions'
+import { assignableRoles, canManageStaff, canViewCallRecordings, ROLE_LABEL, ROLE_ORDER } from '@/lib/permissions'
 import type { Role, Staff } from '@/types/db'
 import {
   useCallVolumeStatus,
@@ -89,9 +89,12 @@ export function AdminsPage() {
                 <ShieldCheck className="h-4 w-4" /> 권한관리
               </Button>
             )}
-            <Button variant="sec" size="sm" onClick={() => navigate('/admins/recordings')}>
-              <PhoneMissed className="h-4 w-4" /> 미매칭 통화녹음
-            </Button>
+            {/* 통화녹음 관련 화면은 관리자 이상만(현장 피드백 8/4, 정의현 차장). */}
+            {canViewCallRecordings(me?.role ?? null) && (
+              <Button variant="sec" size="sm" onClick={() => navigate('/admins/recordings')}>
+                <PhoneMissed className="h-4 w-4" /> 미매칭 통화녹음
+              </Button>
+            )}
             <Button variant="pri" size="sm" onClick={() => setEdit('new')}>
               <Plus className="h-4 w-4" /> 새 계정
             </Button>

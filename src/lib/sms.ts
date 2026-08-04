@@ -39,9 +39,26 @@ export function spamSafeRound(roundNo: number): string {
   return digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
 }
 
-export function recoSmsBody(name: string, roundNo: number, sets: number[][]): string {
-  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`)
-  return `plus No. ${spamSafeRound(roundNo)}\n${name || '회원'}님\n${lines.join('\n')}`
+/**
+ * 조합문자 본문 = 설정 > 기본문자 템플릿('recommend')에서 수정 가능(현장 피드백 8/4, 정의현 차장 —
+ * "스팸관련해서 지속적으로 문자발송 내용을 변경해야해서"). 하드코딩 포맷은 템플릿이 비었을 때의
+ * 폴백으로만 남긴다. 템플릿 변수: $round(스팸회피 회차표기) · $name(회원명) · $num(조합 리스트).
+ * api/weekly-reco.ts 자동발송 크론도 동일 규칙(자급자족 구현, src import 불가)을 따른다.
+ */
+export const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
+
+export function recoSmsBody(
+  name: string,
+  roundNo: number,
+  sets: number[][],
+  templateBody?: string | null,
+): string {
+  const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
+  const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
+  return body
+    .replace(/\$round/g, spamSafeRound(roundNo))
+    .replace(/\$name/g, name || '회원')
+    .replace(/\$num/g, lines)
 }
 
 /** 템플릿 key → 발송유형(가입·추천·당첨·약관·마케팅). 미지정 템플릿은 마케팅으로 분류. */

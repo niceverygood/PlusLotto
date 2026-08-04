@@ -1264,7 +1264,8 @@ export function useSendSms() {
             }
             freshIssues[m.id] = issue
           }
-          body = recoSmsBody(m.name, issue.round_no, issue.sets)
+          // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
+          body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body)
         } else if (isTerms) {
           const link = membershipTermsUrl(m.grade)
           body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
@@ -1414,6 +1415,9 @@ export function useManualIssueReco() {
       const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets: res.sets }
 
       // 문자 발송(옵션) — 직접 발송과 동일한 실발송 게이트.
+      // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
+      const recoTplBody = cur.sms_templates.find((t) => t.key === 'recommend')?.body
+      const recoBody = recoSmsBody(member.name, targetRound, res.sets, recoTplBody)
       const sms = cur.site_settings.sms
       const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
       let smsStatus: string | null = null
@@ -1422,7 +1426,7 @@ export function useManualIssueReco() {
         if (realSend) {
           const r = await sendOneShot({
             dest_phone: member.phone,
-            msg_body: recoSmsBody(member.name, targetRound, res.sets),
+            msg_body: recoBody,
             send_phone: sms.sender_no,
           })
           smsStatus = r.ok ? '발송완료' : '실패'
@@ -1440,7 +1444,7 @@ export function useManualIssueReco() {
             member_id: m.id,
             template_key: 'recommend',
             phone: m.phone,
-            body: recoSmsBody(member.name, targetRound, res.sets),
+            body: recoBody,
             type: 'recommend',
             status: smsStatus,
             sent_at: ts,

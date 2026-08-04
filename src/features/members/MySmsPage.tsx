@@ -8,7 +8,7 @@ import { Button, ConfirmModal, EmptyState, PageHeader, SkeletonRows } from '@/de
 import { usePageMeta } from '@/app/uiStore'
 import { SMS_TYPE_LABEL } from '@/design-system/labels'
 import { datetime, phone } from '@/lib/format'
-import { renderSms } from '@/lib/sms'
+import { recoSmsBody, renderSms } from '@/lib/sms'
 import { membershipTermsUrl } from '@/lib/membership'
 import type { SmsType } from '@/types/db'
 import { useMyCustomers, useMySmsLog, useSendSms, useSmsTemplates, type MembersQuery } from './api'
@@ -46,6 +46,10 @@ export function MySmsPage() {
     if (activeTpl.key === 'terms') {
       const link = membershipTermsUrl(member.grade)
       return renderSms(activeTpl.body, member, { link, contents: link })
+    }
+    // 조합문자는 실발송과 같은 렌더러(현장 8/4 템플릿화)로 예시 조합을 넣어 미리 보여준다.
+    if (activeTpl.key === 'recommend') {
+      return recoSmsBody(member.name, 1234, [[3, 8, 14, 22, 31, 42], [5, 11, 19, 27, 33, 45]], activeTpl.body)
     }
     return renderSms(activeTpl.body, member)
   }, [activeTpl, recipRows])

@@ -18,6 +18,7 @@ import { GRADE_LABEL, PAYMENT_METHOD_LABEL, SMS_TYPE_LABEL } from '@/design-syst
 import { date, datetime, krw } from '@/lib/format'
 import { useStaff, useTeams } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
+import { canViewCallRecordings } from '@/lib/permissions'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
@@ -105,7 +106,19 @@ function localInputToIso(local: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
 
-export function MemberDrawer({ memberId, onClose }: { memberId: string | null; onClose: () => void }) {
+export function MemberDrawer({
+  memberId,
+  onClose,
+  cascadeIndex = 0,
+  closeOnEsc = true,
+}: {
+  memberId: string | null
+  onClose: () => void
+  /** 동시에 열린 창 순번(현장 피드백 8/4 다중 오픈) — 두 번째부터 계단식으로 비껴 띄운다. */
+  cascadeIndex?: number
+  /** Esc 로 닫기 허용 여부 — 다중 오픈 시 맨 위 창만 true 로 준다. */
+  closeOnEsc?: boolean
+}) {
   const open = !!memberId
   const { data: member } = useMember(memberId)
   const { data: payments = [] } = useMemberPayments(memberId)
@@ -244,7 +257,16 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
 
   if (!member) {
     return (
-      <Drawer open={open} onClose={onClose} title="회원 상세" width={760} movable storageKey="member">
+      <Drawer
+        open={open}
+        onClose={onClose}
+        title="회원 상세"
+        width={760}
+        movable
+        storageKey="member"
+        cascade={cascadeIndex}
+        closeOnEsc={closeOnEsc}
+      >
         <div className="py-10 text-center text-[12.5px] text-gray-400">불러오는 중…</div>
       </Drawer>
     )
@@ -262,7 +284,10 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
       ? [{ key: 'assignments', label: '배정이력', count: assignments.length } as TabItem]
       : []),
     { key: 'reco', label: '발급번호', count: readWeeklyRecos(member.meta).length || undefined },
-    { key: 'calls', label: '통화녹음', count: readCallRecordings(member).length || undefined },
+    // 통화녹음은 관리자 이상만(현장 피드백 8/4, 정의현 차장).
+    ...(canViewCallRecordings(role)
+      ? [{ key: 'calls', label: '통화녹음', count: readCallRecordings(member).length || undefined } as TabItem]
+      : []),
     { key: 'complaints', label: '민원관리', count: readComplaints(member).length || undefined },
   ]
 
@@ -276,7 +301,16 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
   )
 
   return (
-    <Drawer open={open} onClose={onClose} title={title} width={760} movable storageKey="member">
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={title}
+      width={760}
+      movable
+      storageKey="member"
+      cascade={cascadeIndex}
+      closeOnEsc={closeOnEsc}
+    >
       {/* 빠른 액션 */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
         <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
@@ -1102,8 +1136,9 @@ export function MemberDrawer({ memberId, onClose }: { memberId: string | null; o
         </div>
       )}
 
-      {/* 통화녹음(현장 피드백 7/3, 김형준 이사) — 상담원 수동 업로드 + STT 전사·키워드 탐지 */}
-      {tab === 'calls' && (
+      {/* 통화녹음(현장 피드백 7/3, 김형준 이사) — 수동 업로드 + STT 전사·키워드 탐지.
+          관리자 이상만 열람(현장 피드백 8/4) — 탭 목록 가드와 이중 방어. */}
+      {tab === 'calls' && canViewCallRecordings(role) && (
         <div>
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
             <Mic className="h-4 w-4 text-gray-500" />

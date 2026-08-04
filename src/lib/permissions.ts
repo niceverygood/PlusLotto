@@ -38,6 +38,13 @@ export const ROLE_LABEL: Record<Role, string> = {
 // 자기잠금 방지: admin 은 이 모듈 접근을 항상 보유(매트릭스에서 해제 불가).
 export const ADMIN_LOCKED: NavKey[] = ['admins', 'logs']
 
+// 통화녹음 열람 권한(현장 피드백 8/4, 정의현 차장 — "통화녹음 관련 내용은 관리자 이상급 아이디만").
+// 라벨 기준 관리자(manager) 이상 = admin·manager. 회원상세 '통화녹음' 탭, 미매칭 통화녹음 화면,
+// 설정의 앱 배포 카드가 이 한 함수를 공유한다 — 범위 조정은 여기 한 곳만 고치면 된다.
+export function canViewCallRecordings(role: Role | null): boolean {
+  return role === 'admin' || role === 'manager'
+}
+
 // 메뉴 노출 기본 매트릭스 (CLAUDE §5). 권한관리(/admins/roles)에서 편집 → DB nav_access 로 영속.
 // 데이터 접근은 RLS(lib/rls/policies.sql)로 이중 통제.
 // TODO(live-verify): `08 권한관리` 화면 미확인 → 아래는 합리적 기본값. ASSUMPTIONS 기록.

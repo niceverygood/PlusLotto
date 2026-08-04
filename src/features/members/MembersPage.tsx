@@ -71,15 +71,16 @@ export function MembersPage() {
   // 회원상세는 전역 Drawer(AppShell, 현장 피드백 7/23 "회원 클릭 시 화면 이동" 버그 수정)를 쓴다.
   // ?member= 딥링크는 여기서 열어주고 유지, 닫히면 이 화면의 URL 파라미터도 정리한다.
   const openMemberDrawer = useMemberDrawerStore((s) => s.open)
-  const drawerMemberId = useMemberDrawerStore((s) => s.memberId)
+  const drawerMemberIds = useMemberDrawerStore((s) => s.memberIds)
+  const deepLinkOpen = selectedId ? drawerMemberIds.includes(selectedId) : false
   useEffect(() => {
     if (selectedId) openMemberDrawer(selectedId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
   useEffect(() => {
-    if (selectedId && drawerMemberId === null) set('member', null)
+    if (selectedId && !deepLinkOpen) set('member', null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drawerMemberId])
+  }, [deepLinkOpen])
   const search = get('q') ?? ''
   const page = Math.max(1, Number(get('page') ?? '1') || 1)
   const sizeRaw = Number(get('size') ?? '') || DEFAULT_PAGE_SIZE

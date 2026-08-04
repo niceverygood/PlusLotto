@@ -707,7 +707,8 @@ export function buildSeed(): DbShape {
     ],
     sms_templates: [
       { key: 'join', title: '가입 환영', body: '[플러스로또] $name님 가입을 환영합니다. 아이디: $id / 임시비밀번호: $pw', category: 'join' },
-      { key: 'recommend', title: '추천번호 안내', body: '[플러스로또] $name님 이번 회차 추천번호: $num', category: 'recommend' },
+      // 조합문자 본문 템플릿(현장 8/4) — 실발송 포맷과 동일한 기본값. $round=스팸회피 회차, $num=조합 리스트.
+      { key: 'recommend', title: '추천번호 안내', body: 'plus No. $round\n$name님\n$num', category: 'recommend' },
       { key: 'win', title: '당첨 안내', body: '[플러스로또] $name님 $contents', category: 'win' },
       // 약관 안내(현장 피드백 7/22) — 전문 대신 회원 등급의 공개 약관 페이지 링크 발송.
       { key: 'terms', title: '약관 안내', body: '[플러스로또] $name님, 가입하신 등급의 이용약관을 확인해 주세요.\n$link', category: 'terms' },

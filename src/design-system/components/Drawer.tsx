@@ -22,6 +22,11 @@ interface DrawerProps {
   movable?: boolean
   /** movable 위치 저장 키(브라우저 localStorage). 같은 키끼리 위치 공유. */
   storageKey?: string
+  /** 같은 종류 패널 다중 오픈 순번(현장 8/4 회원상세 다중 오픈). 0=기억된 위치 그대로,
+   *  1부터는 겹치지 않게 계단식(float)으로 비껴 띄우고 위치를 저장하지 않는다. */
+  cascade?: number
+  /** Esc 로 닫기 허용(기본 true). 다중 오픈 시 맨 위 패널만 true 로 줘 한 장씩 닫는다. */
+  closeOnEsc?: boolean
 }
 
 /** 상세/편집 패널. movable 이면 좌/우 도킹·자유 이동·폭 조절 가능(위치 기억). 아니면 우측 모달. */
@@ -31,9 +36,9 @@ export function Drawer(props: DrawerProps) {
 }
 
 // ── 기본(모달) 드로어 — 우측 슬라이드, 배경 클릭/Esc 닫기 ──────────────────
-function ClassicPanel({ onClose, title, children, footer, width = 560 }: DrawerProps) {
+function ClassicPanel({ onClose, title, children, footer, width = 560, closeOnEsc = true }: DrawerProps) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => closeOnEsc && e.key === 'Escape' && onClose()
     document.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -41,7 +46,7 @@ function ClassicPanel({ onClose, title, children, footer, width = 560 }: DrawerP
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [onClose])
+  }, [onClose, closeOnEsc])
 
   return createPortal(
     <div className="fixed inset-0 z-50">
@@ -124,18 +129,41 @@ function loadLayout(key: string, defWidth: number): Layout {
   }
 }
 
-function MovablePanel({ onClose, title, children, footer, width = 620, storageKey = 'default' }: DrawerProps) {
-  const [layout, setLayout] = useState<Layout>(() => loadLayout(storageKey, width))
+function MovablePanel({
+  onClose,
+  title,
+  children,
+  footer,
+  width = 620,
+  storageKey = 'default',
+  cascade = 0,
+  closeOnEsc = true,
+}: DrawerProps) {
+  const [layout, setLayout] = useState<Layout>(() => {
+    const base = loadLayout(storageKey, width)
+    if (cascade <= 0) return base
+    // 다중 오픈(현장 8/4) — 두 번째 창부터는 기억된 위치와 무관하게 계단식 float 로 비껴 띄워
+    // 첫 창을 가리지 않게 한다. 좌상단 기준 28px 씩 내려가며, 화면 밖으로 나가지 않게 보정.
+    const step = 28
+    return {
+      mode: 'float',
+      x: clamp(96 + step * cascade, 0, Math.max(0, viewW() - base.width)),
+      y: clamp(64 + step * cascade, 8, Math.max(8, viewH() - 200)),
+      width: base.width,
+    }
+  })
   const panelRef = useRef<HTMLDivElement>(null)
 
   // 위치 영속(localStorage) — 레이어 분리를 위해 store 대신 직접 저장.
+  // 계단식 보조 창(cascade>0)은 저장하지 않아 첫 창의 기억된 위치를 덮어쓰지 않는다.
   useEffect(() => {
+    if (cascade > 0) return
     try {
       localStorage.setItem(lsKey(storageKey), JSON.stringify(layout))
     } catch {
       /* 사적 모드 등 — 무시 */
     }
-  }, [layout, storageKey])
+  }, [layout, storageKey, cascade])
 
   // 창 크기 변경 시 화면 밖으로 나가지 않게 보정.
   useEffect(() => {
@@ -151,10 +179,10 @@ function MovablePanel({ onClose, title, children, footer, width = 620, storageKe
   }, [])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => closeOnEsc && e.key === 'Escape' && onClose()
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, closeOnEsc])
 
   // 헤더 드래그 → 자유 이동(float).
   const beginDrag = useCallback((e: ReactPointerEvent) => {

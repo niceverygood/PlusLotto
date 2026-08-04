@@ -2,12 +2,14 @@
 // Android 자동업로드 앱이 전화번호로 회원을 못 찾은 통화녹음을 여기서 검색해 수동으로 연결한다.
 // 연결하면 그 회원 상세 '통화녹음' 탭에 자동배지로 표시된다(§8 연동).
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { Link2, Phone, Play } from 'lucide-react'
 import { Button, EmptyState, PageHeader, SkeletonRows } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { datetime } from '@/lib/format'
+import { useRole } from '@/lib/auth'
 import { useStaff } from '@/lib/staff'
+import { canViewCallRecordings } from '@/lib/permissions'
 import {
   useResolveUnmatchedRecording,
   useSearchMembersLite,
@@ -19,10 +21,15 @@ import {
 export function UnmatchedRecordingsPage() {
   usePageMeta('관리자', '미매칭 통화녹음')
   const navigate = useNavigate()
+  const role = useRole()
   const { data: recs = [], isLoading } = useUnmatchedRecordings()
   const { data: staff = [] } = useStaff()
   const staffName = Object.fromEntries(staff.map((s) => [s.id, s.name]))
   const resolve = useResolveUnmatchedRecording()
+
+  // 통화녹음 관련 화면은 관리자 이상만(현장 피드백 8/4, 정의현 차장) — 관리자 메뉴는 실장도
+  // 접근하므로(계층 위임) URL 직접 진입을 여기서 한 번 더 막는다.
+  if (role && !canViewCallRecordings(role)) return <Navigate to="/admins" replace />
 
   return (
     <div>

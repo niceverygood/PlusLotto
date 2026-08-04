@@ -1,8 +1,9 @@
 // 통화녹음 자동업로드 앱(APK) 배포 카드 (현장 피드백 8/3, 정의현 차장 — "어드민페이지에서
-// 다운받을 수 있게"). APK 파일을 카톡으로 돌리지 않고 전산에서 각자 받아가게 한다.
+// 다운받을 수 있게"). APK 파일을 카톡으로 돌리지 않고 전산에서 받아가게 한다.
 //
-// 여기(설정)는 **최고관리자가 새 버전을 올리는 곳**이고, 실제 상담원이 내려받는 입구는
-// 계정메뉴(AppShell)다 — 설정 메뉴는 관리자·실장만 볼 수 있어 상담원이 못 들어오기 때문.
+// 현장 피드백 8/4(정의현 차장): 계정메뉴의 전 역할 다운로드 버튼은 제거 — 통화녹음 관련
+// 내용은 관리자 이상만. 이제 다운로드·업로드 모두 이 카드(설정, 관리자 이상 노출)에서만 하고,
+// 상담원 폰 설치는 관리자가 받아서 직접 전달한다.
 // 업로드는 즉시 반영(다른 설정 폼처럼 '저장' 버튼을 기다리지 않음, PromoSlidesCard 와 동일 방침).
 import { useRef, useState } from 'react'
 import { Download, Smartphone, Upload } from 'lucide-react'
@@ -56,7 +57,7 @@ export function AppDownloadCard({ current }: { current: AppDownload | null }) {
   return (
     <SectionCard
       title="통화녹음 자동업로드 앱"
-      desc="상담원 폰에 설치하는 안드로이드 앱입니다. 상담원은 우측 상단 계정메뉴 > '통화녹음 앱 설치'에서 직접 내려받습니다. 여기서는 새 버전을 올립니다."
+      desc="상담원 폰에 설치하는 안드로이드 앱입니다. 다운로드는 이 카드에서만 가능하며(관리자 이상), 상담원 폰 설치는 관리자가 받아서 직접 전달합니다."
     >
       {current ? (
         <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
@@ -86,7 +87,7 @@ export function AppDownloadCard({ current }: { current: AppDownload | null }) {
         </div>
       ) : (
         <p className="mb-3 rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-[12.5px] text-gray-400">
-          아직 배포된 앱이 없습니다. 아래에서 APK 를 올리면 상담원 계정메뉴에 다운로드가 나타납니다.
+          아직 배포된 앱이 없습니다. 아래에서 APK 를 올리면 여기서 내려받을 수 있습니다.
         </p>
       )}
 
