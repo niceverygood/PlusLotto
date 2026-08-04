@@ -3,6 +3,7 @@ package kr.bottlecorp.pluslotto.recuploader.upload
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -32,14 +33,18 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
             val size = c.file.length()
             val lastModified = c.file.lastModified()
             val existing = db.uploadedFileDao().find(c.file.path, size, lastModified)
-            if (existing != null) {
+            // 업로드 성공한 파일만 건너뛴다(현장 8/4 로그 제보 — SKIPPED_DUP 만 반복되고 서버 수신 0건).
+            // 예전엔 상태와 무관하게 원장에 행이 있으면 영구히 건너뛰어서, 첫 시도가 한 번이라도
+            // 실패하거나(PENDING 상태로 남거나) WorkManager 작업이 유실되면 그 녹음은 영영 안 올라갔다.
+            // 이제 PENDING/FAILED 는 스캔할 때마다 다시 큐에 넣어 자동 복구된다.
+            if (existing != null && existing.uploadState == "SUCCESS") {
                 db.scanLogDao().insert(
                     ScanLogEntity(
                         timestamp = System.currentTimeMillis(),
                         foundPath = c.file.path,
                         parsedPhone = c.parsedPhone,
                         uploadOutcome = "SKIPPED_DUP",
-                        message = "이미 처리됨(${existing.uploadState})",
+                        message = "이미 업로드 완료",
                     ),
                 )
                 continue
@@ -50,6 +55,7 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
             // 이제 빈 번호로 올리면 서버가 미매칭 보관함에 넣고 전산에서 수동 연결한다.
             val phoneForUpload = c.parsedPhone ?: ""
 
+            // 원장에 없으면 신규 등록(있으면 IGNORE — 재시도이므로 기존 행을 그대로 둔다).
             db.uploadedFileDao().insert(
                 UploadedFileEntity(
                     path = c.file.path,
@@ -61,13 +67,21 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
                     createdAt = System.currentTimeMillis(),
                 ),
             )
+            val logMessage: String = if (existing != null) {
+                val http = if (existing.httpStatus != null) " HTTP " + existing.httpStatus else ""
+                "재시도(이전 " + existing.uploadState + http + ")"
+            } else if (c.parsedPhone == null) {
+                "번호 파싱 실패 — 미매칭함으로 업로드"
+            } else {
+                "업로드 대기열에 추가"
+            }
             db.scanLogDao().insert(
                 ScanLogEntity(
                     timestamp = System.currentTimeMillis(),
                     foundPath = c.file.path,
                     parsedPhone = c.parsedPhone,
                     uploadOutcome = "PARSED",
-                    message = if (c.parsedPhone == null) "번호 파싱 실패 — 미매칭함으로 업로드" else "업로드 대기열에 추가",
+                    message = logMessage,
                 ),
             )
 
@@ -80,8 +94,11 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
                 .putLong(UploadWorker.KEY_SIZE, size)
                 .putLong(UploadWorker.KEY_LAST_MODIFIED, lastModified)
                 .build()
+            // 파일 단위 고유 작업(KEEP) — 15분마다 재시도를 걸어도 진행 중인 업로드가 있으면
+            // 중복 큐잉되지 않고, 이전 작업이 이미 끝나버린(=유실된) 경우에만 새로 시작한다.
             val req = OneTimeWorkRequestBuilder<UploadWorker>().setInputData(input).build()
-            WorkManager.getInstance(applicationContext).enqueue(req)
+            WorkManager.getInstance(applicationContext)
+                .enqueueUniqueWork("upload-${c.file.path}-$size-$lastModified", ExistingWorkPolicy.KEEP, req)
         }
         return Result.success()
     }
