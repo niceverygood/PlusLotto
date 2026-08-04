@@ -1,7 +1,7 @@
 // 이용자 테이블 컬럼 정의 + 역할별 기본 노출 프리셋 (CLAUDE §6).
 // 등급/상태는 Badge/StatusChip, 숫자/일시는 mono. 상태·담당은 셀 인라인 편집.
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table'
-import { Badge, NumCell, InlineSelect, type InlineSelectOption } from '@/design-system/components'
+import { Badge, NumCell, InlineSelect, statusColorVars, type InlineSelectOption } from '@/design-system/components'
 import { dateShort, datetime, phone } from '@/lib/format'
 import type { Member, MemberStatus, Role } from '@/types/db'
 import { STATUS_META } from '@/design-system/labels'
@@ -52,12 +52,16 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
       accessorKey: 'status',
       cell: (info) => {
         const m = info.row.original
+        // 설정한 상태색을 목록에서도 표시(현장 8/4, 정의현 차장 — "회원정보창 들어가기 전에,
+        // 목록에서도 상태가 설정한 색으로") — StatusChip 과 같은 --st-{key} 변수/톤 폴백.
+        const sv = statusColorVars(m.status)
         return (
           <InlineSelect
             value={m.status}
             options={STATUS_OPTIONS}
             onChange={(v) => ctx.onChangeStatus(m.id, v as MemberStatus)}
-            className="max-w-[88px]"
+            className="max-w-[88px] font-semibold"
+            style={{ color: sv.color, backgroundColor: sv.backgroundColor, borderColor: 'transparent' }}
           />
         )
       },

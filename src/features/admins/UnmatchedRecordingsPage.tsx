@@ -82,7 +82,15 @@ function UnmatchedRow({
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        <span className="font-mono text-[13px] font-bold tnum text-ink-800">{rec.raw_phone}</span>
+        {/* 번호 파싱 실패 업로드(빈 raw_phone, 현장 8/4)는 파일명으로 식별 — 재생해서 수동 연결. */}
+        {rec.raw_phone ? (
+          <span className="font-mono text-[13px] font-bold tnum text-ink-800">{rec.raw_phone}</span>
+        ) : (
+          <span className="max-w-[280px] truncate text-[13px] font-bold text-ink-800" title={rec.file_name}>
+            <span className="mr-1.5 rounded bg-warning-bg px-1.5 py-0.5 text-[10.5px] font-semibold text-warning">번호없음</span>
+            {rec.file_name}
+          </span>
+        )}
         <span className="text-[11.5px] text-gray-400">
           {rec.recorded_at ? datetime(rec.recorded_at) : datetime(rec.created_at)}
         </span>

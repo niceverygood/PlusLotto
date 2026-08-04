@@ -90,8 +90,11 @@ export default async function handler(req: any, res: any) {
   try {
     const { fields, file } = await parseMultipart(req)
     if (!file) return res.status(400).json({ ok: false, message: 'file 누락' })
+    // phone 은 비어 있어도 받는다(현장 8/4 "자동 업로드 안됨" 원인 수정) — 삼성 등은 상대가
+    // 연락처에 저장돼 있으면 파일명이 이름("통화 녹음 홍길동_…")이라 앱이 번호를 못 뽑는데,
+    // 예전엔 앱·서버가 그 파일을 통째로 버려 업로드가 0건이 됐다. 이제 번호 없는 녹음도
+    // 업로드 자체는 받고 미매칭 보관함으로 보내 전산에서 수동 연결한다.
     const phoneRaw = String(fields.phone ?? '').trim()
-    if (!phoneRaw) return res.status(400).json({ ok: false, message: 'phone 누락' })
     const recordedAt = fields.recorded_at ? String(fields.recorded_at) : new Date().toISOString()
 
     const normalized = normalizeKr(phoneRaw)
@@ -104,12 +107,17 @@ export default async function handler(req: any, res: any) {
       .upload(path, file.buffer, { contentType: file.mimeType || 'audio/mp4' })
     if (upErr) return res.status(500).json({ ok: false, message: `업로드 실패: ${upErr.message}` })
 
-    const { data: matches, error: findErr } = await admin
-      .from('members')
-      .select('id, meta')
-      .in('phone', candidates)
-    if (findErr) return res.status(500).json({ ok: false, message: findErr.message })
-    const rows = (matches ?? []) as { id: string; meta: Record<string, unknown> | null }[]
+    // 번호가 아예 없으면 회원 매치를 시도하지 않는다 — 빈 문자열로 .in() 하면 전화번호가
+    // 비어 있는 회원과 오매치될 수 있다.
+    let rows: { id: string; meta: Record<string, unknown> | null }[] = []
+    if (normalized) {
+      const { data: matches, error: findErr } = await admin
+        .from('members')
+        .select('id, meta')
+        .in('phone', candidates)
+      if (findErr) return res.status(500).json({ ok: false, message: findErr.message })
+      rows = (matches ?? []) as { id: string; meta: Record<string, unknown> | null }[]
+    }
 
     if (rows.length === 1) {
       const m = rows[0]

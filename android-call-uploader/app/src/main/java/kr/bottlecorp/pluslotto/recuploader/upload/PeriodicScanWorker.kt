@@ -44,12 +44,11 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
                 )
                 continue
             }
-            if (c.parsedPhone == null) {
-                db.scanLogDao().insert(
-                    ScanLogEntity(timestamp = System.currentTimeMillis(), foundPath = c.file.path, parsedPhone = null, uploadOutcome = "FOUND", message = "전화번호 파싱 실패 — 파일명 규칙 확인 필요"),
-                )
-                continue
-            }
+            // 전화번호 파싱 실패여도 업로드는 한다(현장 8/4 "자동 업로드 안됨" 원인 수정) —
+            // 삼성 등은 상대가 연락처에 저장돼 있으면 파일명이 이름("통화 녹음 홍길동_…")이라
+            // 번호가 안 뽑히는데, 예전엔 그 파일을 여기서 통째로 건너뛰어 업로드가 0건이 됐다.
+            // 이제 빈 번호로 올리면 서버가 미매칭 보관함에 넣고 전산에서 수동 연결한다.
+            val phoneForUpload = c.parsedPhone ?: ""
 
             db.uploadedFileDao().insert(
                 UploadedFileEntity(
@@ -63,14 +62,20 @@ class PeriodicScanWorker(context: Context, params: WorkerParameters) : Coroutine
                 ),
             )
             db.scanLogDao().insert(
-                ScanLogEntity(timestamp = System.currentTimeMillis(), foundPath = c.file.path, parsedPhone = c.parsedPhone, uploadOutcome = "PARSED", message = "업로드 대기열에 추가"),
+                ScanLogEntity(
+                    timestamp = System.currentTimeMillis(),
+                    foundPath = c.file.path,
+                    parsedPhone = c.parsedPhone,
+                    uploadOutcome = "PARSED",
+                    message = if (c.parsedPhone == null) "번호 파싱 실패 — 미매칭함으로 업로드" else "업로드 대기열에 추가",
+                ),
             )
 
             val recordedAtIso = c.recordedAtIso
                 ?: java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).format(java.util.Date(lastModified))
             val input = Data.Builder()
                 .putString(UploadWorker.KEY_PATH, c.file.path)
-                .putString(UploadWorker.KEY_PHONE, c.parsedPhone)
+                .putString(UploadWorker.KEY_PHONE, phoneForUpload)
                 .putString(UploadWorker.KEY_RECORDED_AT, recordedAtIso)
                 .putLong(UploadWorker.KEY_SIZE, size)
                 .putLong(UploadWorker.KEY_LAST_MODIFIED, lastModified)
