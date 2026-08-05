@@ -25,7 +25,9 @@ export { paymentKeys }
 
 // ── 표시용 enrich (회원/상품 조인) ────────────────────────────────────
 export interface PaymentRow extends Payment {
-  member: { id: string; name: string; user_id: string; inflow_code: string | null } | null
+  // phone: 결제 목록에서도 전화번호를 보이게(현장 8/4, 정의현 차장). 라이브는 admin_payments_page
+  // RPC 가 함께 내려주지만, 배포 순서상 아직 옛 RPC 가 살아있을 수 있어 optional 로 둔다.
+  member: { id: string; name: string; user_id: string; inflow_code: string | null; phone?: string | null } | null
   product: { id: string; name: string; grade_granted: Grade } | null
 }
 
@@ -44,7 +46,9 @@ function enrich(
   const pr = p.product_id ? products[p.product_id] : undefined
   return {
     ...p,
-    member: m ? { id: m.id, name: m.name, user_id: m.user_id, inflow_code: m.inflow_code } : null,
+    member: m
+      ? { id: m.id, name: m.name, user_id: m.user_id, inflow_code: m.inflow_code, phone: m.phone }
+      : null,
     product: pr ? { id: pr.id, name: pr.name, grade_granted: pr.grade_granted } : null,
   }
 }

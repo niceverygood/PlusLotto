@@ -247,12 +247,14 @@ export function PaymentsPage() {
         </div>
       </FilterBar>
 
+      {/* 취소 건은 행 전체를 빨간 글자로(현장 8/4) — 색은 설정 > 상태색의 '취소' 값을 따른다. */}
       <DataTable
         columns={columns}
         data={data?.rows ?? []}
         getRowId={(p) => p.id}
         isLoading={isLoading}
         onRowClick={(p) => setSelectedId(p.id)}
+        rowClassName={(p) => (p.status === 'cancelled' ? 'row-cancelled' : undefined)}
         sorting={sorting}
         onSortingChange={onSortingChange}
         resultLabel={(total) => (

@@ -1,8 +1,9 @@
-// 결제 테이블 컬럼 정의 (CLAUDE §6). 컬럼 순서(현장 피드백 7/23 — 담당자 바로 오른쪽에 유저 배치):
-// No·상태·담당·유저·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
+// 결제 테이블 컬럼 정의 (CLAUDE §6). 컬럼 순서(현장 피드백 7/23 — 담당자 바로 오른쪽에 유저 배치,
+// 8/4 — 유저 오른쪽에 휴대폰 추가):
+// No·상태·담당·유저·휴대폰·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge, NumCell, StatusChip } from '@/design-system/components'
-import { date, datetime, krw } from '@/lib/format'
+import { date, datetime, krw, phone } from '@/lib/format'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import type { PaymentRow } from './api'
 
@@ -62,6 +63,17 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
             <div className="font-mono text-[10.5px] text-gray-400">{m.user_id}</div>
           </button>
         )
+      },
+    },
+    {
+      // 결제 목록에서도 전화번호 확인(현장 피드백 8/4, 정의현 차장) — 유저 바로 오른쪽.
+      id: 'phone',
+      header: '휴대폰',
+      enableSorting: false,
+      cell: (info) => {
+        const p = info.row.original.member?.phone
+        if (!p) return <span className="text-gray-300">-</span>
+        return <span className="font-mono text-[12px] tnum text-gray-600">{phone(p)}</span>
       },
     },
     {
