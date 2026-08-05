@@ -36,3 +36,15 @@
     font-feature-settings: "tnum" on;
   }
 }
+
+@layer components {
+  /* 결제 목록에서 상태가 '취소'인 행은 행 전체 글자를 빨간색으로(현장 피드백 8/4, 정의현 차장 —
+     "상태가 취소인 디비만 전체 글자를 빨간색으로"). 색은 설정 > 상태색의 '취소' 값을 그대로 따르므로
+     (D129 --st-cancelled), 운영진이 색을 바꾸면 이 행 색도 함께 바뀐다.
+     셀마다 고유 글자색 클래스(text-gray-700/text-ink-800 등)가 있어 상속으로는 덮이지 않아
+     !important 로 하위 전체를 강제한다. 배지의 배경색·도트는 그대로 유지된다. */
+  tr.row-cancelled td,
+  tr.row-cancelled td * {
+    color: var(--st-cancelled, #dc2626) !important;
+  }
+}

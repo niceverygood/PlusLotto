@@ -971,3 +971,11 @@
 - **조치**: ① 스킵 조건을 `uploadState == "SUCCESS"` 로 좁혀 PENDING/FAILED 는 매 스캔(15분)마다 자동 재시도. ② 파일 단위 `enqueueUniqueWork(KEEP)` 로 재시도가 중복 큐잉되지 않게(진행 중이면 유지, 유실됐으면 새로 시작). ③ 재시도 로그에 이전 상태·HTTP 코드를 표시해 진단화면에서 실패 사유가 보이게 했다.
 - **APK 빌드 불가(환경 제약, 재확인)**: `dl.google.com` 이 조직 egress 정책으로 CONNECT 403 차단이라 Android SDK 를 받을 수 없다(`maven.google.com` 은 301 로 도달 가능하나 SDK 플랫폼/빌드툴이 없어 무의미). **후속(SDK 있는 환경)**: `cd android-call-uploader && ./gradlew :app:assembleDebug` → 산출 APK 를 `설정 > 통화녹음 자동업로드 앱` 카드에 v0.1.1 로 업로드 → 테스트 폰 재설치.
 - **확인 요청(진단 정밀화)**: 로그 한 줄 클로즈업이 있으면 좋다 — `이미 처리됨(PENDING)` 이면 업로드 작업 유실, `이미 처리됨(FAILED)` 이면 서버/인증 응답 실패라 추가 조치(HTTP 코드별)가 필요하다. 이번 수정은 두 경우 모두 자동 재시도로 복구되지만, FAILED 라면 근본 원인이 하나 더 남아 있는 것이다.
+
+### D139. 결제 목록 — 취소 건 행 전체 빨간 글자 + 전화번호 컬럼 (현장 8/4, 정의현 차장)
+- **요청**: ① "상태가 취소인 디비만 전체 글자를 빨간색으로 수정 가능할까요?" ② "결제>이용자 목록에도 전화번호 보일수 있도록".
+- **①-해석**: '취소'는 회원 상태(정상·정지·삭제·탈퇴)에도 상담상태(신규·결번·부재·가망…)에도 없고 **결제 상태에만** 존재한다(`STATUS_META.cancelled`). 따라서 대상은 결제 목록의 취소 행으로 확정했다.
+- **①-조치**: `DataTable` 에 `rowClassName(row)` prop 을 추가하고(범용), 결제 목록에서 `status==='cancelled'` 인 행에 `row-cancelled` 클래스를 붙였다. 색은 하드코딩하지 않고 **설정 > 상태색의 '취소' 값(`--st-cancelled`, D129)** 을 따르게 해서, 운영진이 색을 바꾸면 행 색도 함께 바뀐다(기본 폴백 `#dc2626`). 셀마다 고유 글자색 클래스(`text-gray-700`·`text-ink-800` 등)가 있어 상속으로는 덮이지 않으므로 `index.css` 에 `tr.row-cancelled td, tr.row-cancelled td * { color: … !important }` 규칙을 뒀다(배지 배경·도트는 유지).
+- **②-조치**: 결제 목록 `유저` 컬럼 오른쪽에 `휴대폰` 컬럼 추가(mono+tnum, `phone()` 포매터). 데이터는 `PaymentRow.member.phone` — mock 경로는 enrich 에서, 라이브는 `admin_payments_page`·`admin_payment_detail` RPC 가 member jsonb 에 phone 을 포함하도록 마이그레이션(`20260804120000`). 타입은 `phone?: string | null` 로 둬서 **마이그레이션 적용 전 옛 RPC 가 살아있어도 화면이 깨지지 않는다**(그 동안은 '-' 로 표시).
+- **마이그레이션 방식(D130 재발 방지 적용)**: `admin_payments_page` 에는 0018(LIKE 부분검색)·0019/0022(등급 필터) 패치가 누적돼 있어 전체 본문 재정의가 금지다. `pg_get_functiondef` + `replace` 로 member jsonb 한 줄만 치환했고, 앵커가 없으면 예외로 중단(단, 이미 phone 이 있으면 재실행 안전하게 통과).
+- **검증**: typecheck·build green. 빌드 산출 CSS 에 `row-cancelled` 규칙 포함 확인(Tailwind purge 통과).

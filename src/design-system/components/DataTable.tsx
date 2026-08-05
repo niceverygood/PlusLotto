@@ -33,6 +33,8 @@ interface DataTableProps<T> {
   getRowId?: (row: T) => string
   isLoading?: boolean
   onRowClick?: (row: T) => void
+  /** 행 값에 따라 <tr> 에 클래스를 붙인다(예: 결제 '취소' 행 전체 빨간 글자, 현장 8/4). */
+  rowClassName?: (row: T) => string | undefined
   enableSelection?: boolean
   bulkActions?: (ctx: { selectedIds: string[]; selectedRows: T[]; clear: () => void }) => ReactNode
   pagination?: DataTablePagination
@@ -88,6 +90,7 @@ export function DataTable<T>({
   getRowId,
   isLoading = false,
   onRowClick,
+  rowClassName,
   enableSelection = false,
   bulkActions,
   pagination,
@@ -283,6 +286,7 @@ export function DataTable<T>({
                     'border-b border-gray-100 transition-colors',
                     onRowClick && 'cursor-pointer hover:bg-primary-50/40',
                     row.getIsSelected() && 'bg-primary-50/60',
+                    rowClassName?.(row.original),
                   )}
                 >
                   {enableSelection && (
