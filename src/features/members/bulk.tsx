@@ -485,7 +485,22 @@ export function MemberBulkActions({
               size="sm"
               disabled={busy || autoPool.length === 0}
               onClick={() =>
-                autoAssign.mutate({ ids: selectedIds, staffIds: autoPool }, { onSuccess: done })
+                autoAssign.mutate(
+                  { ids: selectedIds, staffIds: autoPool },
+                  {
+                    onSuccess: (r) => {
+                      // 과거 배정 이력으로 제외된 건이 있으면 조용히 넘어가지 않고 알린다(현장 8/6).
+                      if (r.skipped > 0) {
+                        window.alert(
+                          `${r.assignedIds.length}건을 자동배분했습니다.\n` +
+                            `과거에 배정된 적 있는 ${r.skipped}건은 중복배정 방지를 위해 제외했습니다.\n` +
+                            `이 건들을 배정하려면 '담당배정'(수동)을 사용하세요.`,
+                        )
+                      }
+                      done()
+                    },
+                  },
+                )
               }
             >
               자동할당
@@ -496,6 +511,11 @@ export function MemberBulkActions({
         <p className="mb-2 text-[12px] leading-relaxed text-gray-500">
           선택한 <b className="text-gray-700">{n}건</b>을 아래 체크된 담당자에게 라운드로빈으로
           배정합니다. 기본값은 ‘자동배분 대상’으로 지정된 담당자이며, 이번 실행에 한해 가감할 수 있습니다.
+        </p>
+        {/* 자동배분 중복배정 금지(현장 8/6, 정의현 차장) — 실행 전에 규칙을 알린다. */}
+        <p className="mb-2 rounded-md bg-warning-bg px-3 py-2 text-[11.5px] leading-relaxed text-ink-700">
+          과거에 담당자가 배정된 적 있는 디비는 <b>자동으로 제외</b>됩니다(담당리셋으로 현재 미지정이어도
+          동일). 과거 디비를 다시 배정해야 하면 <b>담당배정</b>(수동)을 사용하세요.
         </p>
         {reps.length === 0 ? (
           <p className="rounded-md bg-gray-50 px-3 py-2 text-[12px] text-gray-500">

@@ -1037,24 +1037,37 @@ export function useAssignStaff() {
   })
 }
 
+/** 자동할당 결과 — 실제 배정된 회원과, 과거 배정 이력이 있어 제외된 건수(현장 8/6). */
+export interface AutoAssignResult {
+  assignedIds: string[]
+  skipped: number
+}
+
 /**
  * 자동할당 — 라운드로빈. 풀 = 실행 시 지정한 staffIds(임시 가감) 우선,
  * 없으면 '자동배분 대상' 플래그가 켜진 활성 rep(§V2-1, assignableReps).
+ * 과거에 담당자가 배정된 적 있는 회원은 제외한다(현장 8/6 — 자동배분 중복배정 금지).
  */
 export function useAutoAssign() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()
   return useMutation({
-    mutationFn: async (v: { ids: string[]; staffIds?: string[] }) => {
+    mutationFn: async (v: { ids: string[]; staffIds?: string[] }): Promise<AutoAssignResult> => {
       if (dataSource === 'supabase') {
-        await supa.autoAssign(v.ids, v.staffIds ?? null, user?.id ?? null)
-        return v.ids
+        return supa.autoAssign(v.ids, v.staffIds ?? null, user?.id ?? null)
       }
       const pool =
         v.staffIds && v.staffIds.length > 0
           ? readDb().staff.filter((s) => v.staffIds!.includes(s.id))
           : assignableReps()
-      if (pool.length === 0) return v.ids
+      if (pool.length === 0) return { assignedIds: [], skipped: 0 }
+      // 과거 배정 이력이 있는 회원은 자동배분 대상에서 제외(현장 8/6) — supa.autoAssign 과 동일 규칙.
+      const everAssigned = new Set(
+        readDb().assignments.filter((a) => a.staff_id).map((a) => a.member_id),
+      )
+      const targetIds = v.ids.filter((id) => !everAssigned.has(id))
+      const skipped = v.ids.length - targetIds.length
+      if (targetIds.length === 0) return { assignedIds: [], skipped }
       mutateDb((db) => {
         const ts = nowIso()
         // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — supa.ts autoAssign
@@ -1075,7 +1088,7 @@ export function useAutoAssign() {
         let i = 0
         let last: string | null = null
         for (const m of db.members) {
-          if (!v.ids.includes(m.id)) continue
+          if (!targetIds.includes(m.id)) continue
           let rep = pool[(startAt + i) % pool.length]
           i++
           if (pool.length > 1 && rep.id === lastStaffByMember.get(m.id)) {
@@ -1097,14 +1110,15 @@ export function useAutoAssign() {
         if (last) db.site_settings.auto_assign_cursor = last
         db.logs.push(
           adminLog(user?.id ?? null, 'member.auto_assign', null, {
-            count: v.ids.length,
+            count: targetIds.length,
+            skipped,
             pool: pool.length,
           }),
         )
       })
-      return v.ids
+      return { assignedIds: targetIds, skipped }
     },
-    onSuccess: (ids) => invalidate(ids),
+    onSuccess: (r) => invalidate(r.assignedIds),
   })
 }
 
