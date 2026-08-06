@@ -9,7 +9,7 @@ import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
-import { recoSmsBody, renderSms, smsTypeForTemplate, spamSafeRound } from '@/lib/sms'
+import { recoSmsBody, renderSms, roundText, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
@@ -1520,7 +1520,7 @@ export function useDeleteRecoIssue() {
         }
         member.meta = nextMeta
 
-        const roundLabel = `${spamSafeRound(v.roundNo)}회차`
+        const roundLabel = `${roundText(v.roundNo)}회차`
         for (let i = db.sms_sends.length - 1; i >= 0; i--) {
           const sms = db.sms_sends[i]
           if (

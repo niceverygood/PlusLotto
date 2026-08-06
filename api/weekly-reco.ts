@@ -814,7 +814,9 @@ const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 규칙(자급자족 중복, 상단 참조).
  * 본문은 sms_templates 'recommend' 템플릿에서 온다(현장 피드백 8/4, 정의현 차장 — "조합문자 발송
  * 내용을 설정 > 기본문자 템플릿에서 수정하면 변경할수 있도록. 스팸관련해서 지속적으로 변경").
- * 변수: $round(스팸회피 회차표기 1233→12.33, 현장 7/22) · $name · $num(조합 리스트).
+ * 변수: $round(회차) · $name · $num(조합 리스트).
+ * 회차 표기: 7/22 에는 스팸필터 회피로 1236→12.36 처럼 점을 넣었으나, 현장 요청(8/6, 정의현 차장 —
+ * "회차 사이에 '.' 삭제 부탁드립니다")으로 점 없이 그대로 쓴다(src/lib/sms.ts roundText 와 동일).
  * 템플릿이 비었으면 기존 하드코딩 포맷(plus No. 한 줄, 현장 7/30)으로 폴백.
  */
 const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
@@ -825,12 +827,11 @@ function formatComboSms(
   sets: number[][],
   templateBody?: string | null,
 ): string {
-  const digits = String(Math.max(0, Math.trunc(roundNo)))
-  const safeRound = digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
+  const round = String(Math.max(0, Math.trunc(roundNo)))
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
   const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
   return body
-    .replace(/\$round/g, safeRound)
+    .replace(/\$round/g, round)
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
 }
