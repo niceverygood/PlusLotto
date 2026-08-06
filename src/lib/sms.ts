@@ -29,20 +29,21 @@ export function renderSms(
 /**
  * 추천 조합 SMS 본문 — 회원정보창 조합발송·템플릿 '추천번호' 발송·수동발급이 모두 같은 포맷을 쓰도록
  * 통일(현장 피드백 6/22: "추천번호 발송 내용 = 회원정보창 번호 문자발송 내용 동일").
- * 포맷 확정(현장 피드백 7/22, 정의현 차장): 회차 숫자는 통신사 스팸 필터 회피를 위해
- * 1233 → 12.33처럼 마지막 두 자리 앞에 점을 넣는다.
- * 최상단 문구도 통신사 스팸 필터 회피를 위해 "plus No. <회차>" 로 표기한다(현장 피드백 7/30,
- * 정의현 차장 — 기존 "[플러스]\n번째" 2줄을 이 한 줄로 교체. "회원님" 줄과 조합 리스트는 그대로).
+ * 최상단 문구는 "plus No. <회차>" 로 표기한다(현장 피드백 7/30, 정의현 차장 — 기존 "[플러스]\n번째"
+ * 2줄을 이 한 줄로 교체. "회원님" 줄과 조합 리스트는 그대로).
+ *
+ * 회차 표기: 7/22 에는 통신사 스팸필터 회피 목적으로 1236 → `12.36` 처럼 점을 넣었으나,
+ * 현장 요청(8/6, 정의현 차장 — "회차 사이에 '.' 삭제 부탁드립니다")으로 점 없이 그대로 쓴다.
+ * api/weekly-reco.ts(자동발송 크론)도 동일 규칙을 자급자족으로 구현하고 있으니 함께 바꿀 것.
  */
-export function spamSafeRound(roundNo: number): string {
-  const digits = String(Math.max(0, Math.trunc(roundNo)))
-  return digits.length > 2 ? `${digits.slice(0, -2)}.${digits.slice(-2)}` : digits
+export function roundText(roundNo: number): string {
+  return String(Math.max(0, Math.trunc(roundNo)))
 }
 
 /**
  * 조합문자 본문 = 설정 > 기본문자 템플릿('recommend')에서 수정 가능(현장 피드백 8/4, 정의현 차장 —
  * "스팸관련해서 지속적으로 문자발송 내용을 변경해야해서"). 하드코딩 포맷은 템플릿이 비었을 때의
- * 폴백으로만 남긴다. 템플릿 변수: $round(스팸회피 회차표기) · $name(회원명) · $num(조합 리스트).
+ * 폴백으로만 남긴다. 템플릿 변수: $round(회차) · $name(회원명) · $num(조합 리스트).
  * api/weekly-reco.ts 자동발송 크론도 동일 규칙(자급자족 구현, src import 불가)을 따른다.
  */
 export const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
@@ -56,7 +57,7 @@ export function recoSmsBody(
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
   const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
   return body
-    .replace(/\$round/g, spamSafeRound(roundNo))
+    .replace(/\$round/g, roundText(roundNo))
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
 }
