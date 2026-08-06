@@ -17,7 +17,7 @@ import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { normalizeInflowType } from '@/lib/inflow'
-import type { DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
+import type { AutoAssignResult, DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
 function sb(): SupabaseClient {
@@ -662,7 +662,7 @@ export async function autoAssign(
   ids: string[],
   staffIds: string[] | null,
   actor: string | null,
-): Promise<void> {
+): Promise<AutoAssignResult> {
   // 풀: 실행 시 지정 staffIds 우선, 없으면 '자동배분 대상' 플래그 rep(§V2-1). id 순 정렬로 라운드로빈 결정성 확보.
   let q = sb().from('staff').select('id, team_id')
   q =
@@ -672,7 +672,7 @@ export async function autoAssign(
   const { data: repData, error: re } = await q.order('id')
   if (re) throw re
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
-  if (reps.length === 0) return
+  if (reps.length === 0) return { assignedIds: [], skipped: 0 }
 
   // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — 이 함수는 호출마다
   // i=0 부터 다시 시작해, 같은(또는 겹치는) 대상을 나눠서 여러 번 자동배분하면 매번 배치 내 같은
@@ -704,6 +704,18 @@ export async function autoAssign(
   for (const row of lastAssignRows.sort((a, b) => b.created_at.localeCompare(a.created_at))) {
     if (row.staff_id && !lastStaffByMember.has(row.member_id)) lastStaffByMember.set(row.member_id, row.staff_id)
   }
+
+  // 과거 배정 이력이 있는 회원은 자동배분에서 제외(현장 피드백 8/6, 정의현 차장 — "과거 배정디비가
+  // 계속 들어가고 있습니다. 수동배분은 특별한 상황이라 과거디비가 들어갈 수 있어야 하지만
+  // 자동배분은 중복배정이 안되어야 합니다"). 담당리셋으로 현재 미지정이어도 한 번이라도 담당자가
+  // 배정된 적 있으면(assignments.staff_id 존재) 자동배분 대상이 아니다 — 수동 '담당배정'은 그대로 허용.
+  const targetIds = ids.filter((id) => !lastStaffByMember.has(id))
+  const skipped = ids.length - targetIds.length
+  if (targetIds.length === 0) {
+    await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: 0, skipped } })
+    return { assignedIds: [], skipped }
+  }
+  ids = targetIds
 
   const ts = nowIso()
   let cursor = startAt
@@ -750,7 +762,8 @@ export async function autoAssign(
       /* 컬럼 없음 등 — 다음 호출은 그냥 0번부터 다시 시작 */
     }
   }
-  await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length } })
+  await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length, skipped } })
+  return { assignedIds: ids, skipped }
 }
 
 export async function resetAssign(ids: string[], actor: string | null): Promise<void> {
