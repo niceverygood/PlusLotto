@@ -493,8 +493,9 @@ export function MemberBulkActions({
                       if (r.skipped > 0) {
                         window.alert(
                           `${r.assignedIds.length}건을 자동배분했습니다.\n` +
-                            `과거에 배정된 적 있는 ${r.skipped}건은 중복배정 방지를 위해 제외했습니다.\n` +
-                            `이 건들을 배정하려면 '담당배정'(수동)을 사용하세요.`,
+                            `과거에 배정된 적 있는 ${r.skipped}건은 중복배정 방지를 위해 제외했습니다.\n\n` +
+                            `이 건들을 다시 돌리려면 'DB초기화'(재사용) 후 자동할당하거나,\n` +
+                            `'담당배정'(수동)으로 직접 배정하세요.`,
                         )
                       }
                       done()
@@ -512,10 +513,11 @@ export function MemberBulkActions({
           선택한 <b className="text-gray-700">{n}건</b>을 아래 체크된 담당자에게 라운드로빈으로
           배정합니다. 기본값은 ‘자동배분 대상’으로 지정된 담당자이며, 이번 실행에 한해 가감할 수 있습니다.
         </p>
-        {/* 자동배분 중복배정 금지(현장 8/6, 정의현 차장) — 실행 전에 규칙을 알린다. */}
+        {/* 자동배분 중복배정 금지(현장 8/6) + 초기화 디비 예외(현장 8/7) — 실행 전에 규칙을 알린다. */}
         <p className="mb-2 rounded-md bg-warning-bg px-3 py-2 text-[11.5px] leading-relaxed text-ink-700">
           과거에 담당자가 배정된 적 있는 디비는 <b>자동으로 제외</b>됩니다(담당리셋으로 현재 미지정이어도
-          동일). 과거 디비를 다시 배정해야 하면 <b>담당배정</b>(수동)을 사용하세요.
+          동일). 단 <b>DB초기화</b>로 재사용 처리한 디비는 초기화 이후 배정 이력이 없으면 다시
+          자동할당됩니다. 그 외 과거 디비는 <b>담당배정</b>(수동)을 사용하세요.
         </p>
         {reps.length === 0 ? (
           <p className="rounded-md bg-gray-50 px-3 py-2 text-[12px] text-gray-500">

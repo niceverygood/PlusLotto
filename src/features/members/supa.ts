@@ -705,11 +705,31 @@ export async function autoAssign(
     if (row.staff_id && !lastStaffByMember.has(row.member_id)) lastStaffByMember.set(row.member_id, row.staff_id)
   }
 
-  // 과거 배정 이력이 있는 회원은 자동배분에서 제외(현장 피드백 8/6, 정의현 차장 — "과거 배정디비가
-  // 계속 들어가고 있습니다. 수동배분은 특별한 상황이라 과거디비가 들어갈 수 있어야 하지만
-  // 자동배분은 중복배정이 안되어야 합니다"). 담당리셋으로 현재 미지정이어도 한 번이라도 담당자가
-  // 배정된 적 있으면(assignments.staff_id 존재) 자동배분 대상이 아니다 — 수동 '담당배정'은 그대로 허용.
-  const targetIds = ids.filter((id) => !lastStaffByMember.has(id))
+  // 과거 배정 이력이 있는 회원은 자동배분에서 제외(현장 피드백 8/6, 정의현 차장 — "자동배분은
+  // 중복배정이 안되어야 합니다"). 담당리셋으로 현재 미지정이어도 제외 — 수동 '담당배정'은 그대로 허용.
+  //
+  // 단, **DB초기화(재사용) 이전의 배정 이력은 보지 않는다**(현장 긴급 8/7 — "재사용하기 위해
+  // 초기화된 디비들이 자동할당이 안되고 있습니다", 479건 제외됨). 초기화는 그 디비를 새 디비로
+  // 되돌려 다시 영업하려는 조치이므로, 초기화 이후 배정된 적이 없으면 자동배분 대상이다.
+  // 판정 기준은 `registered_at` — DB초기화가 이 값을 초기화 시각으로 새로 쓴다(resetMembers).
+  // 단순 담당리셋은 registered_at 을 건드리지 않으므로 계속 제외된다. jsonb(meta) 대신 일반
+  // 컬럼을 쓰는 이유: 조회가 가볍고(meta 에는 발급조합이 통째로 들어있다) 문법 위험이 없다.
+  const memberRows = await selectByIds<{ id: string; registered_at: string | null }>(
+    'members',
+    'id, registered_at',
+    ids,
+  )
+  const registeredAt = new Map<string, string>()
+  for (const r of memberRows) if (r.registered_at) registeredAt.set(r.id, r.registered_at)
+
+  const assignedAfterReset = new Set<string>()
+  for (const row of lastAssignRows) {
+    if (!row.staff_id) continue
+    const since = registeredAt.get(row.member_id)
+    if (!since || row.created_at >= since) assignedAfterReset.add(row.member_id)
+  }
+
+  const targetIds = ids.filter((id) => !assignedAfterReset.has(id))
   const skipped = ids.length - targetIds.length
   if (targetIds.length === 0) {
     await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: 0, skipped } })
