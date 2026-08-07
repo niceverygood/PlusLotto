@@ -672,7 +672,7 @@ export async function autoAssign(
   const { data: repData, error: re } = await q.order('id')
   if (re) throw re
   const reps = (repData ?? []) as { id: string; team_id: string | null }[]
-  if (reps.length === 0) return { assignedIds: [], skipped: 0 }
+  if (reps.length === 0) return { assignedIds: [], repeated: 0 }
 
   // 라운드로빈 커서(현장 피드백 7/28, "이전 분배자에게 재분배되는 상황") — 이 함수는 호출마다
   // i=0 부터 다시 시작해, 같은(또는 겹치는) 대상을 나눠서 여러 번 자동배분하면 매번 배치 내 같은
@@ -690,61 +690,44 @@ export async function autoAssign(
     /* 컬럼 없음 등 — 폴백 유지 */
   }
 
-  // 회원별 직전 담당자(리셋 전 마지막 실배정) — 라운드로빈이 우연히 그 회원을 그대로 다시 배정하는
-  // 걸 막기 위함(현장 피드백 7/31: "자동배정인데 동일 상담원에게 배분됐다"). 리셋 직후 그 회원만
-  // 다시 자동배분하면 커서가 그대로 그 사람으로 돌아오는 경우가 실제로 재현됐다. reps 가 1명뿐이면
-  // 피할 방법이 없으니 그대로 둔다.
+  // 회원별 '과거에 담당했던 담당자 전원' — 자동배분은 대상 회원을 빼지 않고(전부 배분) 각 회원마다
+  // 이 사람들만 피해서 배정한다(현장 확정 8/7, 정의현 차장 — "모든 재사용디비가 자동배분이 안되는게
+  // 아니고, 동일 담당자에게 재배분이 안되게 되어야 합니다").
+  //   · 7/31(D123)은 '직전 담당자 1명'만 피해서, 그 이전에 담당했던 사람에게는 다시 돌아갔다.
+  //   · 8/6(D141)·8/7(D143)은 아예 대상에서 빼버려 재사용 디비 배분이 막혔다(479건). 둘 다 정정한다.
+  // 담당리셋·DB초기화 여부와 무관하게 이력 전체를 본다 — "같은 상담원이 같은 고객에게 다시 전화하지
+  // 않는다"가 목적이라 초기화로 사람이 바뀌는 게 아니기 때문.
   const lastAssignRows = await selectByIds<{ member_id: string; staff_id: string | null; created_at: string }>(
     'assignments',
     'member_id, staff_id, created_at',
     ids,
     'member_id',
   )
-  const lastStaffByMember = new Map<string, string>()
-  for (const row of lastAssignRows.sort((a, b) => b.created_at.localeCompare(a.created_at))) {
-    if (row.staff_id && !lastStaffByMember.has(row.member_id)) lastStaffByMember.set(row.member_id, row.staff_id)
-  }
-
-  // 과거 배정 이력이 있는 회원은 자동배분에서 제외(현장 피드백 8/6, 정의현 차장 — "자동배분은
-  // 중복배정이 안되어야 합니다"). 담당리셋으로 현재 미지정이어도 제외 — 수동 '담당배정'은 그대로 허용.
-  //
-  // 단, **DB초기화(재사용) 이전의 배정 이력은 보지 않는다**(현장 긴급 8/7 — "재사용하기 위해
-  // 초기화된 디비들이 자동할당이 안되고 있습니다", 479건 제외됨). 초기화는 그 디비를 새 디비로
-  // 되돌려 다시 영업하려는 조치이므로, 초기화 이후 배정된 적이 없으면 자동배분 대상이다.
-  // 판정 기준은 `registered_at` — DB초기화가 이 값을 초기화 시각으로 새로 쓴다(resetMembers).
-  // 단순 담당리셋은 registered_at 을 건드리지 않으므로 계속 제외된다. jsonb(meta) 대신 일반
-  // 컬럼을 쓰는 이유: 조회가 가볍고(meta 에는 발급조합이 통째로 들어있다) 문법 위험이 없다.
-  const memberRows = await selectByIds<{ id: string; registered_at: string | null }>(
-    'members',
-    'id, registered_at',
-    ids,
-  )
-  const registeredAt = new Map<string, string>()
-  for (const r of memberRows) if (r.registered_at) registeredAt.set(r.id, r.registered_at)
-
-  const assignedAfterReset = new Set<string>()
+  const pastStaffByMember = new Map<string, Set<string>>()
   for (const row of lastAssignRows) {
     if (!row.staff_id) continue
-    const since = registeredAt.get(row.member_id)
-    if (!since || row.created_at >= since) assignedAfterReset.add(row.member_id)
+    const set = pastStaffByMember.get(row.member_id) ?? new Set<string>()
+    set.add(row.staff_id)
+    pastStaffByMember.set(row.member_id, set)
   }
-
-  const targetIds = ids.filter((id) => !assignedAfterReset.has(id))
-  const skipped = ids.length - targetIds.length
-  if (targetIds.length === 0) {
-    await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: 0, skipped } })
-    return { assignedIds: [], skipped }
-  }
-  ids = targetIds
 
   const ts = nowIso()
   let cursor = startAt
+  // 풀 전원이 이미 담당했던 회원은 피할 방법이 없다 — 그때만 라운드로빈 순서대로 배정하고 건수를 센다.
+  let repeated = 0
   const repOf = ids.map((mid) => {
-    let rep = reps[cursor % reps.length]
-    if (reps.length > 1 && rep.id === lastStaffByMember.get(mid)) {
-      cursor++
-      rep = reps[cursor % reps.length]
+    const past = pastStaffByMember.get(mid)
+    if (past) {
+      for (let k = 0; k < reps.length; k++) {
+        const cand = reps[(cursor + k) % reps.length]
+        if (!past.has(cand.id)) {
+          cursor += k + 1
+          return cand
+        }
+      }
+      repeated++
     }
+    const rep = reps[cursor % reps.length]
     cursor++
     return rep
   })
@@ -782,8 +765,8 @@ export async function autoAssign(
       /* 컬럼 없음 등 — 다음 호출은 그냥 0번부터 다시 시작 */
     }
   }
-  await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length, skipped } })
-  return { assignedIds: ids, skipped }
+  await pushLog({ kind: 'admin', actor, action: 'member.auto_assign', meta: { count: ids.length, repeated } })
+  return { assignedIds: ids, repeated }
 }
 
 export async function resetAssign(ids: string[], actor: string | null): Promise<void> {
