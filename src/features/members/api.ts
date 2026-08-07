@@ -1062,10 +1062,18 @@ export function useAutoAssign() {
           : assignableReps()
       if (pool.length === 0) return { assignedIds: [], skipped: 0 }
       // 과거 배정 이력이 있는 회원은 자동배분 대상에서 제외(현장 8/6) — supa.autoAssign 과 동일 규칙.
-      const everAssigned = new Set(
-        readDb().assignments.filter((a) => a.staff_id).map((a) => a.member_id),
-      )
-      const targetIds = v.ids.filter((id) => !everAssigned.has(id))
+      // 단, DB초기화(재사용) 이전 이력은 무시한다(현장 긴급 8/7 — 초기화한 재사용 디비가 자동할당에서
+      // 빠지던 문제). 판정 기준은 registered_at — DB초기화가 이 값을 초기화 시각으로 새로 쓴다.
+      const cur0 = readDb()
+      const registeredAt = new Map<string, string>()
+      for (const m of cur0.members) if (m.registered_at) registeredAt.set(m.id, m.registered_at)
+      const assignedAfterReset = new Set<string>()
+      for (const a of cur0.assignments) {
+        if (!a.staff_id) continue
+        const since = registeredAt.get(a.member_id)
+        if (!since || a.created_at >= since) assignedAfterReset.add(a.member_id)
+      }
+      const targetIds = v.ids.filter((id) => !assignedAfterReset.has(id))
       const skipped = v.ids.length - targetIds.length
       if (targetIds.length === 0) return { assignedIds: [], skipped }
       mutateDb((db) => {
