@@ -189,6 +189,28 @@ export default async function handler(req: any, res: any) {
       if (m === 3) return 5
       return null
     }
+    // 회원별 당첨내역 누적(meta.win_records) — 이용자 '당첨회차/등수' 필터(D127)가 읽는 원본이다.
+    // 예전에는 이 크론이 win_history(최근 1건 문자열)만 갱신해서, 크론이 적재한 회차는 필터에
+    // 전혀 잡히지 않았다(현장 8/10 "1236회차가 필터링이 안되고 있습니다" — 1235회도 같은 이유로
+    // 8/3 에 수동 백필했었다). src/lib/winHistory.ts 의 WinRecord/upsertWinRecords 를 자급자족 복제.
+    interface WinRecord {
+      round_no: number
+      draw_date: string | null
+      rank: number
+      prize: number
+      combo_index: number
+      source: 'reco' | 'bet'
+    }
+    const prizeForRank = (row: { prize_1: number | null; prize_2: number | null; prize_3: number | null }, rank: number): number =>
+      rank === 1 ? (row.prize_1 ?? 0) : rank === 2 ? (row.prize_2 ?? 0) : rank === 3 ? (row.prize_3 ?? 0) : 0
+    const wrKey = (w: WinRecord) => `${w.source}:${w.round_no}:${w.combo_index}`
+    const upsertWinRecords = (existing: WinRecord[], fresh: WinRecord[]): WinRecord[] => {
+      const map = new Map<string, WinRecord>()
+      for (const w of existing) map.set(wrKey(w), w)
+      for (const w of fresh) map.set(wrKey(w), w)
+      return [...map.values()].sort((a, b) => b.round_no - a.round_no || a.combo_index - b.combo_index)
+    }
+
     const mem: MemberRow[] = []
     for (let from = 0; ; from += 1000) {
       const { data: md } = await sb
@@ -225,13 +247,21 @@ export default async function handler(req: any, res: any) {
         if (!issue) continue
         let best: number | null = null
         let wins = 0
-        for (const set of issue.sets) {
+        const fresh: WinRecord[] = []
+        issue.sets.forEach((set, i) => {
           const rk = gRank(set, row.numbers, row.bonus)
-          if (rk != null) {
-            wins += 1
-            if (best === null || rk < best) best = rk
-          }
-        }
+          if (rk == null) return
+          wins += 1
+          if (best === null || rk < best) best = rk
+          fresh.push({
+            round_no: row.round_no,
+            draw_date: row.draw_date,
+            rank: rk,
+            prize: prizeForRank(row, rk),
+            combo_index: i + 1,
+            source: 'reco',
+          })
+        })
         if (best == null) continue
         const winHistory = `${row.round_no}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`
 
@@ -249,10 +279,14 @@ export default async function handler(req: any, res: any) {
         const tpl = eligible ? (settings.win_messages ?? []).find((w) => w.rank === best) : undefined
         const body = tpl?.body?.trim() ? renderWinSms(tpl.body, m, winHistory) : null
 
-        const patch: Record<string, unknown> = { win_history: winHistory }
-        if (body) {
-          patch.meta = { ...(m.meta ?? {}), win_sms_rounds: [...sentRounds, row.round_no].slice(-40) }
+        // meta 는 항상 갱신한다 — win_records 가 빠지면 회차/등수 필터에서 이 회원이 사라진다.
+        const prevRecords = Array.isArray(m.meta?.win_records) ? (m.meta!.win_records as WinRecord[]) : []
+        const nextMeta: Record<string, unknown> = {
+          ...(m.meta ?? {}),
+          win_records: upsertWinRecords(prevRecords, fresh),
         }
+        if (body) nextMeta.win_sms_rounds = [...sentRounds, row.round_no].slice(-40)
+        const patch: Record<string, unknown> = { win_history: winHistory, meta: nextMeta }
         await sb.from('members').update(patch).eq('id', m.id)
         tallied += 1
 
