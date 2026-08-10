@@ -47,4 +47,12 @@
   tr.row-cancelled td * {
     color: var(--st-cancelled, #dc2626) !important;
   }
+
+  /* 이용자 목록: 설정한 등급색/상태색을 그 회원 행 전체 글자에 적용(현장 피드백 8/7, 정의현 차장 —
+     "설정해서 글자색을 설정하면, 목록에서 해당회원 열 전체의 글자 색상이 바뀔수 있도록").
+     색 자체는 행마다 다르므로 클래스가 아니라 인라인 --row-fg 로 넘긴다(DataTable rowStyle). */
+  tr.row-tinted td,
+  tr.row-tinted td * {
+    color: var(--row-fg) !important;
+  }
 }

@@ -19,7 +19,7 @@ import {
   type MembersQuery,
 } from './api'
 import { getView, type MemberFilter } from './views'
-import { memberColumns } from './columns'
+import { memberColumns, memberRowFg } from './columns'
 import { MemberBulkActions } from './bulk'
 
 const PAGE_SIZE = 50
@@ -123,6 +123,8 @@ export function MyCustomersPage() {
       />
 
       <DataTable
+        rowClassName={() => 'row-tinted'}
+        rowStyle={(m) => ({ ['--row-fg' as string]: memberRowFg(m) }) as React.CSSProperties}
         key={role ?? 'none'}
         columns={columns}
         data={data?.rows ?? []}
