@@ -34,6 +34,16 @@ const TEND_TONE: Record<string, string> = {
   무응답: 'text-gray-400',
 }
 
+/**
+ * 이용자 목록 행 전체 글자색(현장 8/7) — 설정 > 등급색/상태색을 그대로 따른다.
+ * 우선순위: 상태가 '정상'이 아니면(정지·삭제·탈퇴) 상태색, 정상이면 등급색.
+ *   · 둘 다 설정 가능해 한 행에 두 색이 충돌하므로 "이상 상태를 먼저 눈에 띄게" 를 기준으로 잡았다.
+ *   · 값은 CSS 변수라 설정에서 색을 바꾸면 목록도 즉시 따라 바뀐다(--g-{grade} / --st-{status}).
+ */
+export function memberRowFg(m: Member): string {
+  return m.status === 'active' ? `var(--g-${m.grade})` : `var(--st-${m.status})`
+}
+
 export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
   const staffNameById: Record<string, string> = {}
   for (const o of ctx.staffOptions) if (o.value) staffNameById[o.value] = o.label

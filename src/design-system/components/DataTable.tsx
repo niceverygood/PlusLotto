@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -35,6 +35,8 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   /** 행 값에 따라 <tr> 에 클래스를 붙인다(예: 결제 '취소' 행 전체 빨간 글자, 현장 8/4). */
   rowClassName?: (row: T) => string | undefined
+  /** 행 값에 따라 <tr> 에 인라인 스타일을 준다(예: 이용자 목록 등급/상태별 행 글자색 --row-fg, 현장 8/7). */
+  rowStyle?: (row: T) => CSSProperties | undefined
   enableSelection?: boolean
   bulkActions?: (ctx: { selectedIds: string[]; selectedRows: T[]; clear: () => void }) => ReactNode
   pagination?: DataTablePagination
@@ -91,6 +93,7 @@ export function DataTable<T>({
   isLoading = false,
   onRowClick,
   rowClassName,
+  rowStyle,
   enableSelection = false,
   bulkActions,
   pagination,
@@ -288,6 +291,7 @@ export function DataTable<T>({
                     row.getIsSelected() && 'bg-primary-50/60',
                     rowClassName?.(row.original),
                   )}
+                  style={rowStyle?.(row.original)}
                 >
                   {enableSelection && (
                     <td className={cn('w-9 px-3', padY)}>

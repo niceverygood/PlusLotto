@@ -41,7 +41,7 @@ import {
   type MemberFilter,
   type ViewGroup,
 } from './views'
-import { memberColumns, memberColumnVisibility } from './columns'
+import { memberColumns, memberColumnVisibility, memberRowFg } from './columns'
 import { MemberBulkActions } from './bulk'
 import { MemberCreateDrawer } from './MemberCreateDrawer'
 import { ImportMembersModal } from './ImportMembersModal'
@@ -454,6 +454,8 @@ export function MembersPage() {
 
       {/* 테이블 */}
       <DataTable
+        rowClassName={() => 'row-tinted'}
+        rowStyle={(m) => ({ ['--row-fg' as string]: memberRowFg(m) }) as React.CSSProperties}
         key={role ?? 'none'}
         columns={columns}
         data={data?.rows ?? []}
