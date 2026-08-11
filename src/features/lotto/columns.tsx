@@ -136,16 +136,33 @@ export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
       cell: (info) => {
         const r = info.row.original
         if (r.confirmed_at) {
+          // 확정된 회차도 '재집계'로 다시 돌릴 수 있어야 한다(현장 8/10 — "이미 상태가 확정인데
+          // 어떤 부분을 누르라는 말씀이실까요?"). confirmRound 는 원래 멱등 재산정을 지원하는데
+          // 확정 뒤에는 버튼이 사라져 화면에서 실행할 방법이 없었다. 당첨이력(win_records) 백필처럼
+          // 이미 확정된 회차를 다시 집계해야 하는 상황이 실제로 있어 상시 노출한다.
           return (
-            <span
-              className={cn(
-                'inline-flex items-center gap-[5px] rounded-full px-[9px] py-[3px] text-[11px] font-bold',
-                'bg-success-bg text-success',
-              )}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-success" />
-              확정
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  'inline-flex items-center gap-[5px] rounded-full px-[9px] py-[3px] text-[11px] font-bold',
+                  'bg-success-bg text-success',
+                )}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                확정
+              </span>
+              <Button
+                variant="sec"
+                size="sm"
+                title="당첨자를 다시 집계합니다(회원 당첨이력 재생성). 여러 번 눌러도 안전합니다."
+                onClick={(e) => {
+                  e.stopPropagation()
+                  ctx.onConfirm(r.round_no)
+                }}
+              >
+                재집계
+              </Button>
+            </div>
           )
         }
         return (
