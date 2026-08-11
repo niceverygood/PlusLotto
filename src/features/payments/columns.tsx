@@ -1,6 +1,6 @@
 // 결제 테이블 컬럼 정의 (CLAUDE §6). 컬럼 순서(현장 피드백 7/23 — 담당자 바로 오른쪽에 유저 배치,
 // 8/4 — 유저 오른쪽에 휴대폰 추가):
-// No·상태·담당·유저·휴대폰·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
+// No·상태·담당·유저·차수·휴대폰·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge, NumCell, StatusChip } from '@/design-system/components'
 import { date, datetime, krw, phone } from '@/lib/format'
@@ -62,6 +62,27 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
             <div className="font-semibold text-ink-800">{m.name}</div>
             <div className="font-mono text-[10.5px] text-gray-400">{m.user_id}</div>
           </button>
+        )
+      },
+    },
+    {
+      // 결제차수(현장 8/7) — 요청 시 운영자가 고른 라벨. 도입 이전 결제는 '-'.
+      id: 'round',
+      header: '차수',
+      enableSorting: false,
+      cell: (info) => {
+        const r = info.row.original.round_label
+        if (!r) return <span className="text-gray-300">-</span>
+        const arrears = r.includes('미수')
+        return (
+          <span
+            className={
+              'inline-flex items-center rounded-md px-[7px] py-[2px] text-[11px] font-bold ' +
+              (arrears ? 'bg-warning-bg text-warning' : 'bg-gray-100 text-gray-600')
+            }
+          >
+            {r}
+          </span>
         )
       },
     },

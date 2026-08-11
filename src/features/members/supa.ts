@@ -449,7 +449,14 @@ export async function bulkUpdateMemberMeta(
 
 /** 결제 요청 → 대기(wait) 결제 1건 생성. */
 export async function requestPayment(
-  v: { memberId: string; productId: string; amount: number; method: string; depositorName?: string | null },
+  v: {
+    memberId: string
+    productId: string
+    amount: number
+    method: string
+    depositorName?: string | null
+    roundLabel?: string | null
+  },
   actor: string | null,
 ): Promise<void> {
   const { data: m } = await sb().from('members').select('name, assigned_staff_id').eq('id', v.memberId).maybeSingle()
@@ -469,9 +476,10 @@ export async function requestPayment(
     staff_id: actor ?? member?.assigned_staff_id ?? null,
     paid_at: null,
     created_at: nowIso(),
+    round_label: v.roundLabel ?? null,
   })
   if (error) throw error
-  await pushLog({ kind: 'admin', actor, action: 'payment.request', target_type: 'member', target_id: v.memberId, meta: { product_id: v.productId, amount: v.amount, method: v.method } })
+  await pushLog({ kind: 'admin', actor, action: 'payment.request', target_type: 'member', target_id: v.memberId, meta: { product_id: v.productId, amount: v.amount, method: v.method, round_label: v.roundLabel ?? null } })
 }
 
 /** 결제건별 담당자 배정 변경(현장 피드백 7/6) — 1차/2차/3차결제마다 다른 담당자를 붙일 수 있게.

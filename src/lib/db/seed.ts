@@ -196,6 +196,7 @@ function genSupport(rng: Rng, members: Member[]) {
         staff_id: m.assigned_staff_id,
         paid_at: start.toISOString(),
         created_at: start.toISOString(),
+        round_label: '1차결제',
       })
     } else if (rng() < 0.16) {
       const created = new Date(regMs + intIn(rng, 1, 20) * 864e5)
@@ -213,6 +214,7 @@ function genSupport(rng: Rng, members: Member[]) {
         staff_id: m.assigned_staff_id,
         paid_at: null,
         created_at: created.toISOString(),
+        round_label: '1차결제',
       })
     }
     // 문자 발송 이력

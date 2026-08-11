@@ -90,6 +90,9 @@ export interface Payment {
   staff_id: string | null
   paid_at: string | null
   created_at: string
+  // 결제차수 라벨(현장 8/7) — 1차/2차/3차결제·2차/3차미수. 요청 시 운영자가 선택해 저장한다.
+  // null = 차수 도입 이전 결제(목록에서는 '-' 로 표시).
+  round_label: string | null
 }
 
 export interface SmsSend {

@@ -518,6 +518,8 @@ export interface ManualPaymentInput {
   depositorName: string
   /** true 면 즉시 승인(§8 트리거), false 면 대기 상태로 등록. */
   approveNow: boolean
+  /** 결제차수 라벨(현장 8/7) — 1차/2차/3차결제·2차/3차미수. 결제요청과 동일 규칙. */
+  roundLabel?: string | null
 }
 
 /** 수기결제 등록(/payments/manual). approveNow=true 면 승인 §8 흐름까지 즉시 적용. */
@@ -545,6 +547,7 @@ export function useCreateManualPayment() {
           period_start: null,
           period_end: null,
           depositor_name: v.depositorName || (member?.name ?? null),
+          round_label: v.roundLabel ?? null,
           // 매출 귀속은 "결제를 요청/등록한 담당자" 기준 — 회원의 현재 담당자가 아니라 이 결제를
           // 실제로 처리한 로그인 사용자를 우선한다(현장 피드백 7/21, D93 이전 로직은 반대였음).
           staff_id: user?.id ?? member?.assigned_staff_id ?? null,
