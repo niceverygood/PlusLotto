@@ -8,7 +8,7 @@
 import { addMonths } from 'date-fns'
 import type { Grade, Member, Payment, Product, SiteSettings, SmsTemplate } from '@/types/db'
 import { genId, nowIso } from '@/lib/db/store'
-import { insertLog, sb } from '@/lib/db/remote'
+import { insertLog, insertWithOptionalColumns, sb } from '@/lib/db/remote'
 import { renderSms } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import type {
@@ -308,8 +308,8 @@ export async function createManualPayment(v: ManualPaymentInput, actor: string |
       row.period_end = addMonths(ts, product.duration_months).toISOString()
     }
   }
-  const { error } = await sb().from('payments').insert(row)
-  if (error) throw error
+  // round_label 은 마이그레이션 미적용 가능성이 있어 optional(현장 8/11 결제요청 중단 사고와 동일 이유).
+  await insertWithOptionalColumns('payments', row as unknown as Record<string, unknown>, ['round_label'])
   if (v.approveNow && product) await promoteMember(v.memberId, product.grade_granted)
   if (v.approveNow) {
     try {
