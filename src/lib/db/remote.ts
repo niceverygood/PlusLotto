@@ -47,6 +47,33 @@ export async function selectAll<T>(table: string): Promise<T[]> {
 export const ID_IN_CHUNK = 150 // UUID 150개 ≈ 6KB(여유). 실측: 300 OK·400 실패.
 
 /** 대량 id 목록을 청크로 나눠 select.in() (URL 414 회피). 결과를 concat 해서 반환. */
+/**
+ * 아직 라이브에 없을 수 있는 컬럼을 포함해 INSERT 한다(현장 8/11 사고).
+ *
+ * 배경: `payments.round_label`(D148) 처럼 마이그레이션과 프론트 배포 시점이 어긋나면, 프론트가 먼저
+ * 나가는 순간 INSERT 가 "column ... does not exist"(42703 / PGRST204) 로 통째로 실패한다. 읽기는
+ * 컬럼이 없어도 안전하지만 쓰기는 아니라는 걸 놓쳐 실제로 결제요청이 막혔다.
+ * 컬럼 없음 오류일 때만 해당 키를 빼고 1회 재시도해, 마이그레이션 적용 전에도 본 기능(결제 생성)은
+ * 계속 동작하게 한다. 적용 후에는 첫 시도가 그대로 성공해 값이 정상 저장된다.
+ */
+export async function insertWithOptionalColumns(
+  table: string,
+  row: Record<string, unknown>,
+  optionalKeys: readonly string[],
+): Promise<void> {
+  const { error } = await sb().from(table).insert(row)
+  if (!error) return
+  const msg = `${error.code ?? ''} ${error.message ?? ''}`
+  const missing = optionalKeys.filter((k) => msg.includes(k))
+  const columnMissing = error.code === '42703' || error.code === 'PGRST204' || msg.includes('does not exist')
+  if (missing.length === 0 || !columnMissing) throw error
+  const fallback = { ...row }
+  for (const k of missing) delete fallback[k]
+  console.warn(`[${table}] 컬럼 미적용(${missing.join(', ')}) — 해당 값 없이 저장합니다. 마이그레이션 적용 필요.`)
+  const { error: retryError } = await sb().from(table).insert(fallback)
+  if (retryError) throw retryError
+}
+
 export async function selectByIds<T>(
   table: string,
   columns: string,

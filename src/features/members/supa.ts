@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
-import { fetchSiteSettings, ID_IN_CHUNK, paginateAll, selectAll, selectByIds, updateByIds } from '@/lib/db/remote'
+import { fetchSiteSettings, ID_IN_CHUNK, insertWithOptionalColumns, paginateAll, selectAll, selectByIds, updateByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 
 // 단체문자 동시 발송 한도(브라우저). 너무 높이면 Fixie 동시연결·OneShot 레이트리밋 위험 → 보수적 6
@@ -461,24 +461,28 @@ export async function requestPayment(
 ): Promise<void> {
   const { data: m } = await sb().from('members').select('name, assigned_staff_id').eq('id', v.memberId).maybeSingle()
   const member = m as { name: string; assigned_staff_id: string | null } | null
-  const { error } = await sb().from('payments').insert({
-    id: genId('pay'),
-    member_id: v.memberId,
-    product_id: v.productId,
-    amount: v.amount,
-    method: v.method,
-    pg_provider: null,
-    status: 'wait',
-    period_start: null,
-    period_end: null,
-    depositor_name: v.depositorName?.trim() || member?.name || null,
-    // 매출 귀속은 "결제를 요청/등록한 담당자" 기준(현장 피드백 7/21) — payments/supa.ts 와 동일 원칙.
-    staff_id: actor ?? member?.assigned_staff_id ?? null,
-    paid_at: null,
-    created_at: nowIso(),
-    round_label: v.roundLabel ?? null,
-  })
-  if (error) throw error
+  // round_label 은 마이그레이션이 아직 안 붙었을 수 있어 optional 로 넣는다(현장 8/11 결제요청 중단 사고).
+  await insertWithOptionalColumns(
+    'payments',
+    {
+      id: genId('pay'),
+      member_id: v.memberId,
+      product_id: v.productId,
+      amount: v.amount,
+      method: v.method,
+      pg_provider: null,
+      status: 'wait',
+      period_start: null,
+      period_end: null,
+      depositor_name: v.depositorName?.trim() || member?.name || null,
+      // 매출 귀속은 "결제를 요청/등록한 담당자" 기준(현장 피드백 7/21) — payments/supa.ts 와 동일 원칙.
+      staff_id: actor ?? member?.assigned_staff_id ?? null,
+      paid_at: null,
+      created_at: nowIso(),
+      round_label: v.roundLabel ?? null,
+    },
+    ['round_label'],
+  )
   await pushLog({ kind: 'admin', actor, action: 'payment.request', target_type: 'member', target_id: v.memberId, meta: { product_id: v.productId, amount: v.amount, method: v.method, round_label: v.roundLabel ?? null } })
 }
 
