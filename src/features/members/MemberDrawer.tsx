@@ -20,6 +20,7 @@ import { useStaff, useTeams } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
 import { canViewCallRecordings } from '@/lib/permissions'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
+import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
@@ -178,6 +179,8 @@ export function MemberDrawer({
   const [payProduct, setPayProduct] = useState('')
   const [payMethod, setPayMethod] = useState<PaymentMethod>('bank')
   const [payAmount, setPayAmount] = useState('') // 금액 수기 입력(현장 피드백 <결제> 1) — 상품 선택 시 기본값
+  // 결제차수(현장 8/7) — 승인 이력 건수로 기본값을 제안하고 운영자가 바꿀 수 있다('미수' 포함).
+  const [payRound, setPayRound] = useState<PaymentRound | ''>('')
 
   useEffect(() => {
     setMemoDraft('') // 새 콜메모 입력칸(리스트형 누적) — 회원 전환 시 비움
@@ -702,6 +705,18 @@ export function MemberDrawer({
                       </option>
                     ))}
                   </select>
+                  <select
+                    className={selectCls + ' w-[104px]'}
+                    value={payRound || suggestPaymentRound(payments.filter((p) => p.status === 'approved').length)}
+                    onChange={(e) => setPayRound(e.target.value as PaymentRound)}
+                    title="결제차수 — 기본값은 승인 이력으로 제안되며 직접 고를 수 있습니다"
+                  >
+                    {PAYMENT_ROUNDS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
                   <Button
                     size="sm"
                     variant="pri"
@@ -709,11 +724,20 @@ export function MemberDrawer({
                     onClick={() =>
                       selected &&
                       requestPayment.mutate(
-                        { memberId: id, productId: selected.id, amount: Number(payAmount), method: payMethod },
+                        {
+                          memberId: id,
+                          productId: selected.id,
+                          amount: Number(payAmount),
+                          method: payMethod,
+                          roundLabel:
+                            payRound ||
+                            suggestPaymentRound(payments.filter((p) => p.status === 'approved').length),
+                        },
                         {
                           onSuccess: () => {
                             setPayProduct('')
                             setPayAmount('')
+                            setPayRound('')
                           },
                         },
                       )

@@ -1,13 +1,14 @@
 // 매출 모듈 데이터 훅 (CLAUDE §8·§9, BUILD_PROMPTS Phase 5). 원본 스샷 없음 → 직접 구현.
 // 매출은 별도 테이블 없이 payments(status='approved') 파생 집계다(DECISIONS D14). 귀속/인식
 // 규칙은 lib/revenueRules 의 REVENUE_RULES 한 곳에서 교체 가능. 컴포넌트 직접 fetch 금지 — 훅 경유.
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type { Member, Payment, Staff } from '@/types/db'
-import { readDb } from '@/lib/db/store'
+import { mutateDb, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
+import { useStaff } from '@/lib/staff'
 import { revenueKeys } from '@/lib/queryKeys'
 import { recognitionIso } from '@/lib/revenueRules'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
@@ -397,5 +398,111 @@ export function useRevenueDayPayments(date: string | null, view: RevenueView = '
         .sort((a, b) => b.amount - a.amount)
     },
     enabled: !!date,
+  })
+}
+
+// ── 일일 요약(현장 피드백 8/7, 정의현 차장) ──────────────────────────────────
+// "해당일의 근무인원수(자체입력), 팀장매출, 실장매출, 카드결제, 무통장결제 내용이 요약되어 보여질수
+// 있도록 추가 페이지". 매출 수치는 전부 payments 파생이라 저장하지 않고 매번 집계한다 —
+// 근무인원만 계산 불가라 daily_work_count 에 수기 저장한다(중복 저장하면 지표가 어긋난다).
+export interface DailyRevenueRow {
+  day: string // yyyy-MM-dd
+  headCount: number // 근무인원(수기)
+  leaderTotal: number // 팀장매출 = 담당자 역할 rep
+  managerTotal: number // 실장매출 = 담당자 역할 leader 이상
+  cardTotal: number // 카드(PG) 결제
+  bankTotal: number // 무통장 결제
+  total: number // 승인 결제 합계(수단·역할 무관)
+  count: number
+}
+
+/** from~to 일자별 요약. 승인 결제만, 인식일(paid_at ?? created_at) 기준. */
+export function useDailyRevenue(from: string, to: string) {
+  const user = useCurrentUser()
+  const { data: staffList = [] } = useStaff()
+  return useQuery({
+    queryKey: revenueKeys.daily(`${from}:${to}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryFn: async (): Promise<DailyRevenueRow[]> => {
+      let payments: Payment[] = []
+      let headCounts: Record<string, number> = {}
+
+      if (dataSource === 'supabase') {
+        // 기간이 보통 한 달이라 행 수가 적다 — 전용 RPC 를 새로 만들기보다 승인 결제만 받아 집계한다.
+        const { data, error } = await sb().from('payments').select('*').eq('status', 'approved')
+        if (error) throw error
+        payments = (data ?? []) as Payment[]
+        const { data: wc, error: we } = await sb()
+          .from('daily_work_count')
+          .select('day, head_count')
+          .gte('day', from)
+          .lte('day', to)
+        if (we) throw we
+        for (const r of (wc ?? []) as { day: string; head_count: number }[]) {
+          headCounts[r.day] = r.head_count
+        }
+      } else {
+        const db = readDb()
+        payments = db.payments.filter((p) => p.status === 'approved')
+        headCounts = { ...(db.daily_work_count ?? {}) }
+      }
+
+      const scoped = scopeApproved(payments, user)
+      const roleById = staffRoleById(staffList)
+      const byDay = new Map<string, DailyRevenueRow>()
+      const blank = (day: string): DailyRevenueRow => ({
+        day,
+        headCount: headCounts[day] ?? 0,
+        leaderTotal: 0,
+        managerTotal: 0,
+        cardTotal: 0,
+        bankTotal: 0,
+        total: 0,
+        count: 0,
+      })
+
+      for (const p of scoped) {
+        const day = dayOf(recognitionIso(p))
+        if (!inRange(day, from, to)) continue
+        const row = byDay.get(day) ?? blank(day)
+        row.total += p.amount
+        row.count += 1
+        const role = p.staff_id ? roleById[p.staff_id] : undefined
+        if (role === 'rep') row.leaderTotal += p.amount
+        else if (role) row.managerTotal += p.amount
+        if (p.method === 'pg') row.cardTotal += p.amount
+        else if (p.method === 'bank') row.bankTotal += p.amount
+        byDay.set(day, row)
+      }
+      // 결제가 없는 날도 근무인원만 입력했을 수 있어 함께 노출한다.
+      for (const day of Object.keys(headCounts)) {
+        if (!byDay.has(day) && inRange(day, from, to)) byDay.set(day, blank(day))
+      }
+      return [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day))
+    },
+  })
+}
+
+/** 근무인원 저장(최고관리자·관리자). 저장 즉시 일일요약이 갱신된다. */
+export function useSaveWorkCount() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { day: string; headCount: number }) => {
+      if (dataSource === 'supabase') {
+        const { error } = await sb()
+          .from('daily_work_count')
+          .upsert(
+            { day: v.day, head_count: v.headCount, updated_by: user?.id ?? null, updated_at: new Date().toISOString() },
+            { onConflict: 'day' },
+          )
+        if (error) throw error
+        return v
+      }
+      mutateDb((db) => {
+        db.daily_work_count = { ...(db.daily_work_count ?? {}), [v.day]: v.headCount }
+      })
+      return v
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: revenueKeys.all }),
   })
 }

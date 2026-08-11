@@ -587,6 +587,8 @@ export interface RequestPaymentInput {
   amount: number
   method: PaymentMethod
   depositorName?: string | null
+  /** 결제차수 라벨(현장 8/7) — 1차/2차/3차결제·2차/3차미수. 미지정이면 null 저장. */
+  roundLabel?: string | null
 }
 
 /** 회원 상세에서 결제 요청 → 대기(wait) 결제 생성. 승인은 결제 모듈(최고관리자/관리자). */
@@ -618,6 +620,7 @@ export function useRequestPayment() {
           staff_id: user?.id ?? member?.assigned_staff_id ?? null,
           paid_at: null,
           created_at: ts,
+          round_label: v.roundLabel ?? null,
         }
         db.payments.push(p)
         db.logs.push(adminLog(user?.id ?? null, 'payment.request', v.memberId, {

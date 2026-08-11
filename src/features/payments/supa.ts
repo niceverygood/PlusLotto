@@ -293,6 +293,7 @@ export async function createManualPayment(v: ManualPaymentInput, actor: string |
     period_start: null,
     period_end: null,
     depositor_name: v.depositorName || (member?.name ?? null),
+    round_label: v.roundLabel ?? null,
     // 매출 귀속은 "결제를 요청/등록한 담당자" 기준(현장 피드백 7/21) — 회원의 현재 담당자보다 우선.
     staff_id: actor ?? member?.assigned_staff_id ?? null,
     paid_at: null,

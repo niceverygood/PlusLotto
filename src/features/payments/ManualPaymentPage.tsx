@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { Check, Search } from 'lucide-react'
 import { Badge, Button, PageHeader } from '@/design-system/components'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
+import { PAYMENT_ROUNDS } from '@/lib/paymentRound'
 import { phone } from '@/lib/format'
 import type { PaymentMethod } from '@/types/db'
 import {
@@ -29,6 +30,7 @@ const schema = z.object({
     .positive('금액은 0보다 커야 합니다.'),
   method: z.enum(['bank', 'manual', 'pg']),
   depositorName: z.string(),
+  roundLabel: z.string(),
   approveNow: z.boolean(),
 })
 type FormValues = z.infer<typeof schema>
@@ -67,6 +69,7 @@ export function ManualPaymentPage() {
       amount: 0,
       method: 'bank',
       depositorName: '',
+      roundLabel: '1차결제' as string,
       approveNow: false,
     },
   })
@@ -100,6 +103,7 @@ export function ManualPaymentPage() {
         method: v.method,
         depositorName: v.depositorName,
         approveNow: v.approveNow,
+        roundLabel: v.roundLabel || null,
       },
       { onSuccess: () => navigate(`/payments?st=${v.approveNow ? 'approved' : 'wait'}`) },
     )
@@ -209,10 +213,22 @@ export function ManualPaymentPage() {
             </div>
           </div>
 
-          {/* 입금자명 */}
-          <div className="mb-4">
-            <label className={labelCls}>입금자명</label>
-            <input className={inputCls} placeholder="미입력 시 회원명" {...register('depositorName')} />
+          {/* 입금자명 · 결제차수(현장 8/7) */}
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>입금자명</label>
+              <input className={inputCls} placeholder="미입력 시 회원명" {...register('depositorName')} />
+            </div>
+            <div>
+              <label className={labelCls}>결제차수</label>
+              <select className={inputCls} {...register('roundLabel')}>
+                {PAYMENT_ROUNDS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* 즉시승인 */}

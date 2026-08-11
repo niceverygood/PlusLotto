@@ -14,7 +14,8 @@ export function sb(): SupabaseClient {
 }
 
 // 배열 테이블(테이블명 == DbShape 키). nav_access·site_settings 는 별도 형태.
-type ArrayKey = Exclude<keyof DbShape, 'nav_access' | 'site_settings'>
+// 배열 테이블 키만 — nav_access·site_settings 는 단일 객체, daily_work_count 는 맵이라 제외.
+type ArrayKey = Exclude<keyof DbShape, 'nav_access' | 'site_settings' | 'daily_work_count'>
 
 // range 페이지네이션 코어. PostgREST 는 응답을 기본 1000행으로 캡하므로, 1000행 초과 테이블은
 // 한 번의 select 로 전량을 못 가져온다(회차 1,227건·회원 1,985명 적재 후 발견 — 뒷부분이 잘림).
