@@ -1,0 +1,48 @@
+# 통화녹음 자동업로드 앱(APK) 빌드 (현장 8/11 — "통화녹음어플 연동은 언제쯤 가능할까요?")
+#
+# 배경: 개발 세션 환경에서는 dl.google.com 이 막혀 Android SDK 를 받을 수 없어 APK 를 만들 수 없었다
+# (D136·D138 에 기록). GitHub 러너에는 Android SDK 가 기본 설치돼 있어 여기서 빌드하면 그 제약이 없다.
+#
+# 사용법: Actions 탭 > "Android APK 빌드" > Run workflow 를 누르면 빌드되고,
+#        완료 후 그 실행 페이지 하단 Artifacts 에서 APK 를 내려받는다.
+#        내려받은 APK 는 전산 [설정 > 통화녹음 자동업로드 앱] 카드에 올리면 상담원에게 배포된다.
+name: Android APK 빌드
+
+on:
+  workflow_dispatch: # 수동 실행 — 앱 소스가 바뀔 때만 필요해서 자동 트리거는 두지 않는다.
+  push:
+    branches: [main]
+    paths:
+      - 'android-call-uploader/**'
+      - '.github/workflows/android-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17 준비
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 캐시
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 버전 확인
+        working-directory: android-call-uploader
+        run: grep -E 'versionName|versionCode' app/build.gradle.kts
+
+      - name: APK 빌드(debug)
+        working-directory: android-call-uploader
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: APK 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: pluslotto-call-uploader-apk
+          path: android-call-uploader/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
