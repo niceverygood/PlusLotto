@@ -29,6 +29,7 @@ import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { krw, num } from '@/lib/format'
 import { cn } from '@/lib/cn'
+import { useRole } from '@/lib/auth'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import {
   GROUP_LABEL,
@@ -37,16 +38,19 @@ import {
   useRevenueDayPayments,
   type GroupDim,
   type RevenueView,
+  useDailyRevenue,
+  useSaveWorkCount,
   type TrendPoint,
 } from './api'
 
-type PageView = RevenueView | 'calendar'
+type PageView = RevenueView | 'calendar' | 'daily'
 
 const VIEW_TABS: { key: PageView; label: string }[] = [
   { key: 'real', label: '전체매출' },
   { key: 'conversion', label: '팀장매출' },
   { key: 'team', label: '실장매출' },
   { key: 'calendar', label: '캘린더' },
+  { key: 'daily', label: '일일요약' },
 ]
 const REAL_GROUPS: GroupDim[] = ['staff', 'team', 'product', 'pg']
 
@@ -64,8 +68,11 @@ export function RevenuePage() {
   const to = get('to') ?? today()
   const groupBy = (get('group') ?? 'staff') as GroupDim
 
-  const summaryView: RevenueView = view === 'calendar' ? 'real' : view
-  const { data, isLoading } = useRevenue({ view: summaryView, from, to, groupBy }, { enabled: view !== 'calendar' })
+  const summaryView: RevenueView = view === 'calendar' || view === 'daily' ? 'real' : view
+  const { data, isLoading } = useRevenue(
+    { view: summaryView, from, to, groupBy },
+    { enabled: view !== 'calendar' && view !== 'daily' },
+  )
 
   const conv = view === 'conversion'
   const labels = conv
@@ -89,7 +96,9 @@ export function RevenuePage() {
         className="mb-3"
       />
 
-      {view === 'calendar' ? (
+      {view === 'daily' ? (
+        <DailySummarySection from={from} to={to} onRange={(f, t) => setMany({ from: f, to: t })} />
+      ) : view === 'calendar' ? (
         <RevenueCalendarSection />
       ) : (
         <>
@@ -463,5 +472,157 @@ function BreakdownTable({
         </tr>
       </tfoot>
     </table>
+  )
+}
+
+// ── 일일요약(현장 피드백 8/7, 정의현 차장) ─────────────────────────────────
+// "해당일의 근무인원수(자체입력), 팀장매출, 실장매출, 카드결제, 무통장결제 내용이 요약되어 보여질수
+// 있도록 추가 페이지". 근무인원만 수기 입력이고 나머지는 승인 결제 파생이라 자동 계산된다.
+// 근무인원은 최고관리자·관리자만 수정(매출 요약의 분모라 아무나 바꾸면 지표가 흔들린다 — RLS 와 동일).
+function DailySummarySection({
+  from,
+  to,
+  onRange,
+}: {
+  from: string
+  to: string
+  onRange: (from: string, to: string) => void
+}) {
+  const role = useRole()
+  const canEdit = role === 'admin' || role === 'manager'
+  const { data: rows = [], isLoading } = useDailyRevenue(from, to)
+  const saveWorkCount = useSaveWorkCount()
+  const [editing, setEditing] = useState<{ day: string; value: string } | null>(null)
+
+  const sum = rows.reduce(
+    (a, r) => ({
+      headCount: a.headCount + r.headCount,
+      leaderTotal: a.leaderTotal + r.leaderTotal,
+      managerTotal: a.managerTotal + r.managerTotal,
+      cardTotal: a.cardTotal + r.cardTotal,
+      bankTotal: a.bankTotal + r.bankTotal,
+      total: a.total + r.total,
+      count: a.count + r.count,
+    }),
+    { headCount: 0, leaderTotal: 0, managerTotal: 0, cardTotal: 0, bankTotal: 0, total: 0, count: 0 },
+  )
+
+  const commit = (day: string, raw: string) => {
+    const n = Math.max(0, Number(raw.replace(/\D/g, '')) || 0)
+    saveWorkCount.mutate({ day, headCount: n }, { onSuccess: () => setEditing(null) })
+  }
+
+  const th = 'px-3 py-2 text-[11.5px] font-bold uppercase tracking-wide text-gray-500'
+  const td = 'px-3 py-2 text-right font-mono text-[12.5px] tnum text-ink-800'
+
+  return (
+    <div>
+      <div className="mb-3">
+        <DateRangeFilter
+          value={{ from, to }}
+          onChange={(r) => onRange(r.from ?? from, r.to ?? to)}
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className={th + ' text-left'}>날짜</th>
+                <th className={th + ' text-right'}>근무인원</th>
+                <th className={th + ' text-right'}>팀장매출</th>
+                <th className={th + ' text-right'}>실장매출</th>
+                <th className={th + ' text-right'}>카드결제</th>
+                <th className={th + ' text-right'}>무통장결제</th>
+                <th className={th + ' text-right'}>합계</th>
+                <th className={th + ' text-right'}>건수</th>
+                <th className={th + ' text-right'}>1인당</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-[12.5px] text-gray-400">
+                    불러오는 중…
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-[12.5px] text-gray-400">
+                    이 기간에 승인된 결제가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.day} className="border-b border-gray-100">
+                    <td className="px-3 py-2 font-mono text-[12.5px] tnum text-gray-700">{r.day}</td>
+                    <td className="px-3 py-2 text-right">
+                      {editing?.day === r.day ? (
+                        <input
+                          autoFocus
+                          className="h-7 w-[64px] rounded border border-primary-400 px-1.5 text-right font-mono text-[12px] tnum outline-none"
+                          value={editing.value}
+                          onChange={(e) => setEditing({ day: r.day, value: e.target.value })}
+                          onBlur={() => commit(r.day, editing.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commit(r.day, editing.value)
+                            if (e.key === 'Escape') setEditing(null)
+                          }}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => setEditing({ day: r.day, value: String(r.headCount) })}
+                          className={cn(
+                            'rounded px-2 py-0.5 font-mono text-[12.5px] tnum',
+                            canEdit ? 'hover:bg-primary-50 hover:text-primary-700' : 'cursor-default',
+                            r.headCount === 0 ? 'text-gray-300' : 'text-ink-800',
+                          )}
+                          title={canEdit ? '클릭해서 근무인원 입력' : '근무인원 수정은 최고관리자·관리자만 가능합니다'}
+                        >
+                          {r.headCount === 0 ? '-' : r.headCount}
+                        </button>
+                      )}
+                    </td>
+                    <td className={td}>{krw(r.leaderTotal)}</td>
+                    <td className={td}>{krw(r.managerTotal)}</td>
+                    <td className={td}>{krw(r.cardTotal)}</td>
+                    <td className={td}>{krw(r.bankTotal)}</td>
+                    <td className={td + ' font-bold'}>{krw(r.total)}</td>
+                    <td className={td + ' text-gray-500'}>{r.count.toLocaleString('ko-KR')}</td>
+                    <td className={td + ' text-gray-500'}>
+                      {r.headCount > 0 ? krw(Math.round(r.total / r.headCount)) : '-'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50">
+                  <td className="px-3 py-2 text-[12px] font-bold text-gray-600">합계</td>
+                  <td className={td + ' font-bold'}>{sum.headCount || '-'}</td>
+                  <td className={td + ' font-bold'}>{krw(sum.leaderTotal)}</td>
+                  <td className={td + ' font-bold'}>{krw(sum.managerTotal)}</td>
+                  <td className={td + ' font-bold'}>{krw(sum.cardTotal)}</td>
+                  <td className={td + ' font-bold'}>{krw(sum.bankTotal)}</td>
+                  <td className={td + ' font-bold'}>{krw(sum.total)}</td>
+                  <td className={td + ' font-bold text-gray-500'}>{sum.count.toLocaleString('ko-KR')}</td>
+                  <td className={td + ' text-gray-400'}>-</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      <p className="mt-2 text-[11.5px] leading-relaxed text-gray-500">
+        근무인원은 전산에서 계산할 수 없어 직접 입력합니다(숫자 칸 클릭 → 입력 → Enter).
+        팀장매출·실장매출은 담당자 역할 기준이고, 카드/무통장은 결제수단 기준이라 합계와 각각 다를 수
+        있습니다(담당 미배정·수기결제 포함). ‘1인당’은 합계 ÷ 근무인원입니다.
+      </p>
+    </div>
   )
 }

@@ -40,6 +40,8 @@ export interface DbShape {
   faqs: Faq[]
   nav_access: Record<string, Role[]>
   site_settings: SiteSettings
+  /** 날짜별 근무인원(매출 일일요약, 현장 8/7) — 결제 데이터로 계산 불가한 수기 입력값. */
+  daily_work_count: Record<string, number>
 }
 
 const DB_KEY = 'pluslotto-db'

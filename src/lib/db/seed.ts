@@ -728,5 +728,6 @@ export function buildSeed(): DbShape {
     faqs,
     nav_access: cloneNavAccess(),
     site_settings: buildSiteSettings(),
+    daily_work_count: {},
   }
 }

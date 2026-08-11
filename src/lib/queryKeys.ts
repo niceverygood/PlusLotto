@@ -25,6 +25,7 @@ export const revenueKeys = {
   all: ['revenue'] as const,
   summary: (p: Record<string, unknown>) => ['revenue', 'summary', p] as const,
   calendar: (p: string) => ['revenue', 'calendar', p] as const,
+  daily: (p: string) => ['revenue', 'daily', p] as const,
 }
 
 export const lottoKeys = {
