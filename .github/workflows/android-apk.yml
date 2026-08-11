@@ -3,9 +3,11 @@
 # 배경: 개발 세션 환경에서는 dl.google.com 이 막혀 Android SDK 를 받을 수 없어 APK 를 만들 수 없었다
 # (D136·D138 에 기록). GitHub 러너에는 Android SDK 가 기본 설치돼 있어 여기서 빌드하면 그 제약이 없다.
 #
-# 사용법: Actions 탭 > "Android APK 빌드" > Run workflow 를 누르면 빌드되고,
-#        완료 후 그 실행 페이지 하단 Artifacts 에서 APK 를 내려받는다.
-#        내려받은 APK 는 전산 [설정 > 통화녹음 자동업로드 앱] 카드에 올리면 상담원에게 배포된다.
+# 사용법: Actions 탭 > "Android APK 빌드" > Run workflow 를 누르면 빌드된다.
+#   ① SUPABASE_SERVICE_ROLE_KEY 시크릿이 등록돼 있으면 → 빌드된 APK 가 전산
+#      [설정 > 통화녹음 자동업로드 앱] 카드에 자동으로 올라간다(사람 손 필요 없음).
+#   ② 시크릿이 없으면 → 그 단계는 건너뛰고, 실행 페이지 하단 Artifacts 에서 APK 를 내려받아
+#      전산 설정 카드에 수동으로 올린다.
 name: Android APK 빌드
 
 on:
@@ -19,6 +21,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 앱이 이미 임베드하고 있는 것과 같은 라이브 프로젝트(공개 URL). 키는 시크릿으로만 받는다.
+      SUPABASE_URL: https://xmfdbmlpvvqqkhqemfay.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,3 +52,38 @@ jobs:
           path: android-call-uploader/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # 전산 [설정 > 통화녹음 자동업로드 앱] 카드에 그대로 반영한다.
+      # 저장 위치·메타 형식은 src/features/settings/supa.ts 의 uploadAppDownload() 와 동일하게 맞춘다
+      # (비공개 버킷 app-downloads / 고정 경로 pluslotto-call-uploader.apk / site_settings.app_download).
+      # 시크릿이 없으면 통째로 건너뛴다 — 그 경우 위 Artifacts 에서 받아 수동 업로드.
+      - name: 전산 설정 카드에 배포
+        if: ${{ env.SUPABASE_SERVICE_ROLE_KEY != '' }}
+        working-directory: android-call-uploader
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          VERSION=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          SIZE=$(stat -c%s "$APK")
+          UPLOADED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          echo "APK=$APK version=$VERSION size=$SIZE"
+
+          curl -sS --fail-with-body -X POST \
+            "$SUPABASE_URL/storage/v1/object/app-downloads/pluslotto-call-uploader.apk" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary "@$APK" > /dev/null
+
+          META=$(jq -n --arg v "$VERSION" --argjson s "$SIZE" --arg t "$UPLOADED_AT" \
+            '{app_download:{path:"pluslotto-call-uploader.apk",name:"플러스로또 통화녹음 업로더",version:$v,size:$s,uploaded_at:$t,uploaded_by:null}}')
+
+          curl -sS --fail-with-body -X PATCH \
+            "$SUPABASE_URL/rest/v1/site_settings?id=eq.1" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$META"
+
+          echo "전산 설정 카드에 v$VERSION 반영 완료"
