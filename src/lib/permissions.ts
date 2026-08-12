@@ -45,6 +45,13 @@ export function canViewCallRecordings(role: Role | null): boolean {
   return role === 'admin' || role === 'manager'
 }
 
+// 결제건을 사후에 손대는 권한 — 결제내역 수정(현장 7/21)과 수기취소(현장 8/12, 정의현 차장 —
+// "실장 이상급 권한으로 회원정보창에서 수기취소 버튼을 추가")가 같은 범위다.
+// 라벨 기준 실장(leader) 이상 = leader·manager·admin. 결제 Drawer 와 회원정보창이 공유한다.
+export function canAmendPayment(role: Role | null): boolean {
+  return role === 'leader' || role === 'manager' || role === 'admin'
+}
+
 // 메뉴 노출 기본 매트릭스 (CLAUDE §5). 권한관리(/admins/roles)에서 편집 → DB nav_access 로 영속.
 // 데이터 접근은 RLS(lib/rls/policies.sql)로 이중 통제.
 // TODO(live-verify): `08 권한관리` 화면 미확인 → 아래는 합리적 기본값. ASSUMPTIONS 기록.

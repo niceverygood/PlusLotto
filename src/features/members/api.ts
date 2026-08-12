@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, PaymentMethod, Role, SmsSend, Staff, WeeklyRecoIssue } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
+import { cancelPaymentInDb, cancelPaymentRemote } from '@/lib/db/paymentCancel'
 import { dataSource } from '@/lib/supabase'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
@@ -662,6 +663,36 @@ export function useUpdatePaymentStaff() {
     onSuccess: (v) => {
       qc.invalidateQueries({ queryKey: paymentKeys.all })
       qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: memberKeys.payments(v.memberId) })
+    },
+  })
+}
+
+/**
+ * 회원정보창에서 결제 수기취소 (현장 8/12, 정의현 차장 — "실장 이상급 권한으로 회원정보창에서
+ * 수기취소 버튼을 추가"). 결제 모듈의 PG취소와 **완전히 같은 동작**이다(lib/db/paymentCancel 공유):
+ * 결제상태=취소 + 등급 롤백 검토 + 매출 차감(파생) + 감사로그. 권한은 canAmendPayment(실장 이상),
+ * 확인 모달은 호출부(MemberDrawer)에서 §10 대로 띄운다.
+ */
+export function useCancelMemberPayment() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { paymentId: string; memberId: string }) => {
+      if (dataSource === 'supabase') {
+        await cancelPaymentRemote(v.paymentId, user?.id ?? null)
+        return v
+      }
+      mutateDb((db) => {
+        cancelPaymentInDb(db, v.paymentId, user?.id ?? null)
+      })
+      return v
+    },
+    onSuccess: (v) => {
+      // §8: 결제·매출·회원(등급 롤백 가능)·해당 회원 결제내역까지 함께 갱신.
+      qc.invalidateQueries({ queryKey: paymentKeys.all })
+      qc.invalidateQueries({ queryKey: revenueKeys.all })
+      qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: memberKeys.payments(v.memberId) })
     },
   })

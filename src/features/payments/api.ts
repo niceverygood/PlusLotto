@@ -15,6 +15,7 @@ import type {
 import { genId, mutateDb, nowIso, readDb, type DbShape } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
+import { cancelPaymentInDb } from '@/lib/db/paymentCancel'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
 import { renderSms } from '@/lib/sms'
@@ -363,39 +364,11 @@ export function useCancelPayment() {
   return useMutation({
     mutationFn: async (v: { id: string }) => {
       if (dataSource === 'supabase') return supa.cancelPayment(v.id, user?.id ?? null)
+      // 등급 롤백 검토(이 결제가 부여한 등급이고 다른 승인결제가 더는 받쳐주지 않으면 무료로
+      // 되돌린다)까지 포함한 구현은 lib/db/paymentCancel 하나를 공유한다.
       let memberId: string | null = null
       mutateDb((db) => {
-        const p = db.payments.find((x) => x.id === v.id)
-        if (!p || p.status === 'cancelled') return
-        memberId = p.member_id
-        const wasApproved = p.status === 'approved'
-        p.status = 'cancelled'
-        // 등급 롤백 검토: 이 결제가 부여한 등급이고, 다른 승인 결제가 그 등급을
-        // 더는 받쳐주지 않으면 무료로 되돌린다(매출 귀속/등급 정합).
-        let rolledBack = false
-        const member = db.members.find((m) => m.id === p.member_id)
-        const product = p.product_id ? db.products.find((pr) => pr.id === p.product_id) : undefined
-        if (wasApproved && member && product && member.grade === product.grade_granted) {
-          const stillPaid = db.payments.some(
-            (o) =>
-              o.id !== p.id &&
-              o.member_id === member.id &&
-              o.status === 'approved' &&
-              o.product_id != null,
-          )
-          if (!stillPaid) {
-            member.grade = 'free'
-            rolledBack = true
-          }
-        }
-        db.logs.push(
-          paymentLog(user?.id ?? null, 'payment.cancel', p.id, {
-            member_id: p.member_id,
-            amount: p.amount,
-            was_approved: wasApproved,
-            grade_rolled_back: rolledBack,
-          }),
-        )
+        memberId = cancelPaymentInDb(db, v.id, user?.id ?? null).memberId
       })
       return memberId
     },

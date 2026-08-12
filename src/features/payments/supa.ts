@@ -9,6 +9,7 @@ import { addMonths } from 'date-fns'
 import type { Grade, Member, Payment, Product, SiteSettings, SmsTemplate } from '@/types/db'
 import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, insertWithOptionalColumns, sb } from '@/lib/db/remote'
+import { cancelPaymentRemote } from '@/lib/db/paymentCancel'
 import { renderSms } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import type {
@@ -63,7 +64,7 @@ export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResul
   const result = data as { rows?: PaymentRow[]; total?: number } | null
   const total = Number(result?.total ?? 0)
   return {
-    rows: result?.rows ?? [],
+    rows: await withMemberPhones(result?.rows ?? []),
     total,
     pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
   }
@@ -85,7 +86,31 @@ export async function fetchPaymentCounts(): Promise<Record<PaymentStatusTab, num
 export async function fetchPaymentDetail(id: string): Promise<PaymentRow | null> {
   const { data, error } = await sb().rpc('admin_payment_detail', { p_id: id })
   if (error) throw error
-  return (data as PaymentRow | null) ?? null
+  const row = (data as PaymentRow | null) ?? null
+  return row ? (await withMemberPhones([row]))[0] : null
+}
+
+/**
+ * 결제행의 회원 전화번호 보강 (현장 8/4 요청 → 8/12 재요청 "유저이름 옆에 전화번호").
+ *
+ * 전화번호는 원래 `admin_payments_page` / `admin_payment_detail` RPC 가 member 객체에 함께
+ * 내려주도록 마이그레이션(20260804120000)을 만들어 뒀는데, 그게 아직 라이브에 적용되지 않아
+ * 현장 화면에서 휴대폰 칸이 전부 '-' 로 보였다. RPC 적용을 기다리는 대신 여기서 채운다.
+ *
+ * 판정은 `phone` 키의 **부재**(undefined)로 한다 — 마이그레이션이 적용되면 번호 없는 회원도
+ * `phone: null` 로 내려오므로 이 보강 쿼리는 자동으로 멈춘다(적용 후 불필요한 왕복 없음).
+ */
+async function withMemberPhones(rows: PaymentRow[]): Promise<PaymentRow[]> {
+  const missing = [...new Set(rows.filter((r) => r.member && r.member.phone === undefined).map((r) => r.member!.id))]
+  if (missing.length === 0) return rows
+  const { data, error } = await sb().from('members').select('id, phone').in('id', missing)
+  if (error) throw error
+  const phoneById = new Map((data ?? []).map((m) => [m.id as string, (m.phone as string | null) ?? null]))
+  return rows.map((r) =>
+    r.member && r.member.phone === undefined
+      ? { ...r, member: { ...r.member, phone: phoneById.get(r.member.id) ?? null } }
+      : r,
+  )
 }
 
 export async function searchMembers(term: string): Promise<MemberOption[]> {
@@ -199,43 +224,14 @@ export async function approvePayment(id: string, actor: string | null): Promise<
   return p.member_id
 }
 
-/** PG취소/환불 (승인/대기 → 취소). 승인이었고 다른 승인결제가 등급을 못 받치면 free 로 롤백. */
+/**
+ * PG취소/환불 (승인/대기 → 취소). 승인이었고 다른 승인결제가 등급을 못 받치면 free 로 롤백.
+ * 구현은 `lib/db/paymentCancel` 하나로 모았다 — 회원정보창의 수기취소(현장 8/12)와 같은 동작이라
+ * 등급 롤백 규칙이 두 벌이 되지 않게 한다.
+ */
 export async function cancelPayment(id: string, actor: string | null): Promise<string | null> {
-  const p = await fetchPayment(id)
-  if (!p || p.status === 'cancelled') return null
-  const wasApproved = p.status === 'approved'
-  const { error } = await sb().from('payments').update({ status: 'cancelled' }).eq('id', id)
-  if (error) throw error
-  let rolledBack = false
-  if (wasApproved) {
-    const member = await fetchMember(p.member_id)
-    const product = await fetchProduct(p.product_id)
-    if (member && product && member.grade === product.grade_granted) {
-      const { data, error: qe } = await sb()
-        .from('payments')
-        .select('id')
-        .eq('member_id', member.id)
-        .eq('status', 'approved')
-        .not('product_id', 'is', null)
-        .neq('id', p.id)
-        .limit(1)
-      if (qe) throw qe
-      if ((data ?? []).length === 0) {
-        const { error: ue } = await sb().from('members').update({ grade: 'free' }).eq('id', member.id)
-        if (ue) throw ue
-        rolledBack = true
-      }
-    }
-  }
-  await insertLog({
-    kind: 'payment',
-    actor,
-    action: 'payment.cancel',
-    target_type: 'payment',
-    target_id: id,
-    meta: { member_id: p.member_id, amount: p.amount, was_approved: wasApproved, grade_rolled_back: rolledBack },
-  })
-  return p.member_id
+  const { memberId } = await cancelPaymentRemote(id, actor)
+  return memberId
 }
 
 /** 결제내역 수정(금액·결제수단·PG사·입금자명) — 실장 이상 전용(현장 피드백 7/21). 반환=대상 회원 id. */
