@@ -17,7 +17,7 @@ import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { normalizeInflowType } from '@/lib/inflow'
-import type { AutoAssignResult, DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
+import type { AutoAssignResult, BulkImportResult, DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
 function sb(): SupabaseClient {
@@ -256,7 +256,7 @@ export async function createMember(input: MemberCreateInput, actor: string | nul
 export async function bulkImportMembers(
   inputs: MemberCreateInput[],
   actor: string | null,
-): Promise<{ created: number; dup: number }> {
+): Promise<BulkImportResult> {
   // user_id 채번용으로만 조회한다. 전화 중복 판정은 DB 트리거 한 곳에서 처리한다.
   const existing = await paginateAll<{ user_id: string }>((from, to) =>
     sb().from('members').select('user_id').range(from, to),
@@ -320,29 +320,61 @@ export async function bulkImportMembers(
   // 문 안에서 500행씩 직렬로 실행되며 커넥션 풀러/PostgREST 요청 타임아웃을 넘겨 큰 배치가 통째로
   // 실패했다. 청크를 작게 쪼개면 실패해도 그 청크만 재시도 가능하고, 총 건수는 루프가 처리하므로
   // 500건이든 그 이상이든 동일하게 동작한다.
-  const CHUNK = 100
+  // 8/12 재발("디비 일괄 임포트가 안되고 있습니다") 대응으로 세 가지를 바꿨다:
+  //   ① 청크 100 → 40. 위 트리거의 중복검사는 `regexp_replace(phone)` 비교라 인덱스를 못 타
+  //      회원 수(15만+)에 비례해 행마다 풀스캔한다. 회원이 늘수록 한 요청이 게이트웨이 타임아웃을
+  //      넘기므로 청크를 더 잘게 썬다. (근본 해결은 20260812040000 함수 인덱스 — 적용 필요)
+  //   ② 청크 실패 시 즉시 throw 하지 않고 재시도(1s·3s) 후, 그래도 실패하면 그 청크만 건너뛴다.
+  //      종전에는 마지막 청크 하나가 실패하면 앞서 들어간 수천 건이 있어도 화면엔 실패만 남아
+  //      현장에서 "아무것도 안 된다"로 보였다.
+  //   ③ 실패 건수·첫 오류 메시지를 결과로 돌려준다(호출부에서 그대로 노출).
+  const CHUNK = 40
   const createdIds = new Set<string>()
-  for (let i = 0; i < memberRows.length; i += CHUNK) {
-    const { data, error } = await sb().from('members').insert(memberRows.slice(i, i + CHUNK)).select('id')
-    if (error) throw error
-    for (const row of (data ?? []) as { id: string }[]) createdIds.add(row.id)
+  let failed = 0
+  let firstError: string | null = null
+
+  async function insertChunk(rows: unknown[]): Promise<{ id: string }[] | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data, error } = await sb().from('members').insert(rows).select('id')
+      if (!error) return (data ?? []) as { id: string }[]
+      if (!firstError) firstError = error.message ?? String(error)
+      if (attempt < 2) await new Promise((r) => setTimeout(r, attempt === 0 ? 1000 : 3000))
+    }
+    return null
   }
+
+  for (let i = 0; i < memberRows.length; i += CHUNK) {
+    const slice = memberRows.slice(i, i + CHUNK)
+    const inserted = await insertChunk(slice)
+    if (inserted === null) {
+      failed += slice.length
+      continue
+    }
+    for (const row of inserted) createdIds.add(row.id)
+  }
+
+  // 한 건도 못 들어갔고 오류까지 있었다면 침묵하지 않고 실패로 알린다(부분 성공만 관대하게 처리).
+  if (createdIds.size === 0 && firstError) {
+    throw new Error(`회원 등록에 실패했습니다: ${firstError}`)
+  }
+
   const createdAssignments = assignmentRows.filter((row) => createdIds.has(String(row.member_id)))
   for (let i = 0; i < createdAssignments.length; i += CHUNK) {
+    // 배정은 실패해도 회원 등록 자체를 되돌리지 않는다 — 담당은 화면에서 다시 배분할 수 있다.
     const { error } = await sb().from('assignments').insert(createdAssignments.slice(i, i + CHUNK))
-    if (error) throw error
+    if (error && !firstError) firstError = error.message
   }
   const created = createdIds.size
-  const dup = memberRows.length - created
+  const dup = memberRows.length - created - failed
   await pushLog({
     kind: 'admin',
     actor,
     action: 'member.bulk_import',
     target_type: 'member',
     target_id: null,
-    meta: { count: created, dup },
+    meta: { count: created, dup, failed, error: firstError },
   })
-  return { created, dup }
+  return { created, dup, failed, error: firstError }
 }
 
 export async function updateMember(id: string, patch: MemberPatch, actor: string | null): Promise<void> {

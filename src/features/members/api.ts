@@ -870,6 +870,17 @@ export interface MemberCreateResult {
   created: boolean
 }
 
+/**
+ * 일괄 임포트 결과. `failed`·`error` 는 현장 8/12("디비 일괄 임포트가 안되고 있습니다") 대응으로
+ * 추가했다 — 종전에는 실패해도 화면에 아무것도 뜨지 않아 원인을 물어볼 수조차 없었다.
+ */
+export interface BulkImportResult {
+  created: number
+  dup: number
+  failed: number
+  error: string | null
+}
+
 const onlyDigits = (s: string) => s.replace(/\D/g, '')
 
 // 단건/일괄 공통: MemberCreateInput → 신규 리드 Member(기본값 동일 — 미배분·무료·정상·미아웃콜).
@@ -1025,7 +1036,7 @@ export function useBulkImportMembers() {
         }
         db.logs.push(adminLog(user?.id ?? null, 'member.bulk_import', null, { count: created, dup: dupCount }))
       })
-      return { created, dup: dupCount }
+      return { created, dup: dupCount, failed: 0, error: null }
     },
     onSuccess: () => invalidate(),
   })
