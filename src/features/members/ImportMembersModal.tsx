@@ -3,10 +3,11 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Button, Modal } from '@/design-system/components'
+import { cn } from '@/lib/cn'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
 import type { Grade } from '@/types/db'
-import { useBulkImportMembers, type MemberCreateInput } from './api'
+import { useBulkImportMembers, type BulkImportResult, type MemberCreateInput } from './api'
 import { autoMapHeaders, IMPORT_FIELDS, parseLeadFile, type ParsedSheet } from './import'
 import { INFLOW_TYPES } from './views'
 
@@ -32,7 +33,10 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
   const [defInflowType, setDefInflowType] = useState('')
   const [defStaff, setDefStaff] = useState('')
   const [parseErr, setParseErr] = useState<string | null>(null)
-  const [result, setResult] = useState<{ created: number; dup: number } | null>(null)
+  const [result, setResult] = useState<BulkImportResult | null>(null)
+  // 등록 실패 메시지(현장 8/12) — 종전에는 onError 자체가 없어 실패해도 화면에 아무것도 뜨지
+  // 않았다. 현장에서는 "임포트가 안된다"까지만 알 수 있고 원인을 물어볼 수가 없었다.
+  const [importErr, setImportErr] = useState<string | null>(null)
 
   async function onFile(file?: File | null) {
     if (!file) return
@@ -91,7 +95,11 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
   const canPreview = !!mapping.name && !!mapping.phone
 
   function doImport() {
-    importMut.mutate(valid, { onSuccess: (r) => setResult(r) })
+    setImportErr(null)
+    importMut.mutate(valid, {
+      onSuccess: (r) => setResult(r),
+      onError: (e) => setImportErr(e instanceof Error ? e.message : '알 수 없는 오류로 등록에 실패했습니다.'),
+    })
   }
 
   // ── 결과 ──────────────────────────────────────────
@@ -100,7 +108,7 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
       <Modal
         open
         onClose={onClose}
-        title="일괄 등록 완료"
+        title={result.failed > 0 ? '일괄 등록 일부 실패' : '일괄 등록 완료'}
         size="sm"
         footer={
           <Button variant="pri" size="sm" onClick={onClose}>
@@ -109,13 +117,26 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
         }
       >
         <div className="flex flex-col items-center gap-2 py-4 text-center">
-          <CheckCircle2 className="h-10 w-10 text-success" />
+          <CheckCircle2 className={cn('h-10 w-10', result.failed > 0 ? 'text-warning' : 'text-success')} />
           <p className="text-[15px] font-bold text-ink-800">
             {result.created.toLocaleString('ko-KR')}건 등록 완료
           </p>
           {result.dup > 0 && (
             <p className="text-[12.5px] text-warning">
               중복 {result.dup}건은 등록하지 않고 기존 DB를 ‘중복 DB’로 표시했습니다.
+            </p>
+          )}
+          {/* 부분 실패(현장 8/12) — 일부 묶음이 서버 오류로 못 들어간 경우. 나머지는 이미
+              등록됐으므로 실패분만 다시 올리면 된다. */}
+          {result.failed > 0 && (
+            <p className="text-[12.5px] font-semibold text-danger">
+              {result.failed.toLocaleString('ko-KR')}건은 서버 오류로 등록되지 않았습니다. 잠시 후
+              그 건들만 다시 올려주세요.
+            </p>
+          )}
+          {result.error && (
+            <p className="max-w-[380px] break-words rounded-md bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-500">
+              오류 내용: {result.error}
             </p>
           )}
           <p className="text-[12px] text-gray-500">목록·세그먼트 카운트에 즉시 반영됩니다.</p>
@@ -303,6 +324,16 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
       {/* ── 3. 미리보기 ── */}
       {step === 'preview' && (
         <div className="space-y-3">
+          {/* 등록 실패 안내(현장 8/12) — 원인을 현장이 그대로 읽어 전달할 수 있게 서버 메시지를 노출. */}
+          {importErr && (
+            <div className="flex items-start gap-1.5 rounded-md border border-danger-bd bg-danger-bg px-3 py-2 text-[12px] text-danger">
+              <AlertTriangle className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+              <span className="break-words">
+                <b>등록에 실패했습니다.</b> 잠시 후 다시 시도해 주세요. 계속 실패하면 아래 문구를 그대로
+                전달해 주세요 — {importErr}
+              </span>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 text-[12px]">
             <span className="rounded-md bg-success-bg px-2 py-1 font-semibold text-success">
               등록 대상 {valid.length.toLocaleString('ko-KR')}건
