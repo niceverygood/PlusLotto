@@ -2,7 +2,7 @@
 // 액션(등급변경·담당변경·정지·아웃콜·문자발송). 모든 액션은 api 뮤테이션 →
 // 관련 쿼리 무효화 + 로그/배정/문자 부수효과를 만든다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CreditCard, Dices, ExternalLink, Mic, MessageSquare, PenLine, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2 } from 'lucide-react'
+import { CreditCard, Dices, ExternalLink, Mic, MessageSquare, PenLine, Play, Send, Sparkles, Trash2, Trophy, Upload, Wand2, XCircle } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -18,7 +18,7 @@ import { GRADE_LABEL, PAYMENT_METHOD_LABEL, SMS_TYPE_LABEL } from '@/design-syst
 import { date, datetime, krw } from '@/lib/format'
 import { useStaff, useTeams } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
-import { canViewCallRecordings } from '@/lib/permissions'
+import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
@@ -52,10 +52,11 @@ import {
   useUpdateMember,
   useUpdateMemberSettings,
   useUpdatePaymentStaff,
+  useCancelMemberPayment,
   useUploadCallRecording,
   type ResetMemo,
 } from './api'
-import type { PaymentMethod } from '@/types/db'
+import type { Payment, PaymentMethod } from '@/types/db'
 
 const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 // 메모는 별도 탭이 아니라 '기본정보' 탭 최하단에 표시(현장 피드백 7/3).
@@ -143,6 +144,9 @@ export function MemberDrawer({
   const deleteRecoIssue = useDeleteRecoIssue()
   const requestPayment = useRequestPayment()
   const updatePaymentStaff = useUpdatePaymentStaff()
+  const cancelPayment = useCancelMemberPayment()
+  // 결제 수기취소 권한 — 실장 이상(현장 8/12). 결제 Drawer 의 수정 권한과 같은 범위.
+  const canAmend = canAmendPayment(role)
   const updateSettings = useUpdateMemberSettings()
   const uploadCallRec = useUploadCallRecording()
   const deleteCallRec = useDeleteCallRecording()
@@ -181,6 +185,8 @@ export function MemberDrawer({
   const [payAmount, setPayAmount] = useState('') // 금액 수기 입력(현장 피드백 <결제> 1) — 상품 선택 시 기본값
   // 결제차수(현장 8/7) — 승인 이력 건수로 기본값을 제안하고 운영자가 바꿀 수 있다('미수' 포함).
   const [payRound, setPayRound] = useState<PaymentRound | ''>('')
+  // 수기취소 확인 대상(현장 8/12) — 위험 액션이라 확인 모달을 거친다(§10).
+  const [payToCancel, setPayToCancel] = useState<Payment | null>(null)
 
   useEffect(() => {
     setMemoDraft('') // 새 콜메모 입력칸(리스트형 누적) — 회원 전환 시 비움
@@ -808,6 +814,20 @@ export function MemberDrawer({
                 ) : (
                   <span className="text-gray-700">{p.staff_id ? staffName[p.staff_id] ?? '-' : '미지정'}</span>
                 )}
+                {/* 수기취소(현장 8/12, 정의현 차장) — 실장 이상만. 결제 모듈의 PG취소와 동일 동작
+                    (등급 롤백·매출 차감·로그)이라 결제 화면으로 넘어가지 않고 여기서 끝낸다. */}
+                {canAmend && (p.status === 'approved' || p.status === 'wait') && (
+                  <Button
+                    size="sm"
+                    variant="dng"
+                    className="ml-auto"
+                    icon={<XCircle className="h-3.5 w-3.5" />}
+                    disabled={cancelPayment.isPending}
+                    onClick={() => setPayToCancel(p)}
+                  >
+                    수기취소
+                  </Button>
+                )}
               </div>
             </div>
             )}
@@ -1295,6 +1315,34 @@ export function MemberDrawer({
         </div>
       )}
 
+      {/* 결제 수기취소 확인(현장 8/12) — 등급 롤백·매출 차감이 함께 일어나므로 되돌릴 수 없음을 명시. */}
+      <ConfirmModal
+        open={payToCancel !== null}
+        onClose={() => setPayToCancel(null)}
+        onConfirm={() => {
+          if (!payToCancel) return
+          cancelPayment.mutate(
+            { paymentId: payToCancel.id, memberId: id },
+            {
+              onSuccess: () => setPayToCancel(null),
+              onError: (error) =>
+                window.alert(error instanceof Error ? error.message : '결제 취소에 실패했습니다.'),
+            },
+          )
+        }}
+        title="결제 수기취소"
+        description={
+          payToCancel
+            ? `${member.name}(${member.user_id}) 회원의 ${krw(payToCancel.amount)} 결제를 취소 처리합니다.` +
+              (payToCancel.status === 'approved'
+                ? ' 승인된 결제라 매출에서 차감되고, 이 결제로 올라간 등급을 받쳐줄 다른 승인 결제가 없으면 무료 등급으로 되돌아갑니다.'
+                : '')
+            : undefined
+        }
+        confirmText="취소 처리"
+        tone="danger"
+        loading={cancelPayment.isPending}
+      />
       <ConfirmModal
         open={confirmSuspend}
         onClose={() => setConfirmSuspend(false)}

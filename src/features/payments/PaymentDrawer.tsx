@@ -10,6 +10,7 @@ import { datetime, krw } from '@/lib/format'
 import { useStaff } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
+import { canAmendPayment } from '@/lib/permissions'
 import type { PaymentMethod } from '@/types/db'
 import { cn } from '@/lib/cn'
 import { useActiveProducts, useApprovePayment, useCancelPayment, usePayment, useUpdatePayment } from './api'
@@ -82,7 +83,7 @@ export function PaymentDrawer({
   const canCancel = payment.status === 'approved' || payment.status === 'wait'
   const member = payment.member
   // 결제내역 수정은 실장 이상(leader/manager/admin) 전용 — 팀장(rep)은 승인/취소만 가능(현장 피드백 7/21).
-  const canEdit = role === 'leader' || role === 'manager' || role === 'admin'
+  const canEdit = canAmendPayment(role)
 
   function startEdit(): void {
     setDraft({
