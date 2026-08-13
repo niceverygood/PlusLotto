@@ -52,12 +52,14 @@ const formSchema = z.object({
     ovr: gradeColorSchema,
     toss: gradeColorSchema,
   }),
-  // 회원·결제 상태 뱃지 색(현장 8/3) — grade_colors 와 같은 {fg,bg} 형태, 상태값 8개 전부 명시.
+  // 회원·결제 상태 뱃지 색(현장 8/3) — grade_colors 와 같은 {fg,bg} 형태, 상태값 전부 명시.
+  // expired(만료)는 DB 상태가 아니라 종료일에서 계산하는 표시 전용 상태(현장 8/13)지만 색은 동일하게 설정.
   status_colors: z.object({
     active: gradeColorSchema,
     suspended: gradeColorSchema,
     deleted: gradeColorSchema,
     withdrawn: gradeColorSchema,
+    expired: gradeColorSchema,
     wait: gradeColorSchema,
     approved: gradeColorSchema,
     failed: gradeColorSchema,

@@ -19,6 +19,8 @@ import { date, datetime, krw } from '@/lib/format'
 import { useStaff, useTeams } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
 import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
+import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
+import { isEndDatePast } from '@/lib/memberExpiry'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
@@ -147,6 +149,8 @@ export function MemberDrawer({
   const cancelPayment = useCancelMemberPayment()
   // 결제 수기취소 권한 — 실장 이상(현장 8/12). 결제 Drawer 의 수정 권한과 같은 범위.
   const canAmend = canAmendPayment(role)
+  // 결제 수기수정(현장 8/13) — 결제상세 Drawer 를 전역 스토어로 띄운다(회원창 위에 겹쳐 뜸).
+  const openPaymentDrawer = usePaymentDrawerStore((s) => s.open)
   const updateSettings = useUpdateMemberSettings()
   const uploadCallRec = useUploadCallRecording()
   const deleteCallRec = useDeleteCallRecording()
@@ -248,6 +252,10 @@ export function MemberDrawer({
   }, [payments, member?.registered_at])
   const endOverride = metaStr(member?.meta, 'end_date')
   const effEnd = endOverride || defaultEnd
+  // 만료(현장 8/13, 정의현 차장 — "종료일이 지난 회원은 상태를 만료로 자동으로 변경").
+  // 저장하지 않고 종료일에서 계산한다 — 크론이 돌기 전 틈에 틀린 값이 보이는 일이 없다.
+  // 회원정보창은 결제내역이 있어 지정 종료일이 없어도 결제 기준 종료일로 판정한다.
+  const expired = member?.status === 'active' && isEndDatePast(effEnd)
   // 종료일 입력칸 기본값: override 있으면 그 값, 없으면 결제일/가입일+1년(현장 6/29).
   useEffect(() => {
     setEndDate(endOverride ? endOverride.slice(0, 10) : defaultEnd ? defaultEnd.slice(0, 10) : '')
@@ -306,6 +314,8 @@ export function MemberDrawer({
       <span className="font-mono text-[12px] font-normal text-gray-400">{member.user_id}</span>
       <Badge grade={member.grade} />
       <StatusChip status={member.status} />
+      {/* 만료(현장 8/13) — 종료일이 지나면 자동으로 붙는다(별도 처리 없이 날짜로 판정). */}
+      {expired && <StatusChip status="expired" />}
     </div>
   )
 
@@ -480,7 +490,10 @@ export function MemberDrawer({
             <Badge grade={member.grade} />
           </Row>
           <Row label="상태">
-            <StatusChip status={member.status} />
+            <div className="flex items-center gap-1.5">
+              <StatusChip status={member.status} />
+              {expired && <StatusChip status="expired" />}
+            </div>
           </Row>
           {/* 연령대·성별·성향 선택형(현장 피드백 7/3) — 즉시 저장 */}
           <Row label="연령대">
@@ -816,17 +829,30 @@ export function MemberDrawer({
                 )}
                 {/* 수기취소(현장 8/12, 정의현 차장) — 실장 이상만. 결제 모듈의 PG취소와 동일 동작
                     (등급 롤백·매출 차감·로그)이라 결제 화면으로 넘어가지 않고 여기서 끝낸다. */}
-                {canAmend && (p.status === 'approved' || p.status === 'wait') && (
-                  <Button
-                    size="sm"
-                    variant="dng"
-                    className="ml-auto"
-                    icon={<XCircle className="h-3.5 w-3.5" />}
-                    disabled={cancelPayment.isPending}
-                    onClick={() => setPayToCancel(p)}
-                  >
-                    수기취소
-                  </Button>
+                {canAmend && (
+                  <div className="ml-auto flex items-center gap-1.5">
+                    {(p.status === 'approved' || p.status === 'wait') && (
+                      <Button
+                        size="sm"
+                        variant="dng"
+                        icon={<XCircle className="h-3.5 w-3.5" />}
+                        disabled={cancelPayment.isPending}
+                        onClick={() => setPayToCancel(p)}
+                      >
+                        수기취소
+                      </Button>
+                    )}
+                    {/* 수기수정(현장 8/13) — 금액·결제수단·PG사·입금자명·상품(등급)·담당자·결제일시를
+                        고치는 폼은 결제상세 Drawer 에 이미 있다. 폼을 두 벌 만들지 않고 그 창을 띄운다. */}
+                    <Button
+                      size="sm"
+                      variant="sec"
+                      icon={<PenLine className="h-3.5 w-3.5" />}
+                      onClick={() => openPaymentDrawer(p.id)}
+                    >
+                      수기수정
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

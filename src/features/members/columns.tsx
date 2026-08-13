@@ -1,10 +1,11 @@
 // 이용자 테이블 컬럼 정의 + 역할별 기본 노출 프리셋 (CLAUDE §6).
 // 등급/상태는 Badge/StatusChip, 숫자/일시는 mono. 상태·담당은 셀 인라인 편집.
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table'
-import { Badge, NumCell, InlineSelect, statusColorVars, type InlineSelectOption } from '@/design-system/components'
+import { Badge, NumCell, InlineSelect, StatusChip, statusColorVars, type InlineSelectOption } from '@/design-system/components'
 import { dateShort, datetime, phone } from '@/lib/format'
 import type { Member, MemberStatus, Role } from '@/types/db'
 import { STATUS_META } from '@/design-system/labels'
+import { isMemberExpired } from '@/lib/memberExpiry'
 import { CONSULT_STATUSES } from './views'
 import { readMemos } from './api'
 
@@ -36,12 +37,14 @@ const TEND_TONE: Record<string, string> = {
 
 /**
  * 이용자 목록 행 전체 글자색(현장 8/7) — 설정 > 등급색/상태색을 그대로 따른다.
- * 우선순위: 상태가 '정상'이 아니면(정지·삭제·탈퇴) 상태색, 정상이면 등급색.
+ * 우선순위: 상태가 '정상'이 아니면(정지·삭제·탈퇴) 상태색, 종료일이 지났으면 만료색, 정상이면 등급색.
  *   · 둘 다 설정 가능해 한 행에 두 색이 충돌하므로 "이상 상태를 먼저 눈에 띄게" 를 기준으로 잡았다.
  *   · 값은 CSS 변수라 설정에서 색을 바꾸면 목록도 즉시 따라 바뀐다(--g-{grade} / --st-{status}).
  */
 export function memberRowFg(m: Member): string {
-  return m.status === 'active' ? `var(--g-${m.grade})` : `var(--st-${m.status})`
+  if (m.status !== 'active') return `var(--st-${m.status})`
+  if (isMemberExpired(m)) return 'var(--st-expired)' // 종료일 경과(현장 8/13)
+  return `var(--g-${m.grade})`
 }
 
 export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
@@ -65,14 +68,20 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
         // 설정한 상태색을 목록에서도 표시(현장 8/4, 정의현 차장 — "회원정보창 들어가기 전에,
         // 목록에서도 상태가 설정한 색으로") — StatusChip 과 같은 --st-{key} 변수/톤 폴백.
         const sv = statusColorVars(m.status)
+        // 만료(현장 8/13)는 종료일에서 계산하는 표시 전용 상태라 셀렉트 값으로 넣지 않고
+        // 옆에 함께 보여준다 — 상태(정상/정지/…)는 그대로 인라인 수정할 수 있어야 하기 때문.
+        const expired = isMemberExpired(m)
         return (
-          <InlineSelect
-            value={m.status}
-            options={STATUS_OPTIONS}
-            onChange={(v) => ctx.onChangeStatus(m.id, v as MemberStatus)}
-            className="max-w-[88px] font-semibold"
-            style={{ color: sv.color, backgroundColor: sv.backgroundColor, borderColor: 'transparent' }}
-          />
+          <div className="flex flex-col items-start gap-0.5">
+            <InlineSelect
+              value={m.status}
+              options={STATUS_OPTIONS}
+              onChange={(v) => ctx.onChangeStatus(m.id, v as MemberStatus)}
+              className="max-w-[88px] font-semibold"
+              style={{ color: sv.color, backgroundColor: sv.backgroundColor, borderColor: 'transparent' }}
+            />
+            {expired && <StatusChip status="expired" className="px-[6px] py-[2px] text-[10px]" />}
+          </div>
         )
       },
     },

@@ -247,7 +247,9 @@ export type GradeColorMap = Record<Grade, GradeColor>
 // 회원·결제 상태 뱃지 색(현장 피드백 8/3 — "취소 > 빨강"처럼 상태값 하나만 골라 바꿀 수 있어야 해서
 // GradeColorMap 처럼 톤(success/danger 등) 공유가 아니라 상태값별로 독립 저장한다). 키 누락 시
 // lib/statusColors.ts normalizeStatusColors() 가 톤 기본색으로 채운다.
-export type StatusColorMap = Partial<Record<MemberStatus | PaymentStatus, GradeColor>>
+// 'expired'(만료)는 DB 상태값이 아니라 종료일에서 계산하는 표시 전용 상태(현장 8/13)라
+// MemberStatus 에는 없지만, 색은 다른 상태와 동일하게 설정에서 바꿀 수 있어야 해서 여기 포함한다.
+export type StatusColorMap = Partial<Record<MemberStatus | PaymentStatus | 'expired', GradeColor>>
 
 export interface WinMessage {
   rank: number // 1..5등
