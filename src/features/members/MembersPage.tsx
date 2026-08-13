@@ -3,7 +3,7 @@
 // 일괄작업 바, 행 클릭 → 상세 Drawer. 모든 데이터는 api 훅 경유.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { format } from 'date-fns'
-import { CalendarDays, ChevronDown, Plus, Upload } from 'lucide-react'
+import { CalendarDays, ChevronDown, Download, Plus, Upload } from 'lucide-react'
 import type { OnChangeFn, SortingState } from '@tanstack/react-table'
 import {
   Button,
@@ -16,9 +16,10 @@ import {
 } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
-import { useRole } from '@/lib/auth'
+import { useCurrentUser, useRole } from '@/lib/auth'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
+import { canExportMembers } from '@/lib/permissions'
 import { GRADE_LABEL, STATUS_META } from '@/design-system/labels'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
@@ -28,8 +29,11 @@ import {
   useUpdateMember,
   useAssignStaff,
   useResetAssign,
+  useLogMemberExport,
+  fetchAllMembersForExport,
   type MembersQuery,
 } from './api'
+import { downloadMembersXlsx, EXPORT_ROW_LIMIT } from './export'
 import {
   getView,
   CONSULT_STATUSES,
@@ -57,6 +61,7 @@ const todayStr = () => format(new Date(), 'yyyy-MM-dd')
 export function MembersPage() {
   usePageMeta('이용자', '26 세그먼트 · 필터 · 일괄작업 · 상세')
   const role = useRole()
+  const user = useCurrentUser()
   const canSeeInflow = role === 'admin' || role === 'manager'
   const { get, set, setMany, remove, clear } = useUrlFilters()
   const { data: staff = [] } = useStaff()
@@ -126,9 +131,45 @@ export function MembersPage() {
   }
 
   const { data, isLoading, isFetching } = useMembers(query)
+
+  // 엑셀 내려받기(현장 8/13) — 현재 페이지가 아니라 필터에 걸린 전체를 모아서 받는다.
+  const [exporting, setExporting] = useState(false)
+  const [exportDone, setExportDone] = useState(0)
+  async function doExport(): Promise<void> {
+    setExporting(true)
+    setExportDone(0)
+    try {
+      const { rows, total: matched } = await fetchAllMembersForExport(
+        { view: viewKey, search, extra, sortId, sortDesc },
+        user,
+        EXPORT_ROW_LIMIT,
+        (loaded) => setExportDone(loaded),
+      )
+      if (rows.length === 0) {
+        window.alert('내려받을 결과가 없습니다.')
+        return
+      }
+      // 상한을 넘겨 잘렸으면 조용히 넘어가지 않고 알린다(§ 잘린 것을 성공처럼 보이게 하지 않는다).
+      if (matched > rows.length) {
+        const ok = window.confirm(
+          `조건에 걸린 회원이 ${matched.toLocaleString('ko-KR')}명입니다. ` +
+            `한 번에 ${EXPORT_ROW_LIMIT.toLocaleString('ko-KR')}건까지만 받을 수 있어 앞의 ` +
+            `${rows.length.toLocaleString('ko-KR')}건만 저장됩니다. 계속할까요?`,
+        )
+        if (!ok) return
+      }
+      await downloadMembersXlsx(rows, staff, getView(viewKey).label + (search ? `_${search}` : ''))
+      logExport.mutate({ view: viewKey, count: rows.length })
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '엑셀 내려받기에 실패했습니다.')
+    } finally {
+      setExporting(false)
+    }
+  }
   const { data: counts } = useMemberViewCounts()
   const { data: inflowCodes = [] } = useInflowCodes()
 
+  const logExport = useLogMemberExport()
   const updateMember = useUpdateMember()
   const assignStaff = useAssignStaff()
   const resetAssign = useResetAssign()
@@ -211,17 +252,27 @@ export function MembersPage() {
         title="이용자"
         description="회원 세그먼트 관리 · 담당 배정 · 문자 발송"
         actions={
-          // 디비 입력(신규 등록·일괄 임포트)은 최고관리자만(현장 피드백)
-          role === 'admin' ? (
-            <>
-              <Button variant="sec" size="sm" onClick={() => setImporting(true)}>
-                <Upload className="h-4 w-4" /> 일괄 임포트
+          <>
+            {/* 필터링된 결과 엑셀 내려받기(현장 8/13) — 현재 페이지가 아니라 조건에 걸린 전체.
+                이름·전화가 통째로 빠져나가므로 실장 이상만(§permissions.canExportMembers). */}
+            {canExportMembers(role) && (
+              <Button variant="sec" size="sm" disabled={exporting} onClick={doExport}>
+                <Download className="h-4 w-4" />
+                {exporting ? `내려받는 중… ${exportDone.toLocaleString('ko-KR')}건` : '엑셀 내려받기'}
               </Button>
-              <Button variant="pri" size="sm" onClick={() => setCreating(true)}>
-                <Plus className="h-4 w-4" /> 신규 등록
-              </Button>
-            </>
-          ) : undefined
+            )}
+            {/* 디비 입력(신규 등록·일괄 임포트)은 최고관리자만(현장 피드백) */}
+            {role === 'admin' && (
+              <>
+                <Button variant="sec" size="sm" onClick={() => setImporting(true)}>
+                  <Upload className="h-4 w-4" /> 일괄 임포트
+                </Button>
+                <Button variant="pri" size="sm" onClick={() => setCreating(true)}>
+                  <Plus className="h-4 w-4" /> 신규 등록
+                </Button>
+              </>
+            )}
+          </>
         }
       />
 

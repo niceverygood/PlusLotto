@@ -52,6 +52,12 @@ export function canAmendPayment(role: Role | null): boolean {
   return role === 'leader' || role === 'manager' || role === 'admin'
 }
 
+// 이용자 목록 엑셀 내려받기(현장 8/13) — 이름·전화가 통째로 빠져나가는 동작이라 팀장(rep)은 제외하고
+// 실장 이상만 허용한다. 받아가는 범위는 화면 목록과 동일(RLS 스코프)하고, 실행 시 감사로그를 남긴다.
+export function canExportMembers(role: Role | null): boolean {
+  return role === 'leader' || role === 'manager' || role === 'admin'
+}
+
 // 메뉴 노출 기본 매트릭스 (CLAUDE §5). 권한관리(/admins/roles)에서 편집 → DB nav_access 로 영속.
 // 데이터 접근은 RLS(lib/rls/policies.sql)로 이중 통제.
 // TODO(live-verify): `08 권한관리` 화면 미확인 → 아래는 합리적 기본값. ASSUMPTIONS 기록.

@@ -21,6 +21,7 @@ import { useRole } from '@/lib/auth'
 import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
 import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 import { isEndDatePast } from '@/lib/memberExpiry'
+import { endDateForGrade } from '@/lib/membershipTerm'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
@@ -238,7 +239,8 @@ export function MemberDrawer({
     return m
   }, [payments])
 
-  // 종료일 기본값 = 결제일(없으면 가입일) + 1년. meta.end_date(수정 override) 우선 (현장 6/26·6/29).
+  // 종료일 기본값 = 결제일(없으면 가입일) + 등급별 연수. meta.end_date(수정 override) 우선
+  // (현장 6/26·6/29). 등급별 연수는 8/13 현장 요청 — 실버 1년, 골드·다이아 3년(lib/membershipTerm).
   const defaultEnd = useMemo(() => {
     const paidAts = payments
       .filter((p) => p.status === 'approved' && p.paid_at)
@@ -246,10 +248,8 @@ export function MemberDrawer({
       .sort()
     const base = paidAts.length ? paidAts[paidAts.length - 1] : member?.registered_at
     if (!base) return null
-    const d = new Date(base)
-    d.setFullYear(d.getFullYear() + 1)
-    return d.toISOString()
-  }, [payments, member?.registered_at])
+    return endDateForGrade(base, member?.grade) || null
+  }, [payments, member?.registered_at, member?.grade])
   const endOverride = metaStr(member?.meta, 'end_date')
   const effEnd = endOverride || defaultEnd
   // 만료(현장 8/13, 정의현 차장 — "종료일이 지난 회원은 상태를 만료로 자동으로 변경").

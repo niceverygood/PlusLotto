@@ -10,6 +10,7 @@ import type { Grade, Member, Payment, Product, SiteSettings, SmsTemplate } from 
 import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, insertWithOptionalColumns, sb } from '@/lib/db/remote'
 import { cancelPaymentRemote } from '@/lib/db/paymentCancel'
+import { endDateForGrade } from '@/lib/membershipTerm'
 import { renderSms } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import type {
@@ -124,10 +125,14 @@ export async function searchMembers(term: string): Promise<MemberOption[]> {
  *
  * 이용 종료일(`meta.end_date`)도 함께 기록한다(현장 8/13 — "종료일이 지난 회원은 상태를 만료로").
  * 종료일은 원래 회원정보창에서 수기로 지정하는 값이라, 지정하지 않은 유료회원은 목록에서 만료를
- * 판정할 근거가 없었다. 승인 시 이용기간 종료일을 같은 자리에 써두면 이후로는 손대지 않아도
- * 만료가 자동으로 잡힌다. 갱신결제면 새 종료일로 덮어써야 맞으므로 항상 갱신한다.
+ * 판정할 근거가 없었다. 승인 시 함께 써두면 이후로는 손대지 않아도 만료가 자동으로 잡힌다.
+ * 갱신결제면 새 종료일로 덮어써야 맞으므로 항상 갱신한다.
+ *
+ * ★ 종료일은 결제의 `period_end`(상품 duration_months 기준)가 **아니라** 결제일 + 등급별 연수다
+ *   (실버 1년 / 골드·다이아 3년, lib/membershipTerm). 실버 상품이 1개월짜리라 period_end 를 쓰면
+ *   한 달 뒤 만료로 떠버린다.
  */
-async function promoteMember(memberId: string, grade: Grade, endDate?: string | null): Promise<void> {
+async function promoteMember(memberId: string, grade: Grade, paidAt?: string | null): Promise<void> {
   const patch: Record<string, unknown> = {
     grade,
     status: 'active',
@@ -135,6 +140,7 @@ async function promoteMember(memberId: string, grade: Grade, endDate?: string | 
     is_deleted: false,
     is_withdrawn: false,
   }
+  const endDate = paidAt ? endDateForGrade(paidAt, grade) : ''
   if (endDate) {
     const cur = await fetchMember(memberId)
     patch.meta = { ...(cur?.meta ?? {}), end_date: endDate }
@@ -216,7 +222,7 @@ export async function approvePayment(id: string, actor: string | null): Promise<
   }
   const { error } = await sb().from('payments').update(upd).eq('id', id)
   if (error) throw error
-  if (product) await promoteMember(p.member_id, product.grade_granted, upd.period_end ?? null)
+  if (product) await promoteMember(p.member_id, product.grade_granted, upd.paid_at ?? null)
   // best-effort — 문자 발송 실패로 결제 승인 자체가 실패 처리되면 안 된다.
   try {
     await maybeSendJoinSms(p.member_id, id, actor)
@@ -321,7 +327,7 @@ export async function createManualPayment(v: ManualPaymentInput, actor: string |
   }
   // round_label 은 마이그레이션 미적용 가능성이 있어 optional(현장 8/11 결제요청 중단 사고와 동일 이유).
   await insertWithOptionalColumns('payments', row as unknown as Record<string, unknown>, ['round_label'])
-  if (v.approveNow && product) await promoteMember(v.memberId, product.grade_granted, row.period_end)
+  if (v.approveNow && product) await promoteMember(v.memberId, product.grade_granted, row.paid_at)
   if (v.approveNow) {
     try {
       await maybeSendJoinSms(v.memberId, id, actor)
