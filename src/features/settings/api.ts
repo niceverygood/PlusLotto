@@ -16,7 +16,7 @@ import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
-import { lottoKeys, settingsKeys, siteKeys, smsTemplateKeys } from '@/lib/queryKeys'
+import { lottoKeys, memberKeys, settingsKeys, siteKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { mergeWinnerHistory, normalizeWinnerRoundStats, normalizeWinnerStats } from '@/lib/winnerStats'
 import * as supa from './supa'
 
@@ -293,6 +293,25 @@ export function useDownloadApp() {
 }
 
 /** 새 APK 업로드(최고관리자). 같은 경로로 덮어써서 기존 다운로드 링크가 그대로 최신본을 가리킨다. */
+/**
+ * 회원 종료일 결제기록 기준 일괄 반영 (현장 8/13). 되돌릴 수 없는 일괄 쓰기라 호출부에서
+ * 확인 모달을 거친다. 진행률 콜백은 mutate 인자로 받는다(쿼리 캐시와 무관한 일회성 작업).
+ */
+export function useBackfillEndDates() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { onProgress?: (done: number, total: number) => void }) => {
+      if (dataSource !== 'supabase') {
+        throw new Error('로컬(mock) 모드에서는 일괄 반영을 사용할 수 없습니다.')
+      }
+      return supa.backfillMemberEndDates(user?.id ?? null, v.onProgress)
+    },
+    // 종료일이 바뀌면 만료 표시가 달라지므로 회원 목록·상세를 새로 읽는다.
+    onSuccess: () => qc.invalidateQueries({ queryKey: memberKeys.all }),
+  })
+}
+
 export function useUploadAppDownload() {
   const user = useCurrentUser()
   const qc = useQueryClient()

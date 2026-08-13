@@ -31,6 +31,7 @@ import { useSaveSiteSettings, useSiteSettings, useWinnerHistory } from './api'
 import { TemplatesCard } from './TemplatesCard'
 import { PromoSlidesCard } from './PromoSlidesCard'
 import { AppDownloadCard } from './AppDownloadCard'
+import { EndDateBackfillCard } from './EndDateBackfillCard'
 
 const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 
@@ -725,6 +726,9 @@ export function SiteSettingsPage() {
 
       {/* 통화녹음 자동업로드 앱 배포(현장 피드백 8/3) — 상담원 다운로드 입구는 계정메뉴에 있다. */}
       <AppDownloadCard current={settings.app_download ?? null} />
+
+      {/* 회원 종료일 일괄 반영(현장 8/13) — 최고관리자에게만 보인다(카드 내부에서 가드). */}
+      <EndDateBackfillCard />
 
       {/* ── FAQ · 공지 설정(기존 모듈 연결) ───────────── */}
       <SectionCard title="FAQ · 공지 설정" desc="FAQ 와 공지사항은 고객센터 · 커뮤니티에서 관리합니다.">
