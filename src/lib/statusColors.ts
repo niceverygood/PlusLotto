@@ -10,6 +10,7 @@ export const STATUS_KEY_ORDER: readonly StatusKey[] = [
   'suspended',
   'deleted',
   'withdrawn',
+  'expired',
   'wait',
   'approved',
   'failed',
@@ -32,7 +33,7 @@ export function defaultStatusColors(): StatusColorMap {
   return out
 }
 
-/** 저장된 값에 없는 키는 톤 기본색으로 채워 항상 8개 키가 채워진 맵을 반환한다. */
+/** 저장된 값에 없는 키는 톤 기본색으로 채워 항상 모든 키가 채워진 맵을 반환한다. */
 export function normalizeStatusColors(raw: StatusColorMap | null | undefined): StatusColorMap {
   const base = defaultStatusColors()
   if (!raw) return base

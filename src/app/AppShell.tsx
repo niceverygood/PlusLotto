@@ -7,6 +7,7 @@ import { useCurrentUser, useSignOut } from '@/lib/auth'
 import { useCallPopupEnabled, useCallReservationAlerts } from '@/lib/callReservations'
 import { useNewVersionAvailable } from '@/lib/versionCheck'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
+import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
 import { canAccessWith, ROLE_LABEL, type NavKey } from '@/lib/permissions'
@@ -14,6 +15,7 @@ import { BRAND } from '@/lib/brand'
 import { cn } from '@/lib/cn'
 import { datetime } from '@/lib/format'
 import { MemberDrawer } from '@/features/members/MemberDrawer'
+import { PaymentDrawer } from '@/features/payments/PaymentDrawer'
 
 interface NavItem {
   key: NavKey
@@ -88,6 +90,8 @@ export function AppShell() {
   const drawerMemberIds = useMemberDrawerStore((s) => s.memberIds)
   const closeMemberDrawer = useMemberDrawerStore((s) => s.close)
   const openMemberDrawer = useMemberDrawerStore((s) => s.open)
+  const drawerPaymentId = usePaymentDrawerStore((s) => s.paymentId)
+  const closePaymentDrawer = usePaymentDrawerStore((s) => s.close)
   const newVersionAvailable = useNewVersionAvailable()
 
   if (!user) return null // RequireAuth 가 /login 으로 보냄
@@ -322,6 +326,9 @@ export function AppShell() {
           closeOnEsc={i === drawerMemberIds.length - 1}
         />
       ))}
+
+      {/* 결제상세 Drawer 전역 인스턴스(현장 8/13 — 회원정보창 '수기수정'). 회원창 위에 겹쳐 뜬다. */}
+      <PaymentDrawer paymentId={drawerPaymentId} onClose={closePaymentDrawer} />
 
       {/* 통화예약 알림 — 화면 우측 하단 고정 팝업(현장 피드백 7/29: "최상단 알람을 실무자들이
           놓치는 경우가 많다"). 상단바 벨(클릭해야 보임)과 별개로, 도래한 예약이 있으면 클릭 없이도

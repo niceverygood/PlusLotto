@@ -16,7 +16,9 @@ export const GRADE_LABEL: Record<Grade, string> = {
 export type StatusTone = 'success' | 'warning' | 'danger' | 'gray' | 'info' | 'stop'
 
 /** 회원/결제 상태 → 톤 + 라벨. (StatusChip 자동 매핑) */
-export type StatusKey = MemberStatus | PaymentStatus
+// 'expired'(만료)는 DB 상태값이 아니라 종료일에서 계산하는 표시 전용 상태다(lib/memberExpiry,
+// 현장 8/13). 색·라벨을 다른 상태와 똑같이 쓰기 위해 여기 함께 둔다.
+export type StatusKey = MemberStatus | PaymentStatus | 'expired'
 
 export const STATUS_META: Record<StatusKey, { label: string; tone: StatusTone }> = {
   // 회원
@@ -24,6 +26,7 @@ export const STATUS_META: Record<StatusKey, { label: string; tone: StatusTone }>
   suspended: { label: '정지', tone: 'stop' },
   deleted: { label: '삭제', tone: 'gray' },
   withdrawn: { label: '탈퇴', tone: 'gray' },
+  expired: { label: '만료', tone: 'warning' }, // 종료일 경과(계산값, 현장 8/13)
   // 결제
   wait: { label: '대기', tone: 'warning' },
   approved: { label: '승인', tone: 'success' },

@@ -297,6 +297,9 @@ function applyApproval(member: Member | undefined, product: Product | undefined,
     member.is_suspended = false
     member.is_deleted = false
     member.is_withdrawn = false
+    // 이용 종료일 기록(현장 8/13) — 만료 표시가 종료일에서 계산되므로 승인 시 함께 써둔다.
+    // 라이브(supa.promoteMember)와 같은 규칙.
+    if (p.period_end) member.meta = { ...(member.meta ?? {}), end_date: p.period_end }
   }
 }
 

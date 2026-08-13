@@ -1,6 +1,6 @@
 // 결제 목록 (CLAUDE §6·§8). 상태 탭(전체/대기/승인/실패/취소) + FilterBar(검색·결제수단·PG·담당,
 // URL 동기화) + DataTable(서버 정렬·페이지) + 행 클릭 → 상세 Drawer(승인/PG취소). 수기결제 등록 링크.
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { CalendarDays, Plus } from 'lucide-react'
@@ -28,7 +28,7 @@ import {
   type PaymentStatusTab,
 } from './api'
 import { paymentColumns } from './columns'
-import { PaymentDrawer } from './PaymentDrawer'
+import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 
 const PAGE_SIZE = 50
 const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg']
@@ -52,7 +52,9 @@ export function PaymentsPage() {
   const { get, set, setMany, remove, clear } = useUrlFilters()
   const { data: staff = [] } = useStaff()
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 결제상세는 전역 Drawer(현장 8/13) — 회원정보창의 '수기수정'도 같은 창을 열기 때문에
+  // 여는 주체를 한 곳(paymentDrawerStore)으로 모아 두 개가 동시에 뜨는 상황을 막는다.
+  const openPaymentDrawer = usePaymentDrawerStore((s) => s.open)
 
   const statusTab = (get('st') ?? 'all') as PaymentStatusTab
   const search = get('q') ?? ''
@@ -253,7 +255,7 @@ export function PaymentsPage() {
         data={data?.rows ?? []}
         getRowId={(p) => p.id}
         isLoading={isLoading}
-        onRowClick={(p) => setSelectedId(p.id)}
+        onRowClick={(p) => openPaymentDrawer(p.id)}
         rowClassName={(p) => (p.status === 'cancelled' ? 'row-cancelled' : undefined)}
         sorting={sorting}
         onSortingChange={onSortingChange}
@@ -271,7 +273,6 @@ export function PaymentsPage() {
         }}
       />
 
-      <PaymentDrawer paymentId={selectedId} onClose={() => setSelectedId(null)} />
     </div>
   )
 }
