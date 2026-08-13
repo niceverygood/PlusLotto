@@ -178,6 +178,11 @@ export async function fetchMineSmsLog(uid: string, limit: number): Promise<MySms
   }))
 }
 
+/** 엑셀 내려받기 감사로그(현장 8/13) — 실패해도 내려받기를 막지 않는다(pushLog 가 best-effort). */
+export async function logMemberExport(actor: string | null, meta: Record<string, unknown>): Promise<void> {
+  await pushLog({ kind: 'admin', actor, action: 'member.export', target_type: 'member', target_id: null, meta })
+}
+
 // ── 쓰기 (§8 미러링) ───────────────────────────────────────────────────────
 /** 회원 단건 등록(§V2-2) — DB 트리거가 전화 중복이면 기존 회원을 표시하고 INSERT를 건너뛴다. */
 export async function createMember(input: MemberCreateInput, actor: string | null): Promise<MemberCreateResult> {

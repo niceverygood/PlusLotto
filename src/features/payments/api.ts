@@ -16,6 +16,7 @@ import { genId, mutateDb, nowIso, readDb, type DbShape } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
 import { cancelPaymentInDb } from '@/lib/db/paymentCancel'
+import { endDateForGrade } from '@/lib/membershipTerm'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
 import { renderSms } from '@/lib/sms'
@@ -298,8 +299,9 @@ function applyApproval(member: Member | undefined, product: Product | undefined,
     member.is_deleted = false
     member.is_withdrawn = false
     // 이용 종료일 기록(현장 8/13) — 만료 표시가 종료일에서 계산되므로 승인 시 함께 써둔다.
-    // 라이브(supa.promoteMember)와 같은 규칙.
-    if (p.period_end) member.meta = { ...(member.meta ?? {}), end_date: p.period_end }
+    // 라이브(supa.promoteMember)와 같은 규칙: period_end(상품 기간)가 아니라 결제일 + 등급별 연수.
+    const endDate = endDateForGrade(p.paid_at ?? ts, product.grade_granted)
+    if (endDate) member.meta = { ...(member.meta ?? {}), end_date: endDate }
   }
 }
 

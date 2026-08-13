@@ -266,6 +266,54 @@ export function useMembers(q: MembersQuery) {
   })
 }
 
+/**
+ * 현재 필터에 걸린 **전체** 회원을 모아서 반환 (현장 8/13 — 엑셀 내려받기용).
+ * 화면 목록은 서버 페이지네이션이라, 같은 필터로 페이지를 순회해 합친다.
+ * 훅이 아니라 함수인 이유: 버튼을 눌렀을 때만 한 번 도는 작업이라 캐시할 이유가 없다.
+ */
+export async function fetchAllMembersForExport(
+  q: Omit<MembersQuery, 'page' | 'pageSize'>,
+  user: CurrentUser | null,
+  limit: number,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ rows: Member[]; total: number }> {
+  const PAGE = 1000 // admin_members_page 의 p_limit 상한
+  const out: Member[] = []
+  let total = 0
+  for (let page = 1; ; page++) {
+    const res =
+      dataSource === 'supabase'
+        ? await supa.fetchMembersPage(resolvedFilter(q as MembersQuery), page, PAGE, q.sortId, q.sortDesc ?? false)
+        : listFrom(scopeMembers(readDb().members, user), { ...q, page, pageSize: PAGE }, staffRoleById())
+    total = res.total
+    out.push(...res.rows)
+    onProgress?.(out.length, total)
+    if (res.rows.length < PAGE || out.length >= total || out.length >= limit) break
+  }
+  return { rows: out.slice(0, limit), total }
+}
+
+/**
+ * 엑셀 내려받기 감사로그 (현장 8/13). 개인정보가 통째로 빠져나가는 동작이라 누가·언제·어떤 조건으로
+ * 몇 건을 받아갔는지 남긴다. 로그 실패가 내려받기를 막지는 않는다(best-effort).
+ */
+export function useLogMemberExport() {
+  const user = useCurrentUser()
+  return useMutation({
+    mutationFn: async (v: { view: string; count: number }) => {
+      const meta = { view: v.view, count: v.count }
+      if (dataSource === 'supabase') {
+        await supa.logMemberExport(user?.id ?? null, meta)
+        return v
+      }
+      mutateDb((db) => {
+        db.logs.push(adminLog(user?.id ?? null, 'member.export', null, meta))
+      })
+      return v
+    },
+  })
+}
+
 /** 각 뷰의 건수(스코프 적용, 검색 제외) — 탭/드롭다운 배지용. */
 export function useMemberViewCounts() {
   const facets = useMemberFacets('all')
