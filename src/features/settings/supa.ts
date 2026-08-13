@@ -1,8 +1,10 @@
 // 설정(site_settings·sms_templates) — supabase 쓰기 경로 (M7). mock 의 mutateDb + adminLog 미러링.
 // site_settings 는 단일행(id=1) 업데이트, sms_templates 는 key 기준 upsert.
 // 읽기는 api.ts 가 fetchSiteSettings/fetchTables 로 분기(여기선 쓰기만).
-import type { AppDownload, PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
-import { fetchSiteSettings, insertLog, sb } from '@/lib/db/remote'
+import type { AppDownload, Member, PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
+import { fetchSiteSettings, insertLog, paginateAll, sb, selectByIds } from '@/lib/db/remote'
+import { mapPool } from '@/lib/async'
+import { endDateForGrade } from '@/lib/membershipTerm'
 import { genId } from '@/lib/db/store'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
 import { DEFAULT_WIN_SMS } from '@/lib/winSms'
@@ -168,6 +170,87 @@ export async function reorderPromoSlides(ids: string[], actor: string | null): P
   const next = ids.map((id) => byId.get(id)).filter((s): s is PromoSlide => !!s)
   await writePromoSlides(next, actor, 'settings.promo_slide_reorder')
   return next
+}
+
+// ── 회원 종료일 결제기록 기준 일괄 반영 (현장 8/13, 정의현 차장) ─────────────────
+// "종료일은 결제기록 기준으로 일괄적으로 넣어주시는걸로 부탁드리겠습니다."
+//
+// 종료일(members.meta.end_date)은 원래 회원정보창에서 수기로 지정하는 값이라, 그동안 지정하지
+// 않은 유료회원은 목록에서 만료 판정 근거가 없었다(D155·D156). 결제 승인 시 자동 기록은 8/13
+// 배포분부터 적용되므로 **그 이전 결제만 있는 기존 회원**을 여기서 한 번 채운다.
+//
+// SQL 마이그레이션이 아니라 화면 실행 작업으로 만든 이유: 라이브 DB 반영 경로가 막혀 미적용
+// 마이그레이션이 4건 쌓여 있어(D153·D154) 현장이 오늘 쓸 수 없다. 이 경로는 전산에서 바로 돈다.
+//
+// 규칙
+//   · 대상 = 승인(approved) 결제가 있는 회원. 기준일 = **가장 최근 승인 결제의 결제일**.
+//   · 종료일 = 기준일 + 등급별 연수(실버 1년 / 골드·다이아 3년, lib/membershipTerm).
+//   · **이미 종료일이 들어 있는 회원은 건너뛴다** — 운영진이 수기로 지정한 값을 덮어쓰지 않는다.
+
+export interface EndDateBackfillResult {
+  scanned: number // 승인 결제가 있는 회원 수
+  filled: number // 이번에 채운 수
+  skipped: number // 이미 종료일이 있어 건너뛴 수
+  failed: number
+}
+
+export async function backfillMemberEndDates(
+  actor: string | null,
+  onProgress?: (done: number, total: number) => void,
+): Promise<EndDateBackfillResult> {
+  // ① 승인 결제 전량에서 회원별 최신 결제일을 뽑는다(회원 15만 중 유료는 일부라 결제 기준이 가볍다).
+  const payments = await paginateAll<{ member_id: string; paid_at: string | null; created_at: string }>(
+    (from, to) =>
+      sb().from('payments').select('member_id, paid_at, created_at').eq('status', 'approved').range(from, to),
+  )
+  const latestByMember = new Map<string, string>()
+  for (const p of payments) {
+    const at = p.paid_at ?? p.created_at
+    if (!at) continue
+    const cur = latestByMember.get(p.member_id)
+    if (!cur || cur < at) latestByMember.set(p.member_id, at)
+  }
+  const memberIds = [...latestByMember.keys()]
+  if (memberIds.length === 0) return { scanned: 0, filled: 0, skipped: 0, failed: 0 }
+
+  // ② 대상 회원의 등급·기존 meta 를 가져온다(청크 — URL 길이 한계 회피).
+  const members = await selectByIds<Pick<Member, 'id' | 'grade' | 'meta'>>('members', 'id, grade, meta', memberIds)
+
+  const targets: { id: string; meta: Record<string, unknown> }[] = []
+  let skipped = 0
+  for (const m of members) {
+    const cur = m.meta?.['end_date']
+    if (typeof cur === 'string' && cur.trim() !== '') {
+      skipped++ // 수기 지정값 보존
+      continue
+    }
+    const base = latestByMember.get(m.id)
+    const end = base ? endDateForGrade(base, m.grade) : ''
+    if (!end) continue
+    targets.push({ id: m.id, meta: { ...(m.meta ?? {}), end_date: end } })
+  }
+
+  // ③ meta 는 회원마다 값이 달라 한 건씩 갱신해야 한다 — 동시 8개로 제한(레이트리밋·풀 보호).
+  let filled = 0
+  let failed = 0
+  let done = 0
+  await mapPool(targets, 8, async (t) => {
+    const { error } = await sb().from('members').update({ meta: t.meta }).eq('id', t.id)
+    if (error) failed++
+    else filled++
+    done++
+    if (done % 25 === 0 || done === targets.length) onProgress?.(done, targets.length)
+  })
+
+  await insertLog({
+    kind: 'admin',
+    actor,
+    action: 'member.end_date_backfill',
+    target_type: 'member',
+    target_id: null,
+    meta: { scanned: memberIds.length, filled, skipped, failed },
+  })
+  return { scanned: memberIds.length, filled, skipped, failed }
 }
 
 // ── 통화녹음 동반앱(APK) 배포 (현장 피드백 8/3) ─────────────────────────────────
