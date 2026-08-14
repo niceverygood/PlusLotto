@@ -17,6 +17,7 @@ import { resolveExcludeForGrade } from '@/lib/lotto'
 import { membershipTermsUrl } from '@/lib/membership'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { normalizeInflowType } from '@/lib/inflow'
+import { safeStorageName } from '@/lib/storageKey'
 import type { AutoAssignResult, BulkImportResult, DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
 import type { MemberFilter } from './views'
 
@@ -566,7 +567,9 @@ export async function uploadCallRecording(id: string, file: File, actor: string 
     id: genId('rec'),
     created_at: nowIso(),
     uploaded_by: actor,
-    file_path: `${id}/${genId('rec')}_${file.name}`,
+    // 한글·공백이 든 파일명을 그대로 키에 넣으면 Storage 가 거절한다(현장 8/14 자동업로드 500 과 동일 원인).
+    // 표시용 이름은 아래 file_name 에 원본 그대로 남는다.
+    file_path: `${id}/${genId('rec')}_${safeStorageName(file.name)}`,
     file_name: file.name,
   }
   const { error: upErr } = await sb().storage.from('call-recordings').upload(entry.file_path, file)

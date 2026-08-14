@@ -13,6 +13,33 @@ function genId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`
 }
 
+/**
+ * Storage 키 안전화 (현장 8/14 — 자동업로드가 매번 HTTP 500).
+ *
+ * 삼성 통화녹음 파일명이 "통화 녹음 01074971957_260814_163223.m4a" 처럼 **한글과 공백**을 포함하는데,
+ * 그 이름을 그대로 오브젝트 키에 넣으면 Supabase Storage 가 키 문자셋 제한으로 거절한다 →
+ * upErr → 이 함수가 500 을 반환 → 앱 로그에 `HTTP 500` 만 찍혔다.
+ * 화면에 보여줄 이름은 `file_name` 에 원본 그대로 남기므로 키에서는 ASCII 로 눌러도 잃는 정보가 없다.
+ *
+ * ⚠️ src/lib/storageKey.ts 의 safeStorageName 과 같은 규칙 — 이 파일은 Vercel 함수 런타임 제약으로
+ *    src/ 를 import 할 수 없어 복제한다(한쪽만 고치지 말 것).
+ */
+function safeStorageName(filename: string, maxBase = 60): string {
+  const raw = (filename || 'recording').trim()
+  const dot = raw.lastIndexOf('.')
+  const hasExt = dot > 0 && dot < raw.length - 1
+  const base = hasExt ? raw.slice(0, dot) : raw
+  const ext = hasExt ? raw.slice(dot + 1) : ''
+  const clean = (s: string): string =>
+    s
+      .replace(/[^A-Za-z0-9._-]+/g, '_')
+      .replace(/_{2,}/g, '_')
+      .replace(/^[._]+|[._]+$/g, '')
+  const safeBase = clean(base).slice(0, maxBase) || 'recording'
+  const safeExt = clean(ext).slice(0, 10)
+  return safeExt ? `${safeBase}.${safeExt}` : safeBase
+}
+
 // 호출자 인증 — 로그인 staff 의 Supabase access token 만 허용(다른 api/ 함수와 동일 패턴).
 // 다른 파일과 달리 staff.id 까지 반환해 uploaded_by 기록에 쓴다.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,11 +128,16 @@ export default async function handler(req: any, res: any) {
     const candidates = phoneCandidates(normalized)
 
     // Storage 업로드(call-recordings 버킷, 0010 마이그레이션에서 생성) — 자동업로드는 auto/ 하위에.
-    const path = `auto/${staff.id}/${Date.now()}_${file.filename}`
+    // 키에는 안전화한 이름을 쓰고, 원본 파일명은 아래 file_name 으로 그대로 보관한다(현장 8/14).
+    const path = `auto/${staff.id}/${Date.now()}_${safeStorageName(file.filename)}`
     const { error: upErr } = await admin.storage
       .from('call-recordings')
       .upload(path, file.buffer, { contentType: file.mimeType || 'audio/mp4' })
-    if (upErr) return res.status(500).json({ ok: false, message: `업로드 실패: ${upErr.message}` })
+    if (upErr) {
+      // 앱 로그에는 `HTTP 500` 만 남아 원인을 알 수 없었다(현장 8/14) — Vercel 로그에 원문을 남긴다.
+      console.error('[ingest] storage upload 실패:', { path, filename: file.filename, message: upErr.message })
+      return res.status(500).json({ ok: false, message: `업로드 실패: ${upErr.message}` })
+    }
 
     // 번호가 아예 없으면 회원 매치를 시도하지 않는다 — 빈 문자열로 .in() 하면 전화번호가
     // 비어 있는 회원과 오매치될 수 있다.
@@ -152,6 +184,7 @@ export default async function handler(req: any, res: any) {
     if (insErr) return res.status(500).json({ ok: false, message: insErr.message })
     return res.status(200).json({ ok: true, matched: false })
   } catch (e) {
+    console.error('[ingest] 처리 중 예외:', e)
     return res.status(500).json({ ok: false, message: String(e) })
   }
 }
