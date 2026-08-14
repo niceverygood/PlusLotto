@@ -18,6 +18,7 @@ import {
 } from 'recharts'
 import {
   DateRangeFilter,
+  Button,
   EmptyState,
   KpiCard,
   PageHeader,
@@ -202,6 +203,8 @@ const CAL_VIEW_TABS: { key: RevenueView; label: string }[] = [
 function RevenueCalendarSection() {
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  // 달력 칸 표시 밀도(현장 8/14) — 기본은 전체 표시, 담당이 많아 달력이 길어지면 '간단히'로 3명만.
+  const [compactCells, setCompactCells] = useState(false)
   const [calView, setCalView] = useState<RevenueView>('real')
   const monthKey = format(monthCursor, 'yyyy-MM')
 
@@ -252,9 +255,15 @@ function RevenueCalendarSection() {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <div className="text-right">
-            <div className="text-[11.5px] font-semibold text-gray-500">{format(monthCursor, 'M')}월 합계</div>
-            <div className="font-mono text-[16px] font-bold tnum text-ink-900">{krw(data?.monthTotal ?? 0)}</div>
+          <div className="flex items-center gap-3">
+            {/* 담당이 많은 날은 칸이 길어지므로 되돌릴 수단을 남긴다(기본은 전체 표시). */}
+            <Button variant="sec" size="sm" onClick={() => setCompactCells((v) => !v)}>
+              {compactCells ? '전체 보기' : '간단히 보기'}
+            </Button>
+            <div className="text-right">
+              <div className="text-[11.5px] font-semibold text-gray-500">{format(monthCursor, 'M')}월 합계</div>
+              <div className="font-mono text-[16px] font-bold tnum text-ink-900">{krw(data?.monthTotal ?? 0)}</div>
+            </div>
           </div>
         </div>
 
@@ -302,12 +311,16 @@ function RevenueCalendarSection() {
                   {inMonth && day && (
                     <div className="space-y-0.5">
                       <div className="font-mono text-[11px] font-bold tnum text-ink-900">{krw(day.total)}</div>
-                      {day.byStaff.slice(0, 3).map((r) => (
-                        <div key={r.staffId ?? 'none'} className="truncate text-[10px] text-gray-500">
+                      {/* 현장 8/14: "일부내용이 잘리고 있는데 전체내용이 다 표현될수 있도록" —
+                          종전에는 상위 3명만 보이고 나머지는 '+N명'으로 접혔고, 이름·금액도 가로로
+                          잘렸다. 기본을 전체 표시로 바꾸고(칸은 내용만큼 늘어난다) 담당이 많은 날
+                          달력이 너무 길어지면 '간단히'로 되돌릴 수 있게 토글을 뒀다. */}
+                      {(compactCells ? day.byStaff.slice(0, 3) : day.byStaff).map((r) => (
+                        <div key={r.staffId ?? 'none'} className="break-all text-[10px] leading-tight text-gray-500">
                           {r.label}({r.count}): {num(r.amount)}
                         </div>
                       ))}
-                      {day.byStaff.length > 3 && (
+                      {compactCells && day.byStaff.length > 3 && (
                         <div className="text-[10px] text-gray-400">+{day.byStaff.length - 3}명</div>
                       )}
                     </div>
