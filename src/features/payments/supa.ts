@@ -11,6 +11,7 @@ import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, insertWithOptionalColumns, sb } from '@/lib/db/remote'
 import { cancelPaymentRemote } from '@/lib/db/paymentCancel'
 import { endDateForGrade } from '@/lib/membershipTerm'
+import { DEFAULT_RECO_DAY, PAID_RECO_GRADES } from '@/lib/recoSchedule'
 import { renderSms } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import type {
@@ -140,11 +141,25 @@ async function promoteMember(memberId: string, grade: Grade, paidAt?: string | n
     is_deleted: false,
     is_withdrawn: false,
   }
+  // meta 갱신이 필요한 항목: 이용 종료일(8/13) + 조합발송요일 기본값(8/14).
   const endDate = paidAt ? endDateForGrade(paidAt, grade) : ''
+  const cur = await fetchMember(memberId)
+  const meta: Record<string, unknown> = { ...(cur?.meta ?? {}) }
+  let metaChanged = false
   if (endDate) {
-    const cur = await fetchMember(memberId)
-    patch.meta = { ...(cur?.meta ?? {}), end_date: endDate }
+    meta.end_date = endDate
+    metaChanged = true
   }
+  // 조합발송요일 기본값(현장 8/14 — "8/7, 8/14 자동발송 되었어야하나 자동발송 안됨").
+  // 크론(api/weekly-reco)은 **유료등급은 weekly_reco_day 가 설정된 회원만** 자동발급·발송한다
+  // (무료회원만 기본 금요일). 그래서 결제로 유료가 돼도 요일을 손으로 넣어주지 않으면 조합문자가
+  // 영영 나가지 않았다. 승인 시 미설정이면 전역 기본(금요일)을 넣어 이 누락을 구조적으로 막는다.
+  // 이미 값이 있으면(운영진이 다른 요일로 지정) 건드리지 않는다.
+  if (PAID_RECO_GRADES.has(grade) && typeof meta.weekly_reco_day !== 'number') {
+    meta.weekly_reco_day = DEFAULT_RECO_DAY
+    metaChanged = true
+  }
+  if (metaChanged) patch.meta = meta
   const { error } = await sb().from('members').update(patch).eq('id', memberId)
   if (error) throw error
 }

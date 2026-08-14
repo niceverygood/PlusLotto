@@ -5,6 +5,7 @@ import type { AppDownload, Member, PromoSlide, SiteSettings, SmsTemplate } from 
 import { fetchSiteSettings, insertLog, paginateAll, sb, selectByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 import { endDateForGrade } from '@/lib/membershipTerm'
+import { DEFAULT_RECO_DAY, PAID_RECO_GRADES } from '@/lib/recoSchedule'
 import { genId } from '@/lib/db/store'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
 import { DEFAULT_WIN_SMS } from '@/lib/winSms'
@@ -251,6 +252,73 @@ export async function backfillMemberEndDates(
     meta: { scanned: memberIds.length, filled, skipped, failed },
   })
   return { scanned: memberIds.length, filled, skipped, failed }
+}
+
+// ── 유료회원 조합발송요일 일괄 복구 (현장 8/14, 정의현 차장) ─────────────────────
+// "7/31 가입회원 / 8/7, 8/14 자동발송 되었어야하나 자동발송 안됨."
+//
+// 원인: 크론(api/weekly-reco)은 **유료등급은 `meta.weekly_reco_day` 가 설정된 회원만** 자동발급·
+// 발송한다(무료회원만 기본 금요일). 결제로 유료가 돼도 발송요일을 손으로 넣어주지 않으면 조합문자가
+// 영영 나가지 않았다. 8/14 배포분부터는 결제 승인 시 기본요일이 자동으로 들어가지만(D158),
+// 그 이전에 결제한 기존 유료회원은 여전히 비어 있어 여기서 한 번 채운다.
+//
+// 규칙: 유료등급(gold/goldp/vip/royal) + 발송요일 미설정 + 정지/삭제/탈퇴 아님 → 금요일 지정.
+// 이미 요일이 있는 회원은 건드리지 않는다(운영진이 다른 요일로 지정한 값 보존).
+
+export interface RecoDayBackfillResult {
+  scanned: number // 대상 유료회원 수
+  filled: number
+  skipped: number // 이미 요일이 있어 건너뜀
+  failed: number
+}
+
+export async function backfillRecoDays(
+  actor: string | null,
+  onProgress?: (done: number, total: number) => void,
+): Promise<RecoDayBackfillResult> {
+  const grades = [...PAID_RECO_GRADES]
+  const rows = await paginateAll<Pick<Member, 'id' | 'meta'>>((from, to) =>
+    sb()
+      .from('members')
+      .select('id, meta')
+      .in('grade', grades)
+      .eq('is_suspended', false)
+      .eq('is_deleted', false)
+      .eq('is_withdrawn', false)
+      .range(from, to),
+  )
+
+  const targets: { id: string; meta: Record<string, unknown> }[] = []
+  let skipped = 0
+  for (const m of rows) {
+    const meta = (m.meta ?? {}) as Record<string, unknown>
+    if (typeof meta.weekly_reco_day === 'number') {
+      skipped++
+      continue
+    }
+    targets.push({ id: m.id, meta: { ...meta, weekly_reco_day: DEFAULT_RECO_DAY } })
+  }
+
+  let filled = 0
+  let failed = 0
+  let done = 0
+  await mapPool(targets, 8, async (t) => {
+    const { error } = await sb().from('members').update({ meta: t.meta }).eq('id', t.id)
+    if (error) failed++
+    else filled++
+    done++
+    if (done % 25 === 0 || done === targets.length) onProgress?.(done, targets.length)
+  })
+
+  await insertLog({
+    kind: 'admin',
+    actor,
+    action: 'member.reco_day_backfill',
+    target_type: 'member',
+    target_id: null,
+    meta: { scanned: rows.length, filled, skipped, failed, day: DEFAULT_RECO_DAY },
+  })
+  return { scanned: rows.length, filled, skipped, failed }
 }
 
 // ── 통화녹음 동반앱(APK) 배포 (현장 피드백 8/3) ─────────────────────────────────

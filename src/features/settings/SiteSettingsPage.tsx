@@ -31,7 +31,7 @@ import { useSaveSiteSettings, useSiteSettings, useWinnerHistory } from './api'
 import { TemplatesCard } from './TemplatesCard'
 import { PromoSlidesCard } from './PromoSlidesCard'
 import { AppDownloadCard } from './AppDownloadCard'
-import { EndDateBackfillCard } from './EndDateBackfillCard'
+import { EndDateBackfillCard, RecoDayBackfillCard } from './EndDateBackfillCard'
 
 const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 
@@ -729,6 +729,9 @@ export function SiteSettingsPage() {
 
       {/* 회원 종료일 일괄 반영(현장 8/13) — 최고관리자에게만 보인다(카드 내부에서 가드). */}
       <EndDateBackfillCard />
+
+      {/* 유료회원 조합발송요일 점검·복구(현장 8/14) — 최고관리자에게만 보인다. */}
+      <RecoDayBackfillCard />
 
       {/* ── FAQ · 공지 설정(기존 모듈 연결) ───────────── */}
       <SectionCard title="FAQ · 공지 설정" desc="FAQ 와 공지사항은 고객센터 · 커뮤니티에서 관리합니다.">
