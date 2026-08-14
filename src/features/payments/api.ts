@@ -17,6 +17,7 @@ import { dataSource } from '@/lib/supabase'
 import { fetchTables } from '@/lib/db/remote'
 import { cancelPaymentInDb } from '@/lib/db/paymentCancel'
 import { endDateForGrade } from '@/lib/membershipTerm'
+import { DEFAULT_RECO_DAY, PAID_RECO_GRADES } from '@/lib/recoSchedule'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys } from '@/lib/queryKeys'
 import { renderSms } from '@/lib/sms'
@@ -301,7 +302,14 @@ function applyApproval(member: Member | undefined, product: Product | undefined,
     // 이용 종료일 기록(현장 8/13) — 만료 표시가 종료일에서 계산되므로 승인 시 함께 써둔다.
     // 라이브(supa.promoteMember)와 같은 규칙: period_end(상품 기간)가 아니라 결제일 + 등급별 연수.
     const endDate = endDateForGrade(p.paid_at ?? ts, product.grade_granted)
-    if (endDate) member.meta = { ...(member.meta ?? {}), end_date: endDate }
+    const meta: Record<string, unknown> = { ...(member.meta ?? {}) }
+    if (endDate) meta.end_date = endDate
+    // 조합발송요일 기본값(현장 8/14) — 유료등급은 이 값이 있어야 크론이 자동발급·발송한다.
+    // 라이브(supa.promoteMember)와 같은 규칙: 미설정일 때만 금요일을 넣는다.
+    if (PAID_RECO_GRADES.has(product.grade_granted) && typeof meta.weekly_reco_day !== 'number') {
+      meta.weekly_reco_day = DEFAULT_RECO_DAY
+    }
+    member.meta = meta
   }
 }
 

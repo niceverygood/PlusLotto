@@ -312,6 +312,23 @@ export function useBackfillEndDates() {
   })
 }
 
+/**
+ * 유료회원 조합발송요일 일괄 복구 (현장 8/14) — 발송요일이 비어 자동발송에서 빠져 있던 회원을 채운다.
+ */
+export function useBackfillRecoDays() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { onProgress?: (done: number, total: number) => void }) => {
+      if (dataSource !== 'supabase') {
+        throw new Error('로컬(mock) 모드에서는 일괄 반영을 사용할 수 없습니다.')
+      }
+      return supa.backfillRecoDays(user?.id ?? null, v.onProgress)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: memberKeys.all }),
+  })
+}
+
 export function useUploadAppDownload() {
   const user = useCurrentUser()
   const qc = useQueryClient()
