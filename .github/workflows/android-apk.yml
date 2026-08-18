@@ -3,15 +3,23 @@
 # 배경: 개발 세션 환경에서는 dl.google.com 이 막혀 Android SDK 를 받을 수 없어 APK 를 만들 수 없었다
 # (D136·D138 에 기록). GitHub 러너에는 Android SDK 가 기본 설치돼 있어 여기서 빌드하면 그 제약이 없다.
 #
-# 사용법: Actions 탭 > "Android APK 빌드" > Run workflow 를 누르면 빌드된다.
+# 사용법: Actions 탭 > "Android APK 빌드" > Run workflow.
 #   ① SUPABASE_SERVICE_ROLE_KEY 시크릿이 등록돼 있으면 → 빌드된 APK 가 전산
 #      [설정 > 통화녹음 자동업로드 앱] 카드에 자동으로 올라간다(사람 손 필요 없음).
 #   ② 시크릿이 없으면 → 그 단계는 건너뛰고, 실행 페이지 하단 Artifacts 에서 APK 를 내려받아
-#      전산 설정 카드에 수동으로 올린다.
+#      전산 설정 카드에 수동으로 올린다(zip 이라 압축을 풀어야 한다).
+#   ③ Run workflow 시 'publish_release' 를 체크하면 → GitHub Release 로 APK 를 올려
+#      **압축 없이 바로 받는 링크**가 생긴다. 상담원 폰 브라우저에서 링크만 누르면 설치까지 이어져
+#      현장 배포가 가장 빠르다. 기본은 꺼져 있고, 체크했을 때만 발행한다(현장 8/18).
 name: Android APK 빌드
 
 on:
   workflow_dispatch: # 수동 실행 — 앱 소스가 바뀔 때만 필요해서 자동 트리거는 두지 않는다.
+    inputs:
+      publish_release:
+        description: 'GitHub Release 로 발행(압축 없이 바로 받는 링크 생성). 저장소가 공개라 링크도 공개된다.'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -21,6 +29,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Release 발행(선택 단계)에 필요. 기본 토큰 범위만 쓴다.
     env:
       # 앱이 이미 임베드하고 있는 것과 같은 라이브 프로젝트(공개 URL). 키는 시크릿으로만 받는다.
       SUPABASE_URL: https://xmfdbmlpvvqqkhqemfay.supabase.co
@@ -52,6 +62,28 @@ jobs:
           path: android-call-uploader/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # Release 발행(선택) — 체크했을 때만 돈다. 아티팩트는 zip 이라 폰에서 바로 설치할 수 없는데,
+      # Release 자산은 .apk 원본이라 상담원 폰 브라우저에서 링크만 눌러도 설치로 이어진다(현장 8/18).
+      # 저장소가 이미 공개라 소스는 누구나 볼 수 있고, 앱 데이터는 로그인·RLS 로 보호된다.
+      - name: Release 로 발행(선택)
+        if: ${{ inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: android-call-uploader
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          VERSION=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          OUT="pluslotto-call-uploader-v$VERSION.apk"
+          cp "$APK" "$OUT"
+          gh release create "app-v$VERSION" "$OUT" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "통화녹음 자동업로드 앱 v$VERSION" \
+            --notes "상담원 폰에서 이 파일을 받아 설치하세요. 설치 후 전산과 같은 아이디로 로그인하고 권한 2개(전체 파일 접근 / 배터리 최적화 제외)를 허용해야 업로드가 동작합니다." \
+            --latest \
+            || gh release upload "app-v$VERSION" "$OUT" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "다운로드 링크: $(gh release view "app-v$VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[0].url')"
 
       # 전산 [설정 > 통화녹음 자동업로드 앱] 카드에 그대로 반영한다.
       # 저장 위치·메타 형식은 src/features/settings/supa.ts 의 uploadAppDownload() 와 동일하게 맞춘다
