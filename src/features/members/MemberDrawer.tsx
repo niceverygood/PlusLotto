@@ -21,6 +21,8 @@ import { useRole } from '@/lib/auth'
 import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
 import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 import { isEndDatePast } from '@/lib/memberExpiry'
+import { recoEligibility } from '@/lib/recoEligibility'
+import { useSiteSettingsShared } from '@/lib/siteSettings'
 import { endDateForGrade } from '@/lib/membershipTerm'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
@@ -152,6 +154,8 @@ export function MemberDrawer({
   const canAmend = canAmendPayment(role)
   // 결제 수기수정(현장 8/13) — 결제상세 Drawer 를 전역 스토어로 띄운다(회원창 위에 겹쳐 뜸).
   const openPaymentDrawer = usePaymentDrawerStore((s) => s.open)
+  // 조합 자동발송 진단에 필요한 전역 스위치(유료 조합문자·실발송·발신번호) — 현장 8/18.
+  const { data: siteSettings } = useSiteSettingsShared()
   const updateSettings = useUpdateMemberSettings()
   const uploadCallRec = useUploadCallRecording()
   const deleteCallRec = useDeleteCallRecording()
@@ -586,6 +590,28 @@ export function MemberDrawer({
       {tab === 'info' && (
         <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <div className="mb-2.5 text-[12px] font-bold text-gray-600">회원 설정 · 발송 / 홈페이지</div>
+          {/* 조합 자동발송 진단(현장 8/18) — "이 회원 자동발송이 안 됩니다" 신고 때마다 크론 조건을
+              손으로 대조하던 것을 화면에서 바로 읽게 한다. 판정 규칙은 lib/recoEligibility(크론과 동일). */}
+          {(() => {
+            const el = recoEligibility(member, siteSettings)
+            const tone = el.willSend
+              ? 'border-success-bd bg-success-bg'
+              : el.willIssue
+                ? 'border-warning-bd bg-warning-bg'
+                : 'border-danger-bd bg-danger-bg'
+            return (
+              <div className={`mb-3 rounded-lg border px-3 py-2 text-[12px] leading-relaxed text-gray-700 ${tone}`}>
+                <b className="text-ink-900">
+                  {el.willSend ? '자동 조합문자 발송 대상입니다' : el.willIssue ? '조합은 발급되지만 문자는 안 나갑니다' : '자동발송 대상이 아닙니다'}
+                </b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {el.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })()}
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold text-gray-500">조합발송요일</span>
