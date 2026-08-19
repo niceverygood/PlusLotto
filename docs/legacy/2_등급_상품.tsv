@@ -1,0 +1,34 @@
+사이트	levelNum	등급명(소스)	itemCode	상품명(product)	판매가	이용개월	주당조합	판매상태	현재 회원수
+lotto815	0	간편가입							0
+lotto815	1	무료회원							482767
+lotto815	2	패밀리	family	패밀리	488000	18	10	normal	13993
+lotto815	3	매니아	mania	매니아	7880000	36	20	normal	3876
+lotto815	4	퍼스트	first	퍼스트	11880000	36	20	normal	583
+lotto815	6	언발란스	unbalance	언발란스	999000	36	20	normal	0
+lotto88	0	간편가입							5418
+lotto88	1	무료회원							38
+lotto88	2	88클래스	class	88클래스	198000	12	20	normal	2626
+lotto88	3	88마스터	dia	88마스터	2937000	12	20	normal	830
+lotto88	4	88퍼스트	first	88퍼스트	4300000	12	20	normal	62
+lotto88	6	언발란스							0
+lotto88	80	리커버리	recovery	88리커버리	0	12	20	soldout	1088
+infolotto	0	간편가입							2
+infolotto	1	무료회원							115070
+infolotto	2	베이직	basic	베이직	431900	18	10	normal	3572
+infolotto	3	스마트	smart	스마트	3800000	36	20	normal	1035
+infolotto	4	시그니쳐	signature	시그니쳐	0	36	20	normal	142
+infolotto	5	패밀리	family	패밀리	0	12	20	normal	0
+infolotto	6	마니아	unbalance	마니아	0	36	20	normal	0
+infolotto	7	리커버리	recovery	리커버리	0	12	20	normal	0
+cplotto	0	간편가입							0
+cplotto	1	무료회원							156287
+cplotto	2	골드	gold	골드	176000	18	10	normal	2
+cplotto	3	골드플러스	goldplus	골드플러스	198000	18	10	normal	4245
+cplotto	4	VIP	vipgold	VIP골드	1485000	36	20	normal	1344
+cplotto	5	로얄	first	로얄퍼스트	2980000	36	20	normal	67
+cplotto	6	언발란스	unbalance	언발란스	999000	36	20	normal	0
+									
+※ 「등급명(소스)」= 각 서버 user.php 의 codeArr[level] (화면 표기용), 「상품명」= product 테이블의 실제 판매 상품. 4사 모두 두 값이 일치한다									
+※ levelNum 0=간편가입, 1=무료회원. 유료 등급은 2부터다 (lotto88 리커버리만 80)									
+※ 판매가 0원 = 현재 판매하지 않거나 상담 후 책정하는 상품									
+※ user.levelNum 과 product.itemOptLevel 이 대응한다. user.itemCode = product.itemCode									

@@ -1,0 +1,18 @@
+코드	의미	815 발송건수(유료회원)
+autoPick	★자동 조합발송 (정기 추천번호)	1068033
+admin	관리자	168598
+thankCharge	결제 감사 문자	22393
+adminPickSend	관리자가 보낸 조합	15829
+autoPickReSend	조합 재발송	5686
+adminSettinSend	관리자 설정 발송	4
+nlottoWin{회차}	★회차별 당첨안내 (예: nlottoWin1236 = 1236회차) — 130개 회차	258157
+		
+pushSms.statCode	── 발송 상태 ──	
+success	성공	
+send	발송중	
+standby	대기	
+fail	실패	
+		
+※ 815 유료회원 13,237명의 발송 내역 1,517,968건 기준. 조합발송(autoPick)이 70%를 차지한다		
+※ pushSms.resultYN — Y=발송성공 1,538,690건. 빈값 10건 외 실패 없음		
+※ push.php 의 codeArr[contentsType] 에는 3종만 정의돼 있다. 나머지는 발송 코드에 직접 박혀 있어 실제 데이터에서 뽑았다		

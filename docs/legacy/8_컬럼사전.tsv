@@ -1,0 +1,364 @@
+테이블	순번	컬럼	타입	NULL	기본값	설명
+── user (160컬럼) — 회원. 로그인 정보·등급·이용기간·담당 상담원·유입경로가 모두 여기 있다						
+user	1	idx	bigint unsigned	NO	NULL	PK(자동증가)
+user	2	convKey	varchar(64)	NO		외부 이관/전환 키 — 다른 시스템에서 옮겨온 원본 식별자
+user	3	convBackup	mediumtext	NO	NULL	이관 전 원본 데이터 백업(JSON/문자열)
+user	4	convSvcCode	varchar(64)	NO		이관 원본 서비스 코드
+user	5	convSvcName	varchar(64)	NO		이관 원본 서비스명
+user	6	convSvcDateTimeEnd	varchar(64)	NO		이관 원본의 이용종료일
+user	7	statCode	varchar(16)	NO	standby	회원 상태 — 정상/대기/정지/탈퇴/삭제 등
+user	8	statTmCode	varchar(16)	NO	new	★TM(상담) 상태 — 상담원이 관리하는 영업 단계
+user	9	statAdmCode	varchar(16)	NO		★관리자 분류 — 신규/하루전/이틀전/구디비
+user	10	moveCode	varchar(16)	NO		DB 이동 구분
+user	11	partnerIdx	bigint	NO	0	제휴사 idx
+user	12	friendIdx	bigint	NO	0	추천인 회원 idx
+user	13	salesIdx	bigint	NO	0	★담당 상담원(TM) 회원 idx — user 테이블 자기참조
+user	14	salesAllocDateTime	datetime	NO	0000-00-00 00:00:00	담당자 배정 일시
+user	15	salesAllocAutoDateTime	datetime	NO	0000-00-00 00:00:00	자동배정 일시
+user	16	salesAllocIdxCnt	tinyint	NO	0	배정 횟수
+user	17	salesAllocIdxLog	varchar(255)	NO		역대 배정 담당자 이력
+user	18	salesAutoAllocNew	int	NO	0	자동배정(신규) 설정
+user	19	salesAutoAllocOld	int	NO	0	자동배정(구DB) 설정
+user	20	salesAutoAllocDateTime	datetime	NO	0000-00-00 00:00:00	자동배정 기준 일시
+user	21	salesCode	varchar(32)	NO		영업 구분 코드
+user	22	salesTouchDateTime	datetime	NO	0000-00-00 00:00:00	담당자가 마지막으로 조회한 일시
+user	23	salesMemoDateTime	datetime	NO	0000-00-00 00:00:00	담당자가 마지막으로 메모 남긴 일시
+user	24	groupSystemYN	enum('Y','N')	NO	N	권한: 시스템관리자
+user	25	groupAdminYN	enum('Y','N')	NO	N	권한: 관리자
+user	26	groupPartnerYN	enum('Y','N')	NO	N	권한: 제휴사
+user	27	groupSalesYN	enum('Y','N')	NO	N	권한: 상담원(1차)
+user	28	groupSecondSalesYN	enum('Y','N')	NO	N	권한: 상담원(2차)
+user	29	groupStaffYN	enum('Y','N')	NO	N	권한: 직원
+user	30	groupQuickYN	enum('Y','N')	NO	N	간편가입 회원 여부
+user	31	groupDummyYN	enum('Y','N')	NO	N	더미(테스트) 계정 여부
+user	32	groupAdYN	enum('Y','N')	NO	N	광고 유입 회원 여부
+user	33	groupTeamAdmYN	enum('Y','N')	NO	N	권한: 팀장
+user	34	groupTeamYN	enum('Y','N')	NO	N	팀 소속 여부
+user	35	groupTeamOpenYN	enum('Y','N')	NO	N	팀 공개 여부
+user	36	groupTeamIdx	bigint	NO	0	소속 팀 idx
+user	37	groupAllocLockYN	enum('Y','N')	NO	N	배정 잠금
+user	38	groupAllocYN	enum('Y','N')	NO	N	배정 대상 여부
+user	39	groupAllocDateTime	datetime	NO	0000-00-00 00:00:00	배정 일시
+user	40	memoLastDateTime	datetime	NO	0000-00-00 00:00:00	최근 상담메모 일시(비정규화 캐시)
+user	41	memoLastStatTmCode	varchar(32)	NO		최근 상담메모의 TM 상태
+user	42	memoLastContents	varchar(255)	NO		최근 상담메모 내용 요약(255자)
+user	43	tokenWeb	varchar(128)	NO		웹 세션 토큰
+user	44	tokenPushbullet	varchar(128)	NO		Pushbullet 토큰
+user	45	tmLevel	tinyint(1)	NO	0	TM 차수(1차/2차)
+user	46	levelNum	tinyint(1)	NO	1	★회원 등급 번호 — 사이트마다 이름이 다름(등급 시트 참조)
+user	47	id	varchar(255)	NO		★로그인 아이디 (AES 암호화)
+user	48	name	varchar(255)	NO		★이름 (AES 암호화)
+user	49	pw	varchar(45)	NO		비밀번호 해시
+user	50	pwTemp	varchar(45)	NO		임시 비밀번호
+user	51	nick	varchar(255)	NO		★닉네임 (AES 암호화)
+user	52	email	varchar(64)	NO		이메일
+user	53	phone	varchar(255)	NO		★휴대폰번호 (AES 암호화)
+user	54	phoneAuth	varchar(32)	NO		인증한 휴대폰번호
+user	55	phoneAuthNum	varchar(32)	NO		인증번호
+user	56	phoneAuthYN	enum('Y','N')	NO	N	휴대폰 인증 완료 여부
+user	57	phoneAuthDateTime	datetime	NO	0000-00-00 00:00:00	휴대폰 인증 일시
+user	58	schedulePickSmsWeek	varchar(8)	NO	mon	★조합 발송 요일 1차(mon~sun)
+user	59	schedulePickSmsHour	tinyint	NO	9	★조합 발송 시각 1차(0~23)
+user	60	schedulePickSmsWeek2	varchar(8)	NO		조합 발송 요일 2차
+user	61	schedulePickSmsHour2	tinyint	NO	0	조합 발송 시각 2차
+user	62	tel	varchar(32)	NO		일반 전화
+user	63	fax	varchar(32)	NO		팩스
+user	64	addrZip	varchar(16)	NO		우편번호
+user	65	addr	varchar(64)	NO		주소
+user	66	addrSub	varchar(128)	NO		상세주소
+user	67	authPhone	varchar(16)	NO		본인인증 휴대폰
+user	68	authName	varchar(32)	NO		본인인증 이름
+user	69	authBirthDate	varchar(8)	NO		생년월일(8자리)
+user	70	authGender	enum('','male','female')	NO		성별(male/female)
+user	71	authCi	varchar(128)	NO		본인인증 CI(연계정보)
+user	72	authDi	varchar(128)	NO		본인인증 DI(중복가입확인)
+user	73	adminMemo	text	NO	NULL	관리자 메모
+user	74	adminScoreNum	tinyint unsigned	NO	3	관리자 평점(1아주나쁨~5아주좋음)
+user	75	adminTeam	tinyint(1)	NO	0	관리 팀 번호
+user	76	absence	tinyint(1)	NO	0	부재 횟수
+user	77	pointStatCode	varchar(16)	NO		포인트 상태
+user	78	pointTotal	bigint unsigned	NO	0	보유 포인트
+user	79	pointDateTime	datetime	NO	0000-00-00 00:00:00	포인트 갱신 일시
+user	80	calcNlotto645Num	int	NO	0	최근 당첨 회차
+user	81	calcNlotto645Grade	tinyint unsigned	NO	0	최근 당첨 등수(1~5)
+user	82	calcNlotto645WinSmsNum	int unsigned	NO	0	당첨안내 문자 발송한 회차
+user	83	calcNlotto645Prize	bigint unsigned	NO	0	누적 당첨금
+user	84	calcNlotto645Rank	varchar(45)	NO		당첨 순위
+user	85	calcNlotto645RankMonth	varchar(45)	NO		월간 당첨 순위
+user	86	calcNlotto645DateTime	datetime	NO	0000-00-00 00:00:00	당첨 집계 일시
+user	87	itemStatNlottoNum	bigint unsigned	NO	0	상품 기준 회차
+user	88	itemStatNlottoDateTime	datetime	NO	0000-00-00 00:00:00	상품 회차 기준일시
+user	89	itemStatNlottoNum2	bigint unsigned	NO	0	상품 기준 회차2
+user	90	itemStatNlottoDateTime2	datetime	NO	0000-00-00 00:00:00	상품 회차 기준일시2
+user	91	itemPaymentIdx	bigint unsigned	NO	0	현재 이용상품의 결제 idx(payment.idx)
+user	92	itemStatCode	varchar(16)	NO		상품 상태(대기/시작/종료/취소)
+user	93	itemCode	varchar(16)	NO		★현재 이용상품 코드 — product.itemCode
+user	94	itemName	varchar(64)	NO		★현재 이용상품명(등급명)
+user	95	itemNameCut	varchar(64)	NO		상품명 축약
+user	96	itemOptionSlot	int unsigned	NO	0	★발송 조합 수(주당 제공 번호 조합 개수)
+user	97	itemStartDateTime	datetime	NO	0000-00-00 00:00:00	★이용 시작일
+user	98	itemEndDateTime	datetime	NO	0000-00-00 00:00:00	★이용 종료일 — 유료 유효기간 판정 기준
+user	99	genFixNumStr	varchar(255)	NO		고정수(항상 포함할 번호)
+user	100	genExcNumStr	varchar(255)	NO		제외수
+user	101	genLottoNum	int	NO	0	생성 기준 회차
+user	102	genFixExcYN	enum('Y','N')	NO	N	고정/제외 사용 여부
+user	103	genFixNumCnt	int	NO	0	고정수 개수
+user	104	genExcNumCnt	int	NO	0	제외수 개수
+user	105	fixExcCnt	int	NO	0	고정+제외 적용 횟수
+user	106	fixCnt	int	NO	0	고정 적용 횟수
+user	107	excCnt	int	NO	0	제외 적용 횟수
+user	108	conti2Cnt	int	NO	0	연속 2개 포함 횟수
+user	109	conti3Cnt	int	NO	0	연속 3개 포함 횟수
+user	110	evenCnt	int	NO	0	짝수 개수
+user	111	oddCnt	int	NO	0	홀수 개수
+user	112	normalCnt	int	NO	0	일반 조합 횟수
+user	113	randYN	enum('Y','N')	NO	N	랜덤 생성 여부
+user	114	smsPatternYN	enum('Y','N')	NO	N	패턴 문자 발송 여부
+user	115	freeYN	enum('Y','N')	NO	Y	★무료회원 여부 — N이면 유료
+user	116	loginIp	varchar(39)	NO		로그인 작업자 IP
+user	117	loginIpCountry	varchar(16)	NO		로그인 IP 국가코드
+user	118	loginIpInfo	varchar(128)	NO		로그인 IP 부가정보(ISP 등)
+user	119	loginHost	varchar(64)	NO		로그인 접속 호스트(도메인)
+user	120	loginCount	bigint	NO	0	로그인 누적 횟수
+user	121	loginDateTime	datetime	NO	0000-00-00 00:00:00	로그인 일시
+user	122	insertIp	varchar(39)	NO		등록 작업자 IP
+user	123	insertIpCountry	varchar(16)	NO		등록 IP 국가코드
+user	124	insertIpInfo	varchar(128)	NO		등록 IP 부가정보(ISP 등)
+user	125	insertHost	varchar(64)	NO		등록 접속 호스트(도메인)
+user	126	insertUserIdx	bigint	NO	0	등록 작업한 회원 idx
+user	127	insertDateTime	datetime	NO	0000-00-00 00:00:00	등록 일시
+user	128	insertDateTimeOrg	datetime	NO	0000-00-00 00:00:00	원 가입일시(이관 전 원본)
+user	129	updateIp	varchar(39)	NO		수정 작업자 IP
+user	130	updateIpCountry	varchar(16)	NO		수정 IP 국가코드
+user	131	updateIpInfo	varchar(128)	NO		수정 IP 부가정보(ISP 등)
+user	132	updateHost	varchar(64)	NO		수정 접속 호스트(도메인)
+user	133	updateUserIdx	bigint	NO	0	수정 작업한 회원 idx
+user	134	updateDateTime	datetime	NO	0000-00-00 00:00:00	수정 일시
+user	135	loginNotifyYN	enum('Y','N')	NO	N	로그인 알림
+user	136	touchNotifyYN	enum('Y','N')	NO	N	활동 알림
+user	137	touchIp	varchar(39)	NO		최근활동 작업자 IP
+user	138	touchIpCountry	varchar(16)	NO		최근활동 IP 국가코드
+user	139	touchIpInfo	varchar(128)	NO		최근활동 IP 부가정보(ISP 등)
+user	140	touchHost	varchar(64)	NO		최근활동 접속 호스트(도메인)
+user	141	touchUri	varchar(255)	NO		최근활동 요청 URI
+user	142	touchDateTime	datetime	NO	0000-00-00 00:00:00	최근활동 일시
+user	143	inflowUniqCode	varchar(32)	NO		유입 고유코드
+user	144	inflowFromCode	varchar(32)	NO		★유입 경로(웹/모바일·일반/간편)
+user	145	inflowTypeCode	varchar(32)	NO		유입 유형
+user	146	inflowDevice	varchar(32)	NO		유입 기기
+user	147	inflowHost	varchar(128)	NO		유입 호스트
+user	148	inflowUri	varchar(255)	NO		유입 URI
+user	149	inflowAdAgency	varchar(255)	NO		광고 매체
+user	150	inflowAdKeyword	varchar(255)	NO		광고 키워드
+user	151	inflowAdSearch	varchar(255)	NO		검색어
+user	152	inflowAdPosition	varchar(255)	NO		광고 노출 위치
+user	153	agreeSmsYN	enum('Y','N')	NO	Y	문자 수신동의
+user	154	agreeSmsDateTime	datetime	NO	0000-00-00 00:00:00	문자 수신동의 일시
+user	155	tokenAppIos	varchar(255)	NO		iOS 푸시토큰
+user	156	tokenAppAnd	varchar(255)	NO		안드로이드 푸시토큰
+user	157	agreeUseYN	enum('Y','N')	NO	Y	이용약관 동의
+user	158	agreeUseDateTime	datetime	NO	0000-00-00 00:00:00	이용약관 동의 일시
+user	159	agreePersonalYN	enum('Y','N')	NO	Y	개인정보 동의
+user	160	agreePersonalDateTime	datetime	NO	0000-00-00 00:00:00	개인정보 동의 일시
+── payment (116컬럼) — 결제 내역. 1건 = 결제 1회. 상품·금액·담당 TM·PG 응답						
+payment	1	idx	bigint unsigned	NO	NULL	PK(자동증가)
+payment	2	convKey	varchar(64)	NO		외부 이관/전환 키 — 다른 시스템에서 옮겨온 원본 식별자
+payment	3	convBackup	mediumtext	NO	NULL	이관 전 원본 데이터 백업(JSON/문자열)
+payment	4	statCode	varchar(16)	NO		★결제 상태 — success/fail/cancel/standby
+payment	5	salesRealIdx	bigint	NO	0	실제 담당자 idx
+payment	6	salesIdx	bigint unsigned	NO	0	담당 상담원 idx
+payment	7	salesIncenType	varchar(20)	NO		인센티브 유형
+payment	8	salesLowIdx	bigint unsigned	NO	0	★1차 TM 회원 idx
+payment	9	salesLowIncentive	bigint unsigned	NO	0	1차 TM 인센티브
+payment	10	salesHighIdx	bigint unsigned	NO	0	★2차 TM 회원 idx
+payment	11	salesHighIncentive	bigint unsigned	NO	0	2차 TM 인센티브
+payment	12	userIdx	bigint unsigned	NO	0	★결제한 회원 idx
+payment	13	userBankName	varchar(255)	NO		입금자명 (AES 암호화)
+payment	14	payMethodCode	varchar(32)	NO		★결제수단 — siteCredit/siteBank/officeCredit/officeBank 등
+payment	15	payAgencyCode	varchar(128)	NO		결제 대행/은행 코드
+payment	16	payInstallmentCode	varchar(8)	NO		★할부(일시불/1~4회/완납)
+payment	17	payCardQuota	int	NO	0	카드 할부 개월
+payment	18	payKey	varchar(128)	NO		결제 키(계좌/가맹점)
+payment	19	payPw	varchar(128)	NO		결제 비밀번호
+payment	20	payHash	varchar(128)	NO		결제 해시
+payment	21	payVer	varchar(128)	NO		결제 버전
+payment	22	payGrCode	varchar(30)	NO		결제 그룹코드
+payment	23	payCpCode	varchar(30)	NO		결제 CP코드
+payment	24	payupId	varchar(32)	NO		
+payment	25	payupApiKey	varchar(64)	NO		
+payment	26	payupResAuthNumber	varchar(32)	NO		
+payment	27	payupResAuthDateTime	varchar(32)	NO		일시
+payment	28	payupResKakaoResult	varchar(16)	NO		
+payment	29	payupResCode	varchar(64)	NO		
+payment	30	payupResMsg	varchar(64)	NO		
+payment	31	payupResTransactionId	varchar(64)	NO		
+payment	32	payupResAmount	varchar(64)	NO		
+payment	33	pluspayMid	varchar(32)	NO		
+payment	34	pluspayResCode	varchar(64)	NO		
+payment	35	pluspayResMsg	varchar(64)	NO		
+payment	36	pluspayResAmount	varchar(64)	NO		
+payment	37	pluspayResTid	varchar(128)	NO		
+payment	38	welcomepayId	varchar(16)	NO		
+payment	39	welcomepayApiKey	varchar(64)	NO		
+payment	40	welcomepayIv	varchar(64)	NO		
+payment	41	welcomepayResAuthDateTime	varchar(64)	NO		일시
+payment	42	welcomepayResCode	varchar(64)	NO		
+payment	43	welcomepayResMsg	varchar(64)	NO		
+payment	44	welcomepayResTransactionId	varchar(64)	NO		
+payment	45	welcomepayResAmount	varchar(64)	NO		
+payment	46	payringApiKey	varchar(64)	NO		
+payment	47	payringResCode	varchar(16)	NO		
+payment	48	payringResMsg	varchar(64)	NO		
+payment	49	payringTranId	varchar(64)	NO		
+payment	50	shvanId	varchar(32)	NO		
+payment	51	shvanApiKey	varchar(64)	NO		
+payment	52	shvanUid	varchar(128)	NO		
+payment	53	coamResTid	varchar(255)	NO		
+payment	54	coamResTranDate	varchar(255)	NO		
+payment	55	coamResTranTime	varchar(255)	NO		
+payment	56	coamResWon	varchar(255)	NO		
+payment	57	onmirTranseq	varchar(255)	NO		
+payment	58	onmirAuthNo	varchar(64)	NO		
+payment	59	onmirAppDt	varchar(64)	NO		
+payment	60	onmirTotAmt	varchar(32)	NO		
+payment	61	onmirResCode	varchar(32)	NO		
+payment	62	onmirResMsg	varchar(255)	NO		
+payment	63	paysharpAuthCd	varchar(128)	NO		
+payment	64	paysharpTrxId	varchar(128)	NO		
+payment	65	paysharpResultCd	varchar(64)	NO		
+payment	66	paysharpResultMsg	varchar(128)	NO		
+payment	67	paysharpTerminal	varchar(64)	NO		
+payment	68	paysharpKey	varchar(128)	NO		
+payment	69	payResKey	varchar(64)	NO		PG 응답 키
+payment	70	payResTid	varchar(32)	NO		PG 거래번호
+payment	71	payResCid	varchar(32)	NO		PG 승인번호
+payment	72	payResWon	bigint unsigned	NO	0	PG 승인금액
+payment	73	payResMethod	varchar(64)	NO		PG 응답 결제수단(4사 모두 미사용·전부 빈값)
+payment	74	payResAgency	varchar(64)	NO		PG 응답 기관
+payment	75	payResGrCode	varchar(30)	NO		PG 응답 그룹
+payment	76	payResCpCode	varchar(30)	NO		PG 응답 CP
+payment	77	payLog	varchar(255)	NO		
+payment	78	payNotiLog	varchar(255)	NO		
+payment	79	payIncentive	bigint unsigned	NO	0	
+payment	80	payIncentivePercent	bigint unsigned	NO	0	
+payment	81	itemStatCode	varchar(16)	NO	standby	상품 상태
+payment	82	itemCode	varchar(16)	NO		구매 상품 코드
+payment	83	itemWon	bigint unsigned	NO	0	★결제 금액(원)
+payment	84	itemWonPg	bigint unsigned	NO	0	
+payment	85	itemName	varchar(64)	NO		★구매 상품명(등급)
+payment	86	itemNamePg	text	NO	NULL	
+payment	87	itemNameCut	varchar(64)	NO		
+payment	88	itemStartDateTime	datetime	NO	0000-00-00 00:00:00	이용 시작일
+payment	89	itemExpMonth	int unsigned	NO	0	이용 개월
+payment	90	itemExpDay	int unsigned	NO	0	이용 일수
+payment	91	itemUseDay	int unsigned	NO	0	
+payment	92	itemEndDateTime	datetime	NO	0000-00-00 00:00:00	이용 종료일
+payment	93	itemOptionLevel	int unsigned	NO	0	★상품 등급 레벨 — product.itemOptLevel
+payment	94	itemOptionPoint	int unsigned	NO	0	지급 포인트
+payment	95	itemOptionSlot	int unsigned	NO	0	조합 수
+payment	96	itemOptionGuaranteeCode	varchar(16)	NO		
+payment	97	insertIp	varchar(39)	NO		등록 작업자 IP
+payment	98	insertIpCountry	varchar(16)	NO		등록 IP 국가코드
+payment	99	insertIpInfo	varchar(128)	NO		등록 IP 부가정보(ISP 등)
+payment	100	insertHost	varchar(64)	NO		등록 접속 호스트(도메인)
+payment	101	insertUserIdx	bigint unsigned	NO	0	등록 작업한 회원 idx
+payment	102	insertDateTime	datetime	NO	0000-00-00 00:00:00	등록 일시
+payment	103	updateIp	varchar(39)	NO		수정 작업자 IP
+payment	104	updateIpCountry	varchar(16)	NO		수정 IP 국가코드
+payment	105	updateIpInfo	varchar(128)	NO		수정 IP 부가정보(ISP 등)
+payment	106	updateHost	varchar(64)	NO		수정 접속 호스트(도메인)
+payment	107	updateUserIdx	bigint	NO	0	수정 작업한 회원 idx
+payment	108	updateDateTime	datetime	NO	0000-00-00 00:00:00	수정 일시
+payment	109	inflowTypeCode	varchar(32)	NO		
+payment	110	inflowDevice	varchar(32)	NO		
+payment	111	inflowHost	varchar(128)	NO		접속 호스트(도메인)
+payment	112	inflowUri	varchar(255)	NO		요청 URI
+payment	113	inflowAdAgency	varchar(255)	NO		
+payment	114	inflowAdKeyword	varchar(255)	NO		
+payment	115	inflowAdSearch	varchar(255)	NO		
+payment	116	inflowAdPosition	varchar(255)	NO		
+── userMemo (22컬럼) — 상담 이력. typeCode=normal 만 상담원이 직접 쓴 메모						
+userMemo	1	idx	bigint	NO	NULL	PK(자동증가)
+userMemo	2	convKey	varchar(32)	NO		외부 이관/전환 키 — 다른 시스템에서 옮겨온 원본 식별자
+userMemo	3	userIdx	bigint unsigned	NO	0	★대상 회원 idx
+userMemo	4	salesIdx	bigint unsigned	NO	0	작성 상담원 idx
+userMemo	5	statCode	varchar(16)	NO	normal	메모 상태 — normal 이 정상, 그 외는 삭제/보류
+userMemo	6	statTmCode	varchar(16)	NO		작성 시점의 TM 상태
+userMemo	7	groupTeamOpenYN	enum('Y','N')	NO	Y	팀 공개 여부
+userMemo	8	typeCode	varchar(16)	NO	normal	★메모 유형 — normal 만 상담원이 직접 쓴 메모. 나머지는 자동기록
+userMemo	9	phoneFrom	varchar(16)	NO		발신 번호
+userMemo	10	phoneTo	varchar(255)	NO		수신 번호
+userMemo	11	smsFrom	varchar(16)	NO		문자 발신
+userMemo	12	smsTo	varchar(16)	NO		문자 수신
+userMemo	13	contents	mediumtext	NO	NULL	★메모 본문(평문)
+userMemo	14	insertIp	varchar(39)	NO		등록 작업자 IP
+userMemo	15	insertUserIdx	bigint unsigned	NO	0	등록 작업한 회원 idx
+userMemo	16	insertDateTime	datetime	NO	0000-00-00 00:00:00	등록 일시
+userMemo	17	updateIp	varchar(39)	NO		수정 작업자 IP
+userMemo	18	updateUserIdx	bigint unsigned	NO	0	수정 작업한 회원 idx
+userMemo	19	updateDateTime	datetime	NO	0000-00-00 00:00:00	수정 일시
+userMemo	20	reservYN	enum('Y','N')	NO	N	통화예약 여부
+userMemo	21	reservCheckYN	enum('Y','N')	NO	N	예약 확인 여부
+userMemo	22	reservDateTime	datetime	NO	0000-00-00 00:00:00	예약 일시
+── pushSms (35컬럼) — 문자 발송 내역. 조합발송·당첨안내·관리자문자 전부 포함						
+pushSms	1	idx	bigint unsigned	NO	NULL	PK(자동증가)
+pushSms	2	api	varchar(40)	NO		발송 API 제공사
+pushSms	3	apiId	varchar(40)	NO		API 계정
+pushSms	4	apiKey	varchar(40)	NO		API 키
+pushSms	5	statCode	varchar(32)	NO		발송 상태 — success/send/standby/fail
+pushSms	6	reserveDateTime	datetime	NO	0000-00-00 00:00:00	예약 발송 일시
+pushSms	7	salesIdx	bigint unsigned	NO	0	발송 담당자 idx
+pushSms	8	userIdx	bigint unsigned	NO	0	★수신 회원 idx
+pushSms	9	typeCode	varchar(32)	NO		문자 종류(sms/lms 등)
+pushSms	10	from	varchar(64)	NO		발신번호
+pushSms	11	to	varchar(64)	NO		★수신번호
+pushSms	12	subject	varchar(255)	NO		제목(LMS)
+pushSms	13	contents	mediumtext	NO	NULL	★문자 본문(평문)
+pushSms	14	contentsTypeCode	varchar(32)	NO		★문자 유형 — 조합발송/당첨안내/관리자 등(문자 시트 참조)
+pushSms	15	contentsCode	varchar(32)	NO		문자 템플릿 코드
+pushSms	16	resultCode	varchar(32)	NO		발송 결과코드
+pushSms	17	resultYN	varchar(32)	NO		발송 성공 여부
+pushSms	18	resultCountdown	int unsigned	NO	0	재시도 잔여
+pushSms	19	resultMsg	varchar(64)	NO		결과 메시지
+pushSms	20	insertIp	varchar(40)	NO		등록 작업자 IP
+pushSms	21	insertIpCountry	varchar(16)	NO		등록 IP 국가코드
+pushSms	22	insertIpInfo	varchar(128)	NO		등록 IP 부가정보(ISP 등)
+pushSms	23	insertHost	varchar(64)	NO		등록 접속 호스트(도메인)
+pushSms	24	insertUserIdx	bigint unsigned	NO	0	등록 작업한 회원 idx
+pushSms	25	insertAgent	varchar(255)	NO		등록 브라우저 User-Agent
+pushSms	26	insertReferer	varchar(255)	NO		등록 유입 referer
+pushSms	27	insertDateTime	datetime	NO	0000-00-00 00:00:00	등록 일시
+pushSms	28	updateIp	varchar(40)	NO		수정 작업자 IP
+pushSms	29	updateIpCountry	varchar(16)	NO		수정 IP 국가코드
+pushSms	30	updateIpInfo	varchar(128)	NO		수정 IP 부가정보(ISP 등)
+pushSms	31	updateHost	varchar(64)	NO		수정 접속 호스트(도메인)
+pushSms	32	updateUserIdx	bigint	NO	0	수정 작업한 회원 idx
+pushSms	33	updateAgent	varchar(255)	NO		수정 브라우저 User-Agent
+pushSms	34	updateReferer	varchar(255)	NO		수정 유입 referer
+pushSms	35	updateDateTime	datetime	NO	0000-00-00 00:00:00	수정 일시
+── gameBettingNlotto (20컬럼) — ★회원별 추천 조합과 당첨 결과. 최대 테이블(3.6억행)						
+gameBettingNlotto	1	idx	bigint unsigned	NO	NULL	PK(자동증가)
+gameBettingNlotto	2	convKey	varchar(32)	NO		외부 이관/전환 키 — 다른 시스템에서 옮겨온 원본 식별자
+gameBettingNlotto	3	statCode	varchar(32)	NO		★조합 상태 — finish(확정)/remove(삭제)
+gameBettingNlotto	4	year	int unsigned	NO	0	발송 연
+gameBettingNlotto	5	month	int unsigned	NO	0	발송 월
+gameBettingNlotto	6	day	int unsigned	NO	0	발송 일
+gameBettingNlotto	7	num	int unsigned	NO	0	★로또 회차
+gameBettingNlotto	8	userIdx	bigint unsigned	NO	0	★회원 idx
+gameBettingNlotto	9	userId	varchar(32)	NO		회원 아이디(암호화)
+gameBettingNlotto	10	checkYN	enum('Y','N')	NO	N	당첨 확인 완료 여부
+gameBettingNlotto	11	pickTypeCode	varchar(16)	NO		★조합 생성 방식 — normal(일반)/fixExc(고정·제외 적용)
+gameBettingNlotto	12	pickFromCode	varchar(32)	NO		★조합 출처 — item_{상품}_{차수}_{결제idx} / item_free_0_0(무료) / adminAuto(관리자)
+gameBettingNlotto	13	pickStr	varchar(32)	NO		★추천 번호 6개
+gameBettingNlotto	14	grade	int unsigned	NO	0	★당첨 등수 — 0=미당첨, 1~5등
+gameBettingNlotto	15	prize	bigint unsigned	NO	0	★당첨금(원)
+gameBettingNlotto	16	recFixStr	varchar(255)	NO		고정수 기록
+gameBettingNlotto	17	recExcStr	varchar(255)	NO		제외수 기록
+gameBettingNlotto	18	recContiStr	varchar(255)	NO		연속수 기록
+gameBettingNlotto	19	insertDateTime	timestamp	NO	0000-00-00 00:00:00	등록 일시
+gameBettingNlotto	20	updateDateTime	timestamp	NO	0000-00-00 00:00:00	수정 일시
+						
+※ lotto815 기준. 4사 공통 테이블은 컬럼 구성이 사실상 같다						
+※ ★ 표시 = 실무에서 자주 쓰는 핵심 컬럼 (노란 배경)						
+★ AES-256-CBC 암호화 컬럼: user 의 id·name·nick·phone, payment 의 userBankName. 키는 각 서버 /home/erudacom/reg/{사이트}/site.json 의 cryptKey·cryptIv						
+※ userMemo.contents·pushSms.contents 는 평문이다(프레임워크가 복호화하지 않는다)						

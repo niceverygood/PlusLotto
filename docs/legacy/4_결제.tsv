@@ -1,0 +1,32 @@
+컬럼	코드	의미	815korean.co.kr	88lotto.co.kr	infolotto.co.kr	ilhanglotto.co.kr
+payment.statCode	── 결제 상태 ──					
+	success	★승인 — 실제 매출로 잡는 건	28080	7076	7456	8593
+	cancel	취소	3784	7	1165	1015
+	fail	실패	38	13	1173	3081
+	standby	대기	2	0	0	5
+	(빈값)	※소스 정의 없음	0	0	5	0
+payment.payMethodCode	── 결제수단 ──					
+	officeCredit	수기-단말기 (ilhanglotto 는 '수기-뉴본')	25452	71	7807	844
+	siteBank	무통장	6443	22	1747	1881
+	siteCredit	신용카드	2	20	1	9967
+	adminAuto	※소스 정의 없음	0	6705	0	0
+	recovery	※소스 정의 없음	0	278	0	0
+	(빈값)	※소스 정의 없음	7	0	244	2
+payment.payInstallmentCode	── 할부 ──					
+	full	일시불	31883	21	6222	2706
+	(빈값)	※소스 정의 없음	13	7075	3570	9972
+	finish	완납	1	0	6	4
+	3	3회	3	0	1	6
+	1	1회	2	0	0	5
+	4	4회	2	0	0	0
+	2	2회	0	0	0	1
+payment.itemStatCode	── 상품 이용 상태 ──					
+	standby	대기				
+	start	시작				
+	end	종료				
+	cancel	취소				
+						
+★ payment.payResMethod 는 4사 모두 전부 빈값이다. 결제수단은 반드시 payMethodCode 로 봐야 한다						
+★ officeCredit(수기) 은 상담원이 단말기로 직접 긁은 건이다. 815·infolotto 는 이것이 결제의 대부분을 차지한다						
+"※ ilhanglotto 만 officeCredit 라벨이 ""수기-뉴본""이고 officeBank(수기-무통장) 항목이 없다"						
+※ lotto88 의 adminAuto·recovery 는 소스 정의에 없다 — 88리커버리 일괄 처리분으로 보인다						

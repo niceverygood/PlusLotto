@@ -1,0 +1,39 @@
+컬럼	코드	의미	815korean.co.kr	88lotto.co.kr	infolotto.co.kr	ilhanglotto.co.kr
+user.statCode	── 회원 상태 ──					
+	normal	정상	443095	6940	105954	150699
+	remove	삭제	50139	676	8679	9822
+	leave	탈퇴	7251	48	370	960
+	standby	대기	547	2367	4802	377
+	block	정지	187	31	16	86
+	end	정회원 만료자	0	0	0	1
+	removeBJ	구DB(삭제)	0	0	0	0
+	freeEnd	무료회원 만료자	0	0	0	0
+	normalBJ	구DB	0	0	0	0
+user.statTmCode	── TM(상담) 상태 ──					
+	refuseStubborn	도입거절	260967	128	11324	44425
+	refuse	일반거절	98084	136	7537	50098
+	absence	부재	69326	143	5735	47999
+	new	신규	6353	2713	87427	1433
+	success	승인	18534	6878	3313	5498
+	none	결번	25533	15	896	4807
+	etc	기타	21879	49	1337	5115
+	chance	가망	365	0	2064	566
+	manageFree	무료번호관리	120	0	151	1994
+	reserv	통화예약	58	0	36	10
+	paying	※소스 정의 없음	0	0	1	0
+user.statAdmCode	── 관리자 분류 ──					
+	old	구디비	195567	235	5595	54197
+	2dayRefusal	하루전 거절	110177	31	9699	30962
+	new	신규	83440	112	8240	42970
+	(빈값)	※소스 정의 없음	5982	9612	89989	926
+	3day	이틀전	56369	43	2663	20525
+	2dayAbsence	하루전 부재	49684	29	3635	12365
+user.freeYN	── 무료/유료 ──					
+	Y	무료회원	479410	3149	114743	155541
+	N	★유료회원 (추출 기준)	21809	6913	5078	6404
+						
+※ 숫자는 user 테이블 전체 기준 회원 수 (2026-08-19)						
+※ 노란 줄 = 소스 codeArr 에 정의가 없는 값. 과거 데이터나 이관분이다						
+※ 「유료회원 추출」의 정식 조건은 freeYN=N AND statCode=normal AND itemEndDateTime > NOW()						
+※ statTmCode 는 상담원의 영업 단계, statAdmCode 는 DB 신선도 분류다. 둘은 별개로 관리된다						
+※ 코드 라벨은 4사 소스가 모두 동일하다 (등급 level 과 결제 payMethodOffice 만 사이트별로 다름)						

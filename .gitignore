@@ -24,3 +24,15 @@ dist-ssr
 # claude code (personal local settings)
 .claude/settings.local.json
 .env*.local
+
+# 이관용 레거시 덤프 — 개인정보. 이 저장소는 공개라 절대 커밋 금지(D164).
+# 저장소 루트에 떨어지는 덤프/추출물만 막는다. `*.sql` 을 전역으로 막으면
+# supabase/migrations/*.sql 까지 무시돼 마이그레이션이 커밋되지 않는다(실제로 걸려서 좁혔다).
+# (구조만 담은 docs/legacy/*.tsv 는 개인정보가 없어 커밋한다)
+/*.sql
+/*.sql.gz
+/*.tar.gz
+/*.tgz
+/*.xlsx
+/legacy-schema/
+/data/
