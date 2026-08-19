@@ -1,0 +1,21 @@
+파일	테이블	내용	추출 조건(WHERE)	행수	컬럼	용량
+data/lotto815_user.sql	user	회원. 로그인 정보·등급·이용기간·담당 상담원·유입경로가 모두 여기 있다	idx IN (유료회원 13,237명)	13237	160	18.1MB
+data/lotto815_payment.sql	payment	결제 내역. 1건 = 결제 1회. 상품·금액·담당 TM·PG 응답	userIdx IN (...) AND statCode='success'	21680	116	13.7MB
+data/lotto815_userMemo.sql	userMemo	상담 이력. typeCode=normal 만 상담원이 직접 쓴 메모	userIdx IN (...) AND typeCode='normal' AND statCode='normal'	178162	22	60.0MB
+data/lotto815_pushSms.sql	pushSms	문자 발송 내역. 조합발송·당첨안내·관리자문자 전부 포함	userIdx IN (...) — 전체	1517968	35	854.6MB
+data/lotto815_gameBettingNlotto.sql	gameBettingNlotto	★회원별 추천 조합과 당첨 결과. 최대 테이블(3.6억행)	userIdx IN (...) AND grade > 0 (당첨분만)	347138	20	64.9MB
+schema/lotto815_schema.sql	(스키마)	위 5개 테이블의 CREATE TABLE	—			24KB
+README.md	(설명)	덤프 작업 기록	—			6.5KB
+						
+합계 2,078,185행 / 1,011MB (압축 148.3MB)						
+						
+※ 대상 = 815korean 의 현재 이용중 유료회원 13,237명 (2026-08-18 기준)						
+※ 값은 복호화된 평문 INSERT 문이다. import 하려면 스키마를 먼저 넣어야 한다						
+★ 이 덤프에 product 테이블은 없다. 등급(itemCode·levelNum)의 이름과 가격은 「2.등급·상품」 시트를 참조할 것						
+						
+── 덤프 테이블의 주요 인덱스 (조회 성능) ──						
+	user	인덱스 36개	idx_UNIQUE(idx) / id_uniq(id) / calcNlotto645Num_idx(calcNlotto645Num) / salesIdx_idx(salesIdx) / schedulePick(schedulePickSmsWeek,schedulePickSmsHour) / statCodeTm_idx(statTmCode) / convKey_idx(convKey) / groupTeamOpenYN(groupTeamOpenYN) / groupTeamIdx(groupTeamIdx)			
+	payment	인덱스 2개	userIdx_idx(userIdx) / convKey(convKey)			
+	userMemo	인덱스 7개	UNIQUE(idx) / reservCheckYN_idx(reservYN,reservCheckYN,reservDateTime) / statCode_idx(statCode) / userIdx_idx(userIdx) / convKey_idx(convKey) / statTmCode_idx(statTmCode) / salesIdx_idx(salesIdx)			
+	pushSms	인덱스 8개	idx_UNIQUE(idx) / to(to) / insertDateTime(insertDateTime) / insertDateTimeTo(insertDateTime,to) / insertDateTimeToContentsTypeCodeContentsCode(insertDateTime,to,contentsTypeCode,contentsCode) / statCode_idx(statCode) / userIdx_contentsTypeCode_idx(userIdx,contentsTypeCode) / contentsTypeCode(contentsTypeCode)			
+	gameBettingNlotto	인덱스 16개	idx_UNIQUE(idx,num) / sch_num_pickStr_idx(num,pickStr) / prize_idx(prize) / grade_idx(grade) / statCode_idx(statCode) / num_prize_idx(num,prize) / userIdx_idx(userIdx) / userIdxGrade(userIdx,grade) / check_idx(userIdx,statCode)			

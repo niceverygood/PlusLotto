@@ -1,0 +1,53 @@
+컬럼	코드	의미	815 건수(유료회원)
+gameBettingNlotto.grade	── 당첨 등수 ──		
+	1	1등	2
+	2	2등	6
+	3	3등	324
+	4	4등	18973
+	5	5등	329904
+	0	미당첨 — 덤프는 grade>0 만 담아 집계에 없다	
+gameBettingNlotto.statCode	── 조합 상태 ──		
+	finish	확정	317892
+	remove	삭제	29246
+gameBettingNlotto.checkYN	── 당첨확인 완료 ──		
+	Y	확인 완료	317225
+	N	미확인	29913
+gameBettingNlotto.pickTypeCode	── 조합 생성 방식 ──		
+	normal	일반 생성	163673
+	fixExc	고정수·제외수 적용	179536
+gameBettingNlotto.pickFromCode	── 조합 출처 ──		
+	item_{상품}_{차수}_{결제idx}	유료 상품에서 생성 (예: item_mania_1_1106)	
+	item_free_0_0	무료회원 조합	29911
+	adminAuto	관리자 자동 생성	3929
+userMemo.typeCode	── 상담메모 유형 ──		
+	normal	★일반 — 상담원이 직접 쓴 메모. 상담 이력은 이것만 세야 한다	
+	tm	상담	
+	callIn	전화 수신	
+	callOut	전화 발신	
+	smsIn	문자 수신	
+	smsOut	문자 발신 (조합번호 자동 기록)	
+	patternSendY	패턴 발신	
+	patternSendN	패턴 미발신 (자동 기록)	
+userMemo.statCode	── 메모 상태 ──		
+	normal	정상 (삭제되지 않은 건)	
+user.inflowFromCode	── 유입 경로 ──		
+	webNormal	웹-일반	
+	webQuick	웹-간편가입	
+	mobileNormal	모바일-일반	
+	mobileQuick	모바일-간편가입	
+user.adminScoreNum	── 관리자 평점 ──		
+	1	아주나쁨	
+	2	나쁨	
+	3	보통	
+	4	좋음	
+	5	아주좋음	
+user.calcNlotto645Grade	── 회원의 최근 당첨 등수 ──		
+	1	1등	
+	2	2등	
+	3	3등	
+	4	4등	
+	5	5등	
+user.schedulePickSmsWeek	── 조합 발송 요일 ──		
+	mon·tue·wed·thu·fri·sat·sun	월~일. Week2/Hour2 는 주 2회 발송용	
+			
+※ user.php 의 absence·adminTeam·tmLevel 코드는 소스에서 주석 처리된 미사용 정의라 제외했다			
