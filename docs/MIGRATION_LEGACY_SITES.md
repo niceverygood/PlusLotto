@@ -49,6 +49,62 @@
 `features/members/views.ts` 의 저장된 뷰(§7) 에 사이트별 프리셋을 추가한다.
 **새 구조가 필요 없다** — 26개 세그먼트를 돌리는 기존 뷰 패턴을 그대로 쓴다.
 
+## 0.3 ★ 815 실물 덤프 검증 결과 (8/24) — 매핑이 여러 군데 틀렸다
+
+업체가 요청대로 **테이블별 개별 압축 + pushSms 제외**로 다시 보내왔다(148MB → **23MB**).
+13,237행 전체를 파싱해 대응표와 대조한 결과, **대응표의 상품 정의는 "정가·표준값"이고
+실제 데이터는 회원마다 개별 조정돼 있다.** 등급에서 값을 파생하면 안 된다.
+
+### 확인된 것 ✅
+| 항목 | 결과 |
+|---|---|
+| 건수 | user 13,237 / payment 21,680 / userMemo 178,162 / 조합(당첨) 347,138 — 대응표와 일치 |
+| `levelNum` ↔ `itemCode` | **완전 1:1** — 2=family 9,030 / 3=mania 3,640 / 4=first 567 |
+| 휴대폰 | **13,237명 전원 정상 형식**(100%). 사이트 간 중복 대조 가능 |
+| `statCode` | 전부 `normal` — 이관분은 전원 정상 상태 |
+| `convKey`·`convSvcName` | **전부 빈값** → 「이미 이전된 회원」 우려 해소(§4 확인항목 닫힘) |
+
+### 틀렸던 것 ❌ — 반드시 고쳐서 이관한다
+1. **주당 조합 수(`itemOptionSlot`)를 등급에서 파생하면 안 된다.**
+   등급×조합수 조합이 **17가지**다. 매니아인데 10개인 회원이 991명(매니아의 27%),
+   패밀리인데 20개인 회원이 368명. 5·7·15·30·40개짜리도 있다.
+   → **회원별 실제값을 그대로 옮긴다.** 파생하면 991명의 조합이 반토막 난다.
+2. **이용기간(`itemExpMonth`)도 파생 금지.** 13종이다(36·20·18·21·26·24·27·19개월…).
+   대응표의 "패밀리 18개월 / 매니아·퍼스트 36개월"은 표준값일 뿐이다.
+3. **판매가는 대응표 값을 쓰면 안 된다.** 대응표는 488,000 / 7,880,000 / 11,880,000 원인데
+   실제 결제액 최빈값은 216,000 / 214,000 / 212,000 원이다(총 매출 128.9억, 건당 평균 59.5만).
+   → **`itemWon` 실제값만 쓴다.**
+4. **`salesRealIdx` 는 21,680건 전부 0** — 쓸 수 없다. 매출 귀속은 `salesIdx` 하나뿐이다.
+5. **`inflowUniqCode`·`inflowTypeCode`·`inflowDevice` 는 전부 빈값.**
+   값이 있는 유입 컬럼은 **`inflowFromCode` 하나(191종)** 뿐이다. `매체-캠페인` 형태
+   (`rd-news` `dv-pro` `ta-news` …). 유입코드 요청 대상을 이 하나로 좁힌다.
+6. **`groupTeamIdx` 전부 0** — 팀 정보가 없다. 업체에 팀 목록을 요청할 필요가 없다.
+7. **`tmLevel`·`absence`·`pointTotal`·`moveCode` 전부 0, `email` 13건뿐** — 이관 대상 아님.
+
+### 새로 발견 — 매핑이 필요한 컬럼
+**`statAdmCode`** (13,206행에 값, 6종): `new` 9,942 / `2dayAbsence` 1,426 /
+`2dayRefusal` 727 / `3day` 626 / `old` 485. 아웃콜 진행 단계로 보인다.
+우리 아웃콜 플래그(§8)와 연결될 후보라 **의미 확인이 필요하다**.
+
+### ★ 운영에 바로 영향을 주는 두 가지
+1. **조합 발송요일이 월~금에 흩어져 있다** — mon 3,213 / tue 2,804 / wed 2,805 /
+   thu 2,573 / fri 1,841. 토·일은 없다. 우리 기본값(금요일 `DEFAULT_RECO_DAY=5`)으로
+   일괄 입력하면 **금요일 하루에 13,237건이 몰린다.** 회원별 요일을 그대로 옮겨야 한다
+   (`mon`=1 … `fri`=5).
+2. **90일 안에 3,301명(25%)이 만료된다.** 이미 만료된 회원도 111명 있다.
+   이관 직후 곧바로 재계약 아웃콜 대상이 된다 — 현장에 미리 알려야 한다.
+   (종료일 분포: 2026년 4,935 / 2027년 6,209 / 2028년 2,063 / 2029년 30)
+
+### 그 밖의 실측치
+- **담당 상담원 111명**(결제 귀속은 110명). 미배정은 3명뿐 — 대응표만 받으면 담당이 거의 다 살아난다.
+- 결제수단은 2종뿐: `officeCredit`(수기-단말기) 16,966 / `siteBank`(무통장) 4,714. PG 결제 없음.
+- **회원 4,372명(33%)이 2건 이상 결제**(최다 23건) → 결제는 이력 전체를 옮기고
+  종료일은 **가장 최근 결제 기준**으로 잡는다.
+- 당첨: 1등 2건 · 2등 4건 · 3등 320건 · 4등 18,827 · 5등 327,985. 당첨금 합계 64.6억.
+  1~3등 당첨 회원 323명 → 이 사람들만 뽑아도 당첨자 세그먼트가 산다.
+- 상담메모 상담상태: `success` 153,137 / `chance` 17,766 / `absence` 6,076 /
+  `refuse` 455 / `manageFree` 290(우리에 없음 → 기타). 회원당 평균 13.5건, 최다 148건.
+
 ## 1. user → members
 
 | 815 컬럼 | 플러스로또 | 변환 | 확인필요 |
@@ -61,15 +117,16 @@
 | `levelNum`·`itemCode` | `grade` | §2 등급표 | ★ |
 | `statCode` | `status` | `normal`→정상 / `block`→정지 / `remove`→삭제 / `leave`→탈퇴 / `standby`→정상(대기 개념 없음) | |
 | `statTmCode` | `consult_status` | 라벨이 우리와 거의 일치 — §2 | |
-| `inflowUniqCode` | `inflow_code` | | |
-| `inflowFromCode` | `inflow_type` | 웹-일반/웹-간편/모바일-일반/모바일-간편 | |
+| `statAdmCode` | ? | 6종(`new`/`2dayAbsence`/`2dayRefusal`/`3day`/`old`). 아웃콜 단계 추정 — 의미 확인 필요 | ★ |
+| ~~`inflowUniqCode`~~ | — | **전부 빈값(§0.3)** — 쓰지 않는다 | |
+| `inflowFromCode` | `inflow_code` | **유일하게 값이 있는 유입 컬럼. 191종, `매체-캠페인` 형태** | ★ |
 | `salesIdx` | `assigned_staff_id` | ★ 상담원 계정 매핑 필요 — §3 | ★ |
 | `adminMemo`, `memoLastContents` | `memo` | 둘 다 있으면 adminMemo 우선 | |
 | `insertDateTimeOrg` ?? `insertDateTime` | `registered_at` | 원 가입일이 있으면 그것 | |
 | `loginDateTime` | `last_active_at` | | |
 | `itemEndDateTime` | `meta.end_date` | **그대로 쓴다** — 우리 만료 판정이 이 값을 본다(D155·D156) | |
-| `schedulePickSmsWeek` | `meta.weekly_reco_day` | `sun`=0 … `sat`=6 | |
-| `itemOptionSlot` | `meta.weekly_reco_count` | 주당 조합 수(패밀리 10 / 매니아·퍼스트 20) | |
+| `schedulePickSmsWeek` | `meta.weekly_reco_day` | `sun`=0 … `sat`=6. **기본값 금요일로 채우면 안 된다**(§0.3) | |
+| `itemOptionSlot` | `meta.weekly_reco_count` | **회원별 실제값 그대로.** 등급에서 파생 금지(§0.3-1) | |
 | `adminScoreNum` | — | 관리자 평점(1~5). 우리 `tendency`(적극/보통/신중)와 다른 축이라 `meta` 보관만 | |
 | `freeYN` | — | 추출 조건이라 전부 `N`. 저장 불필요 | |
 
@@ -86,6 +143,10 @@
 
 가격대·이용기간·주당 조합 수가 실버/골드/다이아와 같은 순서로 대응한다. **다만 이건 추정이고
 매출 귀속과 조합 발급 수에 직접 영향을 주므로 현장 확인이 필요하다.**
+
+> ⚠️ 위 표의 **판매가·이용기간·주당조합은 대응표의 표준값이고 실물과 다르다**(§0.3).
+> 실제 회원수는 family 9,030 / mania 3,640 / first 567 이고, `levelNum` ↔ `itemCode` 는
+> 완전 1:1 로 확인됐다. 등급 대응만 정하면 되고, 나머지 값은 회원별 실제값을 옮긴다.
 
 ### 2.2 회원 상태 (`statCode` → `status`)
 
@@ -115,14 +176,14 @@
 |---|---|---|
 | `idx` | `meta`/키 | 재실행 시 중복 방지용 원본 id |
 | `userIdx` | `member_id` | `members.meta.legacy_idx` 로 역참조 |
-| `itemWon` | `amount` | |
+| `itemWon` | `amount` | **실제 결제액. 대응표의 정가를 쓰면 안 된다**(§0.3-3) |
 | `payMethodCode` | `method` | §2.4 |
 | `statCode` | `status` | §2.5 |
 | `itemCode`·`itemName` | `product_id` | 우리 `products` 에 대응 상품이 없으면 신규 생성 필요 ★ |
 | `itemStartDateTime` | `period_start` | |
-| `itemStartDateTime` + `itemExpMonth` | `period_end` | `itemEndDateTime` 이 있으면 그것 우선 |
+| `itemStartDateTime` + `itemExpMonth` | `period_end` | `itemEndDateTime` 우선. **`itemExpMonth` 는 13종이라 등급에서 파생 금지** |
 | `userBankName` | `depositor_name` | |
-| `salesIdx` (또는 `salesRealIdx`) | `staff_id` | 매출 귀속 — §4 |
+| `salesIdx` | `staff_id` | 매출 귀속. **`salesRealIdx` 는 전부 0이라 쓸 수 없다**(§0.3-4) |
 | `insertDateTime` | `paid_at`·`created_at` | |
 | `payInstallmentCode` | — | 할부. 우리에 없음 → `meta` |
 
