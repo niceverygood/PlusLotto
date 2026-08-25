@@ -25,7 +25,7 @@ import { recoEligibility } from '@/lib/recoEligibility'
 import { useSiteSettingsShared } from '@/lib/siteSettings'
 import { endDateForGrade } from '@/lib/membershipTerm'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
-import { PAYMENT_ROUNDS, suggestPaymentRound, type PaymentRound } from '@/lib/paymentRound'
+import { PAYMENT_ROUNDS, roundForGrade, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
@@ -233,15 +233,12 @@ export function MemberDrawer({
     return m
   }, [staff])
 
-  // 결제 회차(1차/2차/3차…) — 현장 피드백 7/6: 결제건마다 다른 담당자를 배정할 수 있어야 하므로
-  // 시간순(오름차순)으로 몇 번째 결제인지 매겨서 표시. payments 는 최신순 정렬이라 여기서 뒤집어 계산.
-  const paymentRound = useMemo(() => {
-    const m: Record<string, number> = {}
-    ;[...payments]
-      .sort((a, b) => a.created_at.localeCompare(b.created_at))
-      .forEach((p, i) => (m[p.id] = i + 1))
+  // 상품 등급 조회 — 차수 표시(실버=1차·골드=2차·다이아=3차)와 결제요청 기본값에 쓴다.
+  const productGrade = useMemo(() => {
+    const m: Record<string, Grade> = {}
+    for (const p of products) m[p.id] = p.grade_granted
     return m
-  }, [payments])
+  }, [products])
 
   // 종료일 기본값 = 결제일(없으면 가입일) + 등급별 연수. meta.end_date(수정 override) 우선
   // (현장 6/26·6/29). 등급별 연수는 8/13 현장 요청 — 실버 1년, 골드·다이아 3년(lib/membershipTerm).
@@ -752,9 +749,9 @@ export function MemberDrawer({
                   </select>
                   <select
                     className={selectCls + ' w-[104px]'}
-                    value={payRound || suggestPaymentRound(payments.filter((p) => p.status === 'approved').length)}
+                    value={payRound || (selected ? roundForGrade(selected.grade_granted) ?? '1차결제' : '1차결제')}
                     onChange={(e) => setPayRound(e.target.value as PaymentRound)}
-                    title="결제차수 — 기본값은 승인 이력으로 제안되며 직접 고를 수 있습니다"
+                    title="결제차수 — 상품 등급으로 정해집니다(실버=1차·골드=2차·다이아=3차). 미수는 직접 고르세요"
                   >
                     {PAYMENT_ROUNDS.map((r) => (
                       <option key={r} value={r}>
@@ -774,9 +771,7 @@ export function MemberDrawer({
                           productId: selected.id,
                           amount: Number(payAmount),
                           method: payMethod,
-                          roundLabel:
-                            payRound ||
-                            suggestPaymentRound(payments.filter((p) => p.status === 'approved').length),
+                          roundLabel: payRound || roundForGrade(selected.grade_granted) || '1차결제',
                         },
                         {
                           onSuccess: () => {
@@ -808,9 +803,26 @@ export function MemberDrawer({
             <div key={p.id} className="border-b border-gray-100 py-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-bold text-gray-500">
-                    {paymentRound[p.id] ?? '?'}차결제
-                  </span>
+                  {/* 차수 = 상품 등급 구분(실버1·골드2·다이아3). 결제 순번이 아니다(현장 8/25).
+                      저장된 라벨이 우선이고, 라벨 도입 이전 결제는 상품 등급에서 유도해 보여준다. */}
+                  {(() => {
+                    const label =
+                      p.round_label ??
+                      (p.product_id ? roundForGrade(productGrade[p.product_id]) : null)
+                    if (!label) return null
+                    return (
+                      <span
+                        className={
+                          'rounded px-1.5 py-0.5 text-[10.5px] font-bold ' +
+                          (label.includes('미수')
+                            ? 'bg-warning-bg text-warning'
+                            : 'bg-gray-100 text-gray-500')
+                        }
+                      >
+                        {label}
+                      </span>
+                    )
+                  })()}
                   <StatusChip status={p.status} />
                   <span className="text-[12.5px] font-semibold text-ink-800">
                     {p.product_id ? productName[p.product_id] ?? p.product_id : '-'}

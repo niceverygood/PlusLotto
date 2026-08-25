@@ -9,8 +9,8 @@ import { z } from 'zod'
 import { Check, Search } from 'lucide-react'
 import { Badge, Button, PageHeader } from '@/design-system/components'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
-import { PAYMENT_ROUNDS } from '@/lib/paymentRound'
 import { phone } from '@/lib/format'
+import { PAYMENT_ROUNDS, roundForGrade } from '@/lib/paymentRound'
 import type { PaymentMethod } from '@/types/db'
 import {
   useActiveProducts,
@@ -91,7 +91,11 @@ export function ManualPaymentPage() {
   const onSelectProduct = (id: string) => {
     setValue('productId', id, { shouldValidate: true })
     const pr = products.find((p) => p.id === id)
-    if (pr) setValue('amount', pr.price, { shouldValidate: true })
+    if (!pr) return
+    setValue('amount', pr.price, { shouldValidate: true })
+    // 차수는 결제 순번이 아니라 상품 등급 구분이다 — 실버1·골드2·다이아3 (현장 8/25).
+    // 미수(2차미수·3차미수)는 등급으로 알 수 없어 운영자가 그대로 바꿀 수 있게 둔다.
+    setValue('roundLabel', roundForGrade(pr.grade_granted) ?? '1차결제', { shouldValidate: true })
   }
 
   const onSubmit = (v: FormValues) => {
@@ -221,7 +225,11 @@ export function ManualPaymentPage() {
             </div>
             <div>
               <label className={labelCls}>결제차수</label>
-              <select className={inputCls} {...register('roundLabel')}>
+              <select
+                className={inputCls}
+                title="상품 등급 구분입니다 — 실버=1차 · 골드=2차 · 다이아=3차. 미수는 직접 고르세요"
+                {...register('roundLabel')}
+              >
                 {PAYMENT_ROUNDS.map((r) => (
                   <option key={r} value={r}>
                     {r}
