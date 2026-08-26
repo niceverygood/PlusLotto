@@ -1289,3 +1289,12 @@
 - **매핑**: `userIdx`→`member_id`(legacy_idx 역참조) · `to`→`phone` · `contents`→`body` · `contentsTypeCode`→`type` · `resultYN`→`status` · `insertDateTime`→`sent_at`. `api`·`apiId`·`apiKey` 는 연동 키라 **이관 금지**(D165 §C). `contentsTypeCode` 값 목록을 업체에 요청 항목으로 추가했다 — 받기 전에는 전부 `direct` 로 넣고 나중에 재분류할 수 있다.
 - **⚠️ 대표님 판단이 필요한 것 — 저장 용량**: 815 하나가 Postgres 기준 1GB 안팎, 6개 사이트면 수 GB 다. Supabase 요금제 디스크 한도를 넘으면 비용이 오른다. 적재 전에 현재 사용량·한도를 확인하고, 초과하면 ① 요금제 상향 ② 최근 N년만 적재 중에서 고른다.
 - **`summarize-pushsms.py`(D168) 의 쓸모는 남는다** — 이제 폐기용 요약이 아니라 **적재 전 규모·유형 파악용**이다. `contentsTypeCode` 분포를 미리 뽑아두면 위 enum 대응을 업체 회신 없이도 상당 부분 추정할 수 있다.
+
+### D171. 문자 종류 대응 확정 — 업체 요청 불필요 (현장 8/26)
+- **현장 질문(정의현 차장)**: "이부분은 이전업체에 분류를 해달라고 요청해야되는 부분인가요?" 이어서 **"이전업체에서는 문자발송에대한 구분은 안하고 있었습니다."**
+- **확인해 보니 현장 정보와 달랐다 — 업체는 이미 구분해 두었다.** 물어보기 전에 직접 봤다: 인포로또 덤프에 문자 100,266건이 통째로 들어 있어(`data/infolotto_pushSms.sql`) `contentsTypeCode` 를 집계했더니 **22종**이 나왔고, 끝의 회차번호를 묶으면 **6종**으로 정리된다. 우리 `sms_type` 6종에 빈틈 없이 대응된다 — **업체 왕복 한 번을 아꼈다.**
+- **대응표(인포로또 실측, 합계 100%)**: `autoPick` 76,598→`recommend` · `nlottoWin####` 18,329→`win` · `admin` 3,268→`direct` · `thankCharge` 849→`join` · `adminPickSend` 694→`recommend` · `autoPickRecovery` 528→`recommend`. 이 데이터에는 `marketing`·`terms` 해당 문자가 없다.
+- **코드 이름만 믿지 않고 본문으로 교차 검증했다**(내용은 출력하지 않고 키워드 포함률·길이만 집계): `autoPick` 회차 100%·평균 277자 / `nlottoWin####` 축하·등 100%·평균 40자 / `admin` 결제 31%·입금 28%·회차 39%로 제각각(자유 입력) / `thankCharge` 번호·문의 100%(고정 템플릿). `thankCharge` 는 우리 '가입감사'(첫 결제 승인 시 발송, `payments/api.ts` `sendJoinSms`)와 같은 자리라 `join` 으로 뒀다.
+- **함정 하나**: `typeCode`(`sms` 18,658 / `lms` 81,608)는 **문자 길이 구분**이지 내용 분류가 아니다. 이름이 비슷해 매핑 대상으로 착각하기 쉽다 — 쓰지 않는다.
+- **`template_key` 에 원본 `contentsTypeCode` 를 그대로 보존한다.** `nlottoWin1236` 처럼 회차가 붙어 있어 어느 회차 당첨 안내였는지가 남는다. 우리 `type`(`win`) 만으로는 잃어버리는 정보다.
+- **남은 확인**: 위는 인포로또 실측이고, 815 문자 파일은 대표님 PC에 있어 아직 못 봤다. 같은 업체·같은 스키마라 동일할 가능성이 높고, `scripts/summarize-pushsms.py`(D168) 를 돌리면 `contentsTypeCode` 분포가 나오므로 그것으로 확인한다 — D168 이 "폐기 전 요약"에서 "적재 전 검증"으로 쓸모가 바뀐 첫 사례다.
