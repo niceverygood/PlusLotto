@@ -93,6 +93,8 @@ export interface Payment {
   // 결제차수 라벨(현장 8/7) — 1차/2차/3차결제·2차/3차미수. 요청 시 운영자가 선택해 저장한다.
   // null = 차수 도입 이전 결제(목록에서는 '-' 로 표시).
   round_label: string | null
+  // D175 이전 mock/로컬 시드와의 호환. 운영 DB는 default '{}'로 항상 채운다.
+  meta?: Record<string, unknown>
 }
 
 export interface SmsSend {
@@ -104,6 +106,8 @@ export interface SmsSend {
   type: SmsType
   status: string
   sent_at: string | null
+  // D175 이전 mock/로컬 시드와의 호환. 운영 DB는 default '{}'로 항상 채운다.
+  meta?: Record<string, unknown>
 }
 
 export interface SmsTemplate {

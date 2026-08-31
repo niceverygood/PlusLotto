@@ -12,6 +12,7 @@ dist-ssr
 
 # vercel (link 시 생성 — 커밋 금지)
 .vercel
+/supabase/.temp/
 
 # misc
 *.local

@@ -20,6 +20,7 @@ import { useCurrentUser, useRole } from '@/lib/auth'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import { canExportMembers } from '@/lib/permissions'
+import { LEGACY_SITES, legacySiteLabel } from '@/lib/legacySites'
 import { GRADE_LABEL, STATUS_META } from '@/design-system/labels'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
@@ -99,6 +100,7 @@ export function MembersPage() {
   const staffF = get('staff')
   const inflowF = get('inflow')
   const inflowTypeF = get('it')
+  const sourceSiteF = canSeeInflow ? get('src') : undefined
   const consultF = get('cs')
   const dupF = get('dup') === '1' // 중복 디비만(현장 피드백)
   const regFromF = get('rf') // 가입일 from (YYYY-MM-DD)
@@ -112,6 +114,7 @@ export function MembersPage() {
     assignedStaffId: staffF,
     inflowCode: inflowF,
     inflowType: inflowTypeF,
+    sourceSite: sourceSiteF,
     consultStatus: consultF,
     dupPhone: dupF || undefined,
     registeredFrom: regFromF,
@@ -232,6 +235,12 @@ export function MembersPage() {
   if (inflowF) chips.push({ key: 'inflow', label: `유입코드: ${inflowF}`, onRemove: () => remove('inflow') })
   if (inflowTypeF)
     chips.push({ key: 'it', label: `유입구분: ${inflowTypeF}`, onRemove: () => remove('it') })
+  if (sourceSiteF)
+    chips.push({
+      key: 'src',
+      label: `원본 사이트: ${legacySiteLabel(sourceSiteF)}`,
+      onRemove: () => remove('src'),
+    })
   if (consultF)
     chips.push({ key: 'cs', label: `상담상태: ${consultF}`, onRemove: () => remove('cs') })
   if (dupF) chips.push({ key: 'dup', label: '중복 디비만 · 최근 중복입력순', onRemove: () => remove('dup') })
@@ -382,9 +391,23 @@ export function MembersPage() {
               ))}
             </select>
           </Field>
-          {/* 유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21) */}
+          {/* 레거시 원본/유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21, 8/31) */}
           {canSeeInflow && (
             <>
+              <Field label="원본 사이트">
+                <select
+                  className={selectCls}
+                  value={sourceSiteF ?? ''}
+                  onChange={(e) => set('src', e.target.value || null, { resetPage: true })}
+                >
+                  <option value="">전체</option>
+                  {LEGACY_SITES.map((site) => (
+                    <option key={site.key} value={site.key}>
+                      {site.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <Field label="유입코드">
                 <select
                   className={selectCls}

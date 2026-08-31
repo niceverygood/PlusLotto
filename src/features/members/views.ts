@@ -28,6 +28,7 @@ export interface MemberFilter {
   tendency?: string
   inflowCode?: string
   inflowType?: string // 유입구분(콜 단계) 필터 — 현장 피드백
+  sourceSite?: string // 레거시 이관 원본 사이트(members.meta.source_site)
   consultStatus?: string // 상담상태 필터 — 현장 피드백
   registeredToday?: boolean
   registeredFrom?: string // 가입일 범위(YYYY-MM-DD, 포함) — 현장 피드백
@@ -293,6 +294,7 @@ export function filterMembers(
     if (filter.tendency && m.tendency !== filter.tendency) return false
     if (filter.inflowCode && m.inflow_code !== filter.inflowCode) return false
     if (filter.inflowType && !sameInflowType(m.inflow_type, filter.inflowType)) return false
+    if (filter.sourceSite && m.meta.source_site !== filter.sourceSite) return false
     if (filter.consultStatus && m.consult_status !== filter.consultStatus) return false
     if (filter.registeredToday && !isSameDay(m.registered_at, ctx.now)) return false
     if (filter.registeredFrom || filter.registeredTo) {
