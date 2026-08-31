@@ -878,6 +878,49 @@ const DEFAULT_DAY = 5 // 금요일(0=일..6=토)
 const DEFAULT_COUNT = 30
 const KEEP = 8
 
+export type RecoSafetyBlockReason = 'paused' | 'expired' | null
+
+/** Date.now() 계열 값을 한국 영업일(YYYY-MM-DD)로 고정한다. */
+export function kstDay(nowMs: number): string {
+  const d = new Date(nowMs + 9 * 3600_000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+/**
+ * 종료일/일시정지 안전 게이트.
+ *
+ * - `reco_paused=true` 는 수동 실행(force=1)에서도 절대 우회하지 않는다.
+ * - `end_date` 는 회원정보창과 레거시 이관 모두 날짜(YYYY-MM-DD)를 기준으로 저장한다.
+ * - 종료일 당일까지는 이용 가능하며, KST 오늘보다 이전인 경우에만 차단한다.
+ * - 값이 없거나 유효하지 않으면 임의로 만료시키지 않는다.
+ */
+export function recoSafetyBlockReason(
+  meta: Record<string, unknown> | null | undefined,
+  todayKst: string,
+): RecoSafetyBlockReason {
+  if (meta?.reco_paused === true) return 'paused'
+
+  const raw = meta?.end_date
+  if (typeof raw !== 'string') return null
+  const match = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  const endDay = `${match[1]}-${match[2]}-${match[3]}`
+  return endDay < todayKst ? 'expired' : null
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function handler(req: any, res: any) {
   // fail-closed(D68): CRON_SECRET 미설정이면 '열림'이 아니라 '차단'. 미설정을 가시화.
@@ -900,7 +943,9 @@ export default async function handler(req: any, res: any) {
   const sb = createClient(url, key, { auth: { persistSession: false } })
 
   try {
-    const kst = new Date(Date.now() + 9 * 3600_000)
+    const nowMs = Date.now()
+    const kst = new Date(nowMs + 9 * 3600_000)
+    const todayKst = kstDay(nowMs)
     const today = kst.getUTCDay() // KST 보정 후 UTC 요일 = KST 요일
     const ts = new Date().toISOString()
 
@@ -984,6 +1029,8 @@ export default async function handler(req: any, res: any) {
     let issued = 0
     let skippedRound = 0
     let skippedDay = 0
+    let skippedPaused = 0
+    let skippedExpired = 0
     let smsSent = 0
     let smsFail = 0
     let errCount = 0
@@ -1012,9 +1059,20 @@ export default async function handler(req: any, res: any) {
         skippedDay++
         continue
       }
-      // 일시정지(조합발송 중단) 또는 발송갯수 명시적 0 → 발급·문자 제외(현장 6/26).
+      // 일시정지 또는 종료일 경과 회원은 무료·유료 모두 발급/문자 제외.
+      // force=1 도 이 안전 게이트는 우회하지 않는다.
+      const safetyBlock = recoSafetyBlockReason(meta, todayKst)
+      if (safetyBlock === 'paused') {
+        skippedPaused++
+        continue
+      }
+      if (safetyBlock === 'expired') {
+        skippedExpired++
+        continue
+      }
+      // 발송갯수 명시적 0 → 발급·문자 제외(현장 6/26).
       // (count=0 은 기존엔 전역기본으로 폴백돼 발송됐으나, '0=중단' 직관에 맞게 차단)
-      if (meta.reco_paused === true || meta.weekly_reco_count === 0) {
+      if (meta.weekly_reco_count === 0) {
         skippedDay++
         continue
       }
@@ -1175,7 +1233,7 @@ export default async function handler(req: any, res: any) {
       action: 'reco.weekly_issue',
       target_type: 'member',
       target_id: null,
-      meta: { count: issued, skipped: skippedRound, skipped_day: skippedDay, errors: errCount, round_no: targetRound, stale_round: staleRound, channel: 'cron', force, sms_sent: smsSent, sms_fail: smsFail, remaining, chain },
+      meta: { count: issued, skipped: skippedRound, skipped_day: skippedDay, skipped_paused: skippedPaused, skipped_expired: skippedExpired, errors: errCount, round_no: targetRound, stale_round: staleRound, channel: 'cron', force, sms_sent: smsSent, sms_fail: smsFail, remaining, chain },
       created_at: ts,
     })
 
@@ -1194,7 +1252,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return res.status(200).json({ ok: true, round_no: targetRound, issued, skippedRound, skippedDay, errors: errCount, staleRound, smsSent, smsFail, remaining, chain })
+    return res.status(200).json({ ok: true, round_no: targetRound, issued, skippedRound, skippedDay, skippedPaused, skippedExpired, errors: errCount, staleRound, smsSent, smsFail, remaining, chain })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     return res.status(500).json({ ok: false, code: 'ERROR', message })

@@ -331,6 +331,10 @@ def build_member(
     meta = {
         'source_site': site,
         'import_batch': batch_id or default_batch_id(site),
+        # 레거시 대량 이관 직후 자동 조합발급/문자가 실행되지 않도록 기본 격리한다.
+        # 운영자가 표본 검수 후 회원정보에서 명시적으로 해제해야 한다.
+        'reco_paused': True,
+        'reco_pause_reason': 'legacy_import_review',
         'legacy_idx': legacy_idx,
         'legacy_id': user.get('id') or None,
         'legacy_sales_idx': num(user.get('salesIdx')) or None,

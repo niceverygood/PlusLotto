@@ -8,6 +8,7 @@
 // ⚠️ api/weekly-reco.ts 는 Vercel 함수 런타임 제약으로 src/ 를 import 하지 못하는 자급자족 파일이라
 //    규칙이 두 곳에 있다. **크론 조건을 바꾸면 이 파일도 같이 바꿔야 한다.**
 import type { Member, SiteSettings } from '@/types/db'
+import { isEndDatePast, memberEndDate } from './memberExpiry'
 import { DEFAULT_RECO_DAY, PAID_RECO_GRADES } from './recoSchedule'
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토']
@@ -39,6 +40,10 @@ export function recoEligibility(
   // ① 크론의 회원 조회 필터
   if (member.is_suspended || member.is_deleted || member.is_withdrawn) {
     reasons.push('정지·삭제·탈퇴 회원은 자동발송 대상이 아닙니다.')
+    return { willIssue: false, willSend: false, dayLabel: null, reasons }
+  }
+  if (isEndDatePast(memberEndDate(member))) {
+    reasons.push('이용 종료일이 지나 자동 조합발급·문자 대상에서 제외됩니다.')
     return { willIssue: false, willSend: false, dayLabel: null, reasons }
   }
 

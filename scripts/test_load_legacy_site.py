@@ -61,6 +61,8 @@ class LegacyLoaderTest(unittest.TestCase):
         self.assertEqual(first['meta']['source_site'], 'lotto815')
         self.assertEqual(first['meta']['legacy_idx'], 101)
         self.assertEqual(first['meta']['import_batch'], 'batch-safe_1')
+        self.assertTrue(first['meta']['reco_paused'])
+        self.assertEqual(first['meta']['reco_pause_reason'], 'legacy_import_review')
 
     def test_new_consult_is_not_outcalled_and_blank_inflow_stays_null(self):
         row = user(consult='new')

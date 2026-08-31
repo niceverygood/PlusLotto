@@ -6,7 +6,16 @@
 // 매출 수치는 전부 payments(status='approved') 파생 — 결제 데이터와 즉시 일치(§8).
 import { useState } from 'react'
 import { subDays, format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, isSameMonth, isToday } from 'date-fns'
-import { ChevronLeft, ChevronRight, TrendingUp, Receipt, Coins, Repeat } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Coins,
+  Receipt,
+  RefreshCw,
+  Repeat,
+  TrendingUp,
+} from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -70,7 +79,7 @@ export function RevenuePage() {
   const groupBy = (get('group') ?? 'staff') as GroupDim
 
   const summaryView: RevenueView = view === 'calendar' || view === 'daily' ? 'real' : view
-  const { data, isLoading } = useRevenue(
+  const { data, error, isError, isFetching, isLoading, refetch } = useRevenue(
     { view: summaryView, from, to, groupBy },
     { enabled: view !== 'calendar' && view !== 'daily' },
   )
@@ -126,67 +135,130 @@ export function RevenuePage() {
             )}
           </div>
 
-          {/* 요약 KPI */}
-          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiCard
-              accent
-              label={labels.total}
-              value={krw(s?.total ?? 0)}
-              icon={<TrendingUp className="h-[18px] w-[18px]" />}
-              delta={s ? `${num(s.count)}건` : undefined}
+          {isError ? (
+            <RevenueLoadError
+              error={error}
+              isRetrying={isFetching}
+              onRetry={() => {
+                void refetch()
+              }}
             />
-            <KpiCard
-              label={labels.count}
-              value={`${num(s?.count ?? 0)}건`}
-              icon={<Receipt className="h-[18px] w-[18px]" />}
-              iconClassName="bg-info-bg text-info"
-            />
-            <KpiCard
-              label={labels.avg}
-              value={krw(s?.avg ?? 0)}
-              icon={<Coins className="h-[18px] w-[18px]" />}
-              iconClassName="bg-warning-bg text-warning"
-            />
-            <KpiCard
-              label="신규전환율"
-              value={s ? `${(s.conversionRate * 100).toFixed(1)}%` : '-'}
-              icon={<Repeat className="h-[18px] w-[18px]" />}
-              iconClassName="bg-success-bg text-success"
-              delta={s ? `신규전환 ${num(s.conversions)}건 · ${krw(s.conversionRevenue)}` : undefined}
-            />
-          </div>
+          ) : (
+            <>
+              {/* 요약 KPI — 조회 중에는 0으로 오인하지 않도록 값을 비워 둔다. */}
+              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <KpiCard
+                  accent
+                  label={labels.total}
+                  value={s ? krw(s.total) : '—'}
+                  icon={<TrendingUp className="h-[18px] w-[18px]" />}
+                  delta={s ? `${num(s.count)}건` : undefined}
+                />
+                <KpiCard
+                  label={labels.count}
+                  value={s ? `${num(s.count)}건` : '—'}
+                  icon={<Receipt className="h-[18px] w-[18px]" />}
+                  iconClassName="bg-info-bg text-info"
+                />
+                <KpiCard
+                  label={labels.avg}
+                  value={s ? krw(s.avg) : '—'}
+                  icon={<Coins className="h-[18px] w-[18px]" />}
+                  iconClassName="bg-warning-bg text-warning"
+                />
+                <KpiCard
+                  label="신규전환율"
+                  value={s ? `${(s.conversionRate * 100).toFixed(1)}%` : '—'}
+                  icon={<Repeat className="h-[18px] w-[18px]" />}
+                  iconClassName="bg-success-bg text-success"
+                  delta={s ? `신규전환 ${num(s.conversions)}건 · ${krw(s.conversionRevenue)}` : undefined}
+                />
+              </div>
 
-          {/* 일별 추이 */}
-          <section className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="mb-3 text-[15px] font-bold text-ink-900">일별 매출 추이</h2>
-            {isLoading && !data ? (
-              <Skeleton className="h-[260px] w-full" />
-            ) : (
-              <TrendChart points={data?.trend ?? []} />
-            )}
-          </section>
+              {/* 일별 추이 */}
+              <section className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+                <h2 className="mb-3 text-[15px] font-bold text-ink-900">일별 매출 추이</h2>
+                {isLoading && !data ? (
+                  <Skeleton className="h-[260px] w-full" />
+                ) : (
+                  <TrendChart points={data?.trend ?? []} />
+                )}
+              </section>
 
-          {/* 그룹 분해 표 */}
-          <section className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="mb-3 text-[15px] font-bold text-ink-900">
-              {data ? GROUP_LABEL[data.groupDim] : ''}별 매출
-            </h2>
-            {isLoading && !data ? (
-              <Skeleton className="h-40 w-full" />
-            ) : data && data.breakdown.length > 0 ? (
-              <BreakdownTable
-                groupLabel={GROUP_LABEL[data.groupDim]}
-                rows={data.breakdown}
-                total={data.summary.total}
-                totalCount={data.summary.count}
-              />
-            ) : (
-              <EmptyState title="해당 기간 매출 없음" description="기간을 넓히거나 다른 뷰를 선택하세요." />
-            )}
-          </section>
+              {/* 그룹 분해 표 */}
+              <section className="rounded-xl border border-gray-200 bg-white p-4">
+                <h2 className="mb-3 text-[15px] font-bold text-ink-900">
+                  {data ? GROUP_LABEL[data.groupDim] : ''}별 매출
+                </h2>
+                {isLoading && !data ? (
+                  <Skeleton className="h-40 w-full" />
+                ) : data && data.breakdown.length > 0 ? (
+                  <BreakdownTable
+                    groupLabel={GROUP_LABEL[data.groupDim]}
+                    rows={data.breakdown}
+                    total={data.summary.total}
+                    totalCount={data.summary.count}
+                  />
+                ) : (
+                  <EmptyState title="해당 기간 매출 없음" description="기간을 넓히거나 다른 뷰를 선택하세요." />
+                )}
+              </section>
+            </>
+          )}
         </>
       )}
     </div>
+  )
+}
+
+function revenueErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) return error.message.trim() || null
+  if (typeof error !== 'object' || error === null || !('message' in error)) return null
+  const message = error.message
+  return typeof message === 'string' ? message.trim() || null : null
+}
+
+function RevenueLoadError({
+  error,
+  isRetrying,
+  onRetry,
+}: {
+  error: unknown
+  isRetrying: boolean
+  onRetry: () => void
+}) {
+  const detail = revenueErrorMessage(error)
+
+  return (
+    <section
+      role="alert"
+      className="rounded-xl border border-danger-bd bg-danger-bg px-5 py-6"
+    >
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-danger">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-bold text-ink-900">매출 데이터를 불러오지 못했습니다</h2>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-gray-600">
+            조회 요청이 실패한 상태이며 실제 매출이 0원이라는 뜻이 아닙니다. 잠시 후 다시 시도해 주세요.
+          </p>
+          {detail && (
+            <p className="mt-2 break-words font-mono text-[11px] leading-relaxed text-danger">
+              조회 오류: {detail}
+            </p>
+          )}
+        </div>
+        <Button
+          variant="sec"
+          icon={<RefreshCw className={cn('h-3.5 w-3.5', isRetrying && 'animate-spin')} />}
+          disabled={isRetrying}
+          onClick={onRetry}
+        >
+          {isRetrying ? '재시도 중' : '다시 시도'}
+        </Button>
+      </div>
+    </section>
   )
 }
 
