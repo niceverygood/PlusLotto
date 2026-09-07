@@ -32,6 +32,7 @@ import { TemplatesCard } from './TemplatesCard'
 import { PromoSlidesCard } from './PromoSlidesCard'
 import { AppDownloadCard } from './AppDownloadCard'
 import { EndDateBackfillCard, RecoDayBackfillCard } from './EndDateBackfillCard'
+import { FailedSmsResendCard } from './FailedSmsResendCard'
 
 const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 
@@ -732,6 +733,9 @@ export function SiteSettingsPage() {
 
       {/* 유료회원 조합발송요일 점검·복구(현장 8/14) — 최고관리자에게만 보인다. */}
       <RecoDayBackfillCard />
+
+      {/* 충전금 부족 등으로 못 나간 문자 재발송(현장 9/7) — 실장 이상(카드 내부에서 가드). */}
+      <FailedSmsResendCard />
 
       {/* ── FAQ · 공지 설정(기존 모듈 연결) ───────────── */}
       <SectionCard title="FAQ · 공지 설정" desc="FAQ 와 공지사항은 고객센터 · 커뮤니티에서 관리합니다.">

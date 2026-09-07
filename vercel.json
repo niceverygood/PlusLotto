@@ -7,11 +7,15 @@
     "api/send-sms.ts": { "maxDuration": 30 },
     "api/transcribe-call.ts": { "maxDuration": 60 },
     "api/ingest-call-recording.ts": { "maxDuration": 30 },
-    "api/analyze-call.ts": { "maxDuration": 45 }
+    "api/analyze-call.ts": { "maxDuration": 45 },
+    "api/resend-failed-sms.ts": { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/weekly-lotto-sync", "schedule": "0,30 12 * * 6" },
     { "path": "/api/weekly-lotto-sync", "schedule": "0 23 * * *" },
-    { "path": "/api/weekly-reco", "schedule": "0 0 * * *" }
+    { "path": "/api/weekly-reco", "schedule": "0 0 * * *" },
+    { "path": "/api/resend-failed-sms", "schedule": "30 1 * * *" },
+    { "path": "/api/resend-failed-sms", "schedule": "0 3 * * *" },
+    { "path": "/api/resend-failed-sms", "schedule": "0 6 * * *" }
   ]
 }
