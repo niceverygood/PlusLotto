@@ -9,6 +9,7 @@ import type {
   LottoRound,
   PromoSlide,
   SiteSettings,
+  SmsSend,
   SmsTemplate,
   WinnerRoundStats,
 } from '@/types/db'
@@ -19,6 +20,7 @@ import { useCurrentUser } from '@/lib/auth'
 import { lottoKeys, memberKeys, settingsKeys, siteKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { mergeWinnerHistory, normalizeWinnerRoundStats, normalizeWinnerStats } from '@/lib/winnerStats'
 import * as supa from './supa'
+import * as smsResend from './smsResend'
 
 function adminLog(
   actor: string | null,
@@ -340,5 +342,45 @@ export function useUploadAppDownload() {
       return supa.uploadAppDownload(v.file, v.version, user?.id ?? null)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.all }),
+  })
+}
+
+// ── 실패 문자 재발송 (현장 9/7 정의현 차장) ─────────────────────────────────
+// 조합 자동발송 크론은 회차 기준 멱등이라 재실행해도 '발급은 됐고 문자만 실패한' 회원을 건너뛴다.
+// 그 구멍을 메우는 유일한 경로라, 반드시 supabase 모드에서만 동작한다(mock 은 실발송 자체가 없다).
+
+/** 지정 날짜(한국 기준)의 실패 문자 현황. 종류를 주면 그것만(조합문자 = 'recommend'). */
+export function useFailedSms(day: string, type: SmsSend['type'] | 'all', enabled = true) {
+  return useQuery({
+    queryKey: settingsKeys.failedSms(day, type),
+    enabled: enabled && dataSource === 'supabase' && !!day,
+    staleTime: 0,
+    queryFn: () => smsResend.fetchFailedSms(day, type === 'all' ? undefined : type),
+  })
+}
+
+/** 실패 문자 재발송 — 같은 번호로 같은 본문을 그대로 다시 보낸다. */
+export function useResendFailedSms() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: {
+      day: string
+      type: SmsSend['type'] | 'all'
+      onProgress?: (done: number, total: number) => void
+    }) => {
+      if (dataSource !== 'supabase') {
+        throw new Error('로컬(mock) 모드에서는 재발송을 사용할 수 없습니다.')
+      }
+      return smsResend.resendFailedSms(v.day, user?.id ?? null, {
+        type: v.type === 'all' ? undefined : v.type,
+        onProgress: v.onProgress,
+      })
+    },
+    // 발송 상태가 바뀌므로 실패 목록·회원 문자내역·문자로그를 함께 새로 읽는다(§8).
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: settingsKeys.all })
+      qc.invalidateQueries({ queryKey: memberKeys.all })
+    },
   })
 }

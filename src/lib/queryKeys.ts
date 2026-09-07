@@ -61,6 +61,8 @@ export const settingsKeys = {
   all: ['settings'] as const,
   site: () => ['settings', 'site'] as const,
   winnerHistory: () => ['settings', 'winner-history'] as const,
+  // 실패 문자 재발송(현장 9/7) — 날짜·종류별 실패 목록.
+  failedSms: (day: string, type: string) => ['settings', 'failed-sms', day, type] as const,
 }
 
 // 고객 홈페이지 공개 데이터. 설정 저장 시 운영 콘솔과 고객 화면 캐시를 함께 무효화한다(§8).
