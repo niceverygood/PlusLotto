@@ -35,5 +35,11 @@ dist-ssr
 /*.tar.gz
 /*.tgz
 /*.xlsx
+# 현장이 보내는 원본은 ZIP 이다(815korean_*.zip · ilhanglotto.zip · infolotto.zip).
+/*.zip
 /legacy-schema/
 /data/
+
+# python 바이트코드 캐시 — scripts/ 의 적재 도구·테스트를 돌리면 생긴다
+__pycache__/
+*.pyc
