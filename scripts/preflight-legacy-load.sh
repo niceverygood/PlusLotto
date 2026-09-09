@@ -29,6 +29,11 @@ if [ -z "$SITE" ] || [ -z "$ARCHIVE" ]; then
   exit 2
 fi
 
+case "$SITE" in
+  lotto815|cplotto|infolotto) ;;
+  *) echo "알 수 없는 사이트키 — lotto815 / cplotto / infolotto 중 하나여야 합니다"; exit 2 ;;
+esac
+
 ARCHIVE="${ARCHIVE/#\~/$HOME}"
 
 echo "======================================================"
@@ -69,44 +74,23 @@ if [ -f "$ARCHIVE" ]; then
   SIZE=$(du -h "$ARCHIVE" | cut -f1)
   ok "파일 확인 ($SIZE)"
 
-  if python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).testzip()" "$ARCHIVE" 2>/dev/null; then
-    ok "ZIP 무결성 정상"
-  else
-    bad "ZIP 이 손상됐거나 열 수 없다 — 다시 받아야 한다"
-  fi
-
-  echo "  들어 있는 파일:"
-  python3 - "$ARCHIVE" <<'PY' 2>/dev/null || bad "ZIP 내용을 읽을 수 없다"
-import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-for i in z.infolist():
-    if i.is_dir():
-        continue
-    mb = i.file_size / 1024 / 1024
-    print(f'    {i.filename}  ({mb:,.1f}MB)')
-PY
-
-  # 로더가 찾는 이름 규칙(user/payment)이 실제로 들어 있는지
+  # 로더와 같은 정확한 파일명·개수·경로 규칙 및 ZIP CRC를 확인한다.
+  # 모듈 import는 정의만 읽으며 main/SQL 파싱/Supabase 접속을 실행하지 않는다.
   python3 - "$ARCHIVE" "$SITE" <<'PY'
-import sys, zipfile
-from pathlib import PurePosixPath
-PREFIX = {'lotto815': ('lotto815', '815korean'), 'cplotto': ('cplotto',), 'infolotto': ('infolotto',)}
-site = sys.argv[2]
-if site not in PREFIX:
-    print(f'  \033[31m✗\033[0m 알 수 없는 사이트키 "{site}" — lotto815 / cplotto / infolotto 중 하나여야 한다')
+import importlib.util
+import sys
+import zipfile
+
+spec = importlib.util.spec_from_file_location('legacy_loader', 'scripts/load-legacy-site.py')
+loader = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = loader
+try:
+    spec.loader.exec_module(loader)
+    loader.DumpSource(sys.argv[2], archive=sys.argv[1]).validate_archive()
+except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as error:
+    print(f'  \033[31m✗\033[0m 원본 점검 실패: {error}')
     sys.exit(1)
-names = [PurePosixPath(n).name for n in zipfile.ZipFile(sys.argv[1]).namelist()]
-missing = []
-for table in ('user', 'payment'):
-    hit = [n for n in names if any(n.startswith(f'{p}_{table}.sql') for p in PREFIX[site])]
-    if hit:
-        print(f'  \033[32m✓\033[0m {table} 덤프: {hit[0]}')
-    else:
-        missing.append(table)
-if missing:
-    exp = ' 또는 '.join(f'{p}_{t}.sql(.gz)' for p in PREFIX[site] for t in missing)
-    print(f'  \033[31m✗\033[0m {"·".join(missing)} 덤프를 못 찾았다 — 기대 이름: {exp}')
-    sys.exit(1)
+print('  \033[32m✓\033[0m user/payment 파일명·개수·경로 및 ZIP CRC 정상')
 PY
   [ $? -ne 0 ] && FAIL=$((FAIL+1))
 else
@@ -142,7 +126,7 @@ PY
 head2 "4. DB 접속 정보 (dry-run 에는 불필요)"
 
 if [ -n "${VITE_SUPABASE_URL:-}" ]; then
-  ok "VITE_SUPABASE_URL 설정됨 (${VITE_SUPABASE_URL:0:28}…)"
+  ok "VITE_SUPABASE_URL 설정됨 (실제 DB 접속은 하지 않음)"
 else
   warn "VITE_SUPABASE_URL 미설정 — dry-run 은 가능하지만 plan·apply 는 불가"
 fi

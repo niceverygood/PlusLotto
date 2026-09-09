@@ -8,6 +8,7 @@ import { Button, DataTable, FilterBar, PageHeader, Tabs, type TabItem } from '@/
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useRole } from '@/lib/auth'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import {
@@ -29,6 +30,7 @@ const MY_TAB_KEYS = ['all', 'today-join', 'no-outcall-all', 'paid', 'winner'] as
 export function MyCustomersPage() {
   usePageMeta('나의 고객', '내가 담당하는 회원 · 아웃콜 · 문자')
   const role = useRole()
+  const siteScope = useSiteScope()
   const navigate = useNavigate()
   const { get, set, setMany } = useUrlFilters()
   const { data: staff = [] } = useStaff()
@@ -101,7 +103,7 @@ export function MyCustomersPage() {
         title="나의 고객"
         description="내가 담당하는 회원의 케이스로드 · 아웃콜 · 문자 발송"
         actions={
-          <Button variant="sec" size="sm" onClick={() => navigate('/my/sms')}>
+          <Button variant="sec" size="sm" onClick={() => navigate(`/admin/my/sms?site=${siteScope}`)}>
             <MessageSquare className="h-4 w-4" /> 문자 발송
           </Button>
         }

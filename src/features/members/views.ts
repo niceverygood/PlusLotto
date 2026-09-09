@@ -1,6 +1,7 @@
 // 이용자 26 세그먼트 (CLAUDE §7) — 별도 화면이 아니라 필터 프리셋 배열.
 // MembersPage 1개가 ?view= 로 프리셋을 적용한다. 의미 모호한 세그먼트
 // (오늘다비·재시도·중복유입)는 합리적으로 정의하고 docs/ASSUMPTIONS.md 에 기록.
+import { matchesSiteScope, type SiteScope } from '@/lib/siteScope'
 import type { Grade, Member, MemberStatus, Role } from '@/types/db'
 import { CONSULT_STATUSES, type ConsultStatus } from '@/lib/consultStatus'
 import { INFLOW_TYPES, sameInflowType, type InflowType } from '@/lib/inflow'
@@ -28,7 +29,7 @@ export interface MemberFilter {
   tendency?: string
   inflowCode?: string
   inflowType?: string // 유입구분(콜 단계) 필터 — 현장 피드백
-  sourceSite?: string // 레거시 이관 원본 사이트(members.meta.source_site)
+  sourceSite?: SiteScope // 레거시 이관 원본 사이트(members.meta.source_site)
   consultStatus?: string // 상담상태 필터 — 현장 피드백
   registeredToday?: boolean
   registeredFrom?: string // 가입일 범위(YYYY-MM-DD, 포함) — 현장 피드백
@@ -263,10 +264,15 @@ export function filterMembers(
   filter: MemberFilter,
   ctx: MemberFilterCtx,
 ): Member[] {
-  const dupSet = filter.dupInflow ? dupInflowCodes(members, filter.dupInflow, ctx.now) : null
-  const dupPhones = filter.dupPhone ? dupPhoneSet(members) : null
+  // 사이트를 먼저 제한해야 다른 사이트의 같은 유입코드가 중복 뷰 건수에 섞이지 않는다.
+  const sourceSite = filter.sourceSite
+  const siteMembers = sourceSite
+    ? members.filter((m) => matchesSiteScope(m.meta, sourceSite))
+    : members
+  const dupSet = filter.dupInflow ? dupInflowCodes(siteMembers, filter.dupInflow, ctx.now) : null
+  const dupPhones = filter.dupPhone ? dupPhoneSet(siteMembers) : null
 
-  return members.filter((m) => {
+  return siteMembers.filter((m) => {
     if (filter.status && m.status !== filter.status) return false
     if (filter.grade && m.grade !== filter.grade) return false
     if (filter.gradeIn && !filter.gradeIn.includes(m.grade)) return false
@@ -294,7 +300,6 @@ export function filterMembers(
     if (filter.tendency && m.tendency !== filter.tendency) return false
     if (filter.inflowCode && m.inflow_code !== filter.inflowCode) return false
     if (filter.inflowType && !sameInflowType(m.inflow_type, filter.inflowType)) return false
-    if (filter.sourceSite && m.meta.source_site !== filter.sourceSite) return false
     if (filter.consultStatus && m.consult_status !== filter.consultStatus) return false
     if (filter.registeredToday && !isSameDay(m.registered_at, ctx.now)) return false
     if (filter.registeredFrom || filter.registeredTo) {

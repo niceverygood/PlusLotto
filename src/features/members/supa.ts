@@ -4,6 +4,7 @@
 import { type SupabaseClient } from '@supabase/supabase-js'
 import type { Assignment, CallAiAnalysis, CallRecording, LottoRound, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
 import { supabase } from '@/lib/supabase'
+import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
@@ -100,9 +101,10 @@ export async function fetchMembersPage(
 }
 
 /** 26개 세그먼트 건수와 유입코드 distinct를 한 번의 서버 집계로 가져온다. */
-export async function fetchMemberFacets(assignedStaffId: string | null = null): Promise<RemoteMemberFacets> {
+export async function fetchMemberFacets(assignedStaffId: string | null = null, siteScope: SiteScope = 'all'): Promise<RemoteMemberFacets> {
   const { data, error } = await sb().rpc('admin_member_facets', {
     p_assigned_staff_id: assignedStaffId,
+    p_source_site: rpcSourceSite(siteScope),
   })
   if (error) throw error
   const result = data as { counts?: Record<string, number>; inflowCodes?: string[] } | null
@@ -146,11 +148,12 @@ export async function fetchProducts(): Promise<Product[]> {
 }
 
 /** 내 담당 회원에게 발송된 문자 내역(최신순). */
-export async function fetchMineSmsLog(uid: string, limit: number): Promise<MySmsRow[]> {
+export async function fetchMineSmsLog(uid: string, limit: number, siteScope: SiteScope): Promise<MySmsRow[]> {
   if (!uid) return []
-  const { data: mem, error: me } = await sb().from('members').select('id, name').eq('assigned_staff_id', uid)
-  if (me) throw me
-  const nameById = new Map((mem ?? []).map((m) => [(m as { id: string }).id, (m as { name: string }).name]))
+  const members = await paginateAll<{ id: string; name: string; source_site: string | null }>((from, to) =>
+    sb().from('members').select('id, name, source_site:meta->>source_site').eq('assigned_staff_id', uid).order('id').range(from, to),
+  )
+  const nameById = new Map(members.filter((m) => matchesSiteScope({ source_site: m.source_site }, siteScope)).map((m) => [m.id, m.name]))
   const ids = [...nameById.keys()]
   if (ids.length === 0) return []
   // id 청크별 조회(URL 414 회피 — 담당 회원 300+ 명인 rep) 후 병합·정렬·상위 limit.
@@ -229,6 +232,7 @@ export async function createMember(input: MemberCreateInput, actor: string | nul
     is_deleted: false,
     is_withdrawn: false,
     meta: {
+      source_site: input.sourceSite ?? 'pluslotto',
       ...(input.age_band ? { age_band: input.age_band } : {}),
       ...(input.gender ? { gender: input.gender } : {}),
     },
@@ -308,7 +312,7 @@ export async function bulkImportMembers(
       is_suspended: false,
       is_deleted: false,
       is_withdrawn: false,
-      meta: { imported: true },
+      meta: { imported: true, source_site: input.sourceSite ?? 'pluslotto' },
     })
     if (sid) {
       assignmentRows.push({
@@ -497,14 +501,17 @@ export async function requestPayment(
   },
   actor: string | null,
 ): Promise<void> {
-  const { data: m } = await sb().from('members').select('name, assigned_staff_id').eq('id', v.memberId).maybeSingle()
-  const member = m as { name: string; assigned_staff_id: string | null } | null
+  const { data: m, error } = await sb().from('members').select('name, assigned_staff_id, meta').eq('id', v.memberId).maybeSingle()
+  if (error) throw error
+  const member = m as Pick<Member, 'name' | 'assigned_staff_id' | 'meta'> | null
+  if (!member) throw new Error('회원을 찾을 수 없습니다.')
   // round_label 은 마이그레이션이 아직 안 붙었을 수 있어 optional 로 넣는다(현장 8/11 결제요청 중단 사고).
   await insertWithOptionalColumns(
     'payments',
     {
       id: genId('pay'),
       member_id: v.memberId,
+      meta: { source_site: memberSite(member?.meta) },
       product_id: v.productId,
       amount: v.amount,
       method: v.method,

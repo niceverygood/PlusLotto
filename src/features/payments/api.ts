@@ -14,6 +14,8 @@ import type {
 } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb, type DbShape } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
+import { matchesSiteScope, memberSite } from '@/lib/siteScope'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { fetchTables } from '@/lib/db/remote'
 import { cancelPaymentInDb } from '@/lib/db/paymentCancel'
 import { endDateForGrade } from '@/lib/membershipTerm'
@@ -159,14 +161,15 @@ function matchFilters(p: PaymentRow, q: PaymentsQuery): boolean {
 
 export function usePayments(q: PaymentsQuery) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: paymentKeys.list({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
+    queryKey: paymentKeys.list({ ...q, siteScope, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
     queryFn: async (): Promise<PaymentsResult> => {
-      if (dataSource === 'supabase') return supa.fetchPaymentsPage(q)
+      if (dataSource === 'supabase') return supa.fetchPaymentsPage(q, siteScope)
       const db = readDb()
       const members = indexBy(db.members)
       const products = indexBy(db.products)
-      const scoped = scopePayments(db.payments, members, user)
+      const scoped = scopePayments(db.payments, members, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const rows = scoped.map((p) => enrich(p, members, products)).filter((p) => matchFilters(p, q))
       const sorted = q.sortId
         ? sortRows(rows, q.sortId, q.sortDesc ?? false)
@@ -179,20 +182,20 @@ export function usePayments(q: PaymentsQuery) {
         pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
       }
     },
-    placeholderData: (prev) => prev,
   })
 }
 
 /** 상태 탭 건수(스코프 적용, 검색/기타필터 제외). */
 export function usePaymentCounts() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: paymentKeys.counts(`${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: paymentKeys.counts(`${siteScope}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<Record<PaymentStatusTab, number>> => {
-      if (dataSource === 'supabase') return supa.fetchPaymentCounts()
+      if (dataSource === 'supabase') return supa.fetchPaymentCounts(siteScope)
       const db = readDb()
       const members = indexBy(db.members)
-      const scoped = scopePayments(db.payments, members, user)
+      const scoped = scopePayments(db.payments, members, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const out: Record<PaymentStatusTab, number> = {
         all: scoped.length,
         wait: 0,
@@ -469,15 +472,17 @@ export interface MemberOption {
 /** 수기결제 대상 회원 검색(스코프 적용, 최대 20건). 입력은 화면에서 250ms debounce한다. */
 export function useMemberSearch(term: string) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: ['payments', 'member-search', term, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: ['payments', 'member-search', siteScope, term, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<MemberOption[]> => {
-      if (dataSource === 'supabase') return supa.searchMembers(term)
+      if (dataSource === 'supabase') return supa.searchMembers(term, siteScope)
       const db = readDb()
       let scoped: Member[]
       if (!user) scoped = []
       else if (user.role === 'rep') scoped = db.members.filter((m) => m.assigned_staff_id === user.id)
       else scoped = [...db.members] // 최고관리자·관리자·실장 = 전체
+      scoped = scoped.filter((m) => matchesSiteScope(m.meta, siteScope))
       const s = term.trim().toLowerCase()
       const matched = s
         ? scoped.filter((m) =>
@@ -520,11 +525,13 @@ export function useCreateManualPayment() {
       const joinSmsRow = v.approveNow ? await buildJoinSmsRow(readDb(), v.memberId, id) : null
       mutateDb((db) => {
         const member = db.members.find((m) => m.id === v.memberId)
+        if (!member) throw new Error('회원을 찾을 수 없습니다.')
         const product = db.products.find((pr) => pr.id === v.productId)
         const ts = nowIso()
         const p: Payment = {
           id,
           member_id: v.memberId,
+          meta: { source_site: memberSite(member?.meta) },
           product_id: v.productId,
           amount: v.amount,
           method: v.method,

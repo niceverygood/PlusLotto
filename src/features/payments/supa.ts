@@ -7,6 +7,7 @@
 // TODO(live-verify): 다중 테이블 갱신은 원자성 보장을 위해 RPC(트랜잭션)로 이관 권장.
 import { addMonths } from 'date-fns'
 import type { Grade, Member, Payment, Product, SiteSettings, SmsTemplate } from '@/types/db'
+import { rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { genId, nowIso } from '@/lib/db/store'
 import { insertLog, insertWithOptionalColumns, sb } from '@/lib/db/remote'
 import { cancelPaymentRemote } from '@/lib/db/paymentCancel'
@@ -43,8 +44,9 @@ async function fetchProduct(id: string | null): Promise<Product | null> {
 }
 
 /** 결제 목록은 회원·상품 조인과 필터·페이지네이션을 DB에서 끝낸다. */
-export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResult> {
+export async function fetchPaymentsPage(q: PaymentsQuery, siteScope: SiteScope): Promise<PaymentsResult> {
   const filter: Record<string, unknown> = {
+    sourceSite: rpcSourceSite(siteScope),
     status: q.status,
     search: q.search,
     method: q.method,
@@ -72,8 +74,8 @@ export async function fetchPaymentsPage(q: PaymentsQuery): Promise<PaymentsResul
   }
 }
 
-export async function fetchPaymentCounts(): Promise<Record<PaymentStatusTab, number>> {
-  const { data, error } = await sb().rpc('admin_payment_counts')
+export async function fetchPaymentCounts(siteScope: SiteScope): Promise<Record<PaymentStatusTab, number>> {
+  const { data, error } = await sb().rpc('admin_payment_counts', { p_source_site: rpcSourceSite(siteScope) })
   if (error) throw error
   const result = data as Partial<Record<PaymentStatusTab, number>> | null
   return {
@@ -115,8 +117,8 @@ async function withMemberPhones(rows: PaymentRow[]): Promise<PaymentRow[]> {
   )
 }
 
-export async function searchMembers(term: string): Promise<MemberOption[]> {
-  const { data, error } = await sb().rpc('admin_member_search', { p_term: term, p_limit: 20 })
+export async function searchMembers(term: string, siteScope: SiteScope): Promise<MemberOption[]> {
+  const { data, error } = await sb().rpc('admin_member_search', { p_term: term, p_limit: 20, p_source_site: rpcSourceSite(siteScope) })
   if (error) throw error
   return (data as MemberOption[] | null) ?? []
 }
@@ -313,10 +315,12 @@ export async function updatePayment(
 export async function createManualPayment(v: ManualPaymentInput, actor: string | null): Promise<string> {
   const id = genId('pay')
   const member = await fetchMember(v.memberId)
+  if (!member) throw new Error('회원을 찾을 수 없습니다.')
   const product = await fetchProduct(v.productId)
   const row: Payment = {
     id,
     member_id: v.memberId,
+    meta: { source_site: memberSite(member?.meta) },
     product_id: v.productId,
     amount: v.amount,
     method: v.method,

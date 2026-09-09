@@ -7,6 +7,8 @@ import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type { Grade, LogEntry, Member, Payment, PaymentStatus, Staff } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
+import { matchesSiteScope, rpcSourceSite } from '@/lib/siteScope'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { GRADE_LABEL, PAYMENT_METHOD_LABEL } from '@/design-system/labels'
@@ -409,14 +411,16 @@ function inflowStats(members: Member[], from: string, to: string): StatsResult {
 
 export function useStats(q: StatsQuery) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: ['stats', q.view, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: ['stats', q.view, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none', siteScope],
     queryFn: async (): Promise<StatsResult> => {
       if (dataSource === 'supabase') {
         const { data, error } = await sb().rpc('admin_stats_snapshot', {
           p_view: q.view,
           p_from: q.from,
           p_to: q.to,
+          p_source_site: rpcSourceSite(siteScope),
         })
         if (error) throw error
         const snapshot = data as RemoteStatsSnapshot
@@ -426,19 +430,18 @@ export function useStats(q: StatsQuery) {
       }
       const db =
         readDb()
-      const members = scopeMembers(db.members, user)
+      const members = scopeMembers(db.members, user).filter((m) => matchesSiteScope(m.meta, siteScope))
       if (q.view === 'signup') return signupStats(members, q.from, q.to)
       if (q.view === 'inflow') return inflowStats(members, q.from, q.to)
       const memberMap: Record<string, Member> = {}
       for (const m of db.members) memberMap[m.id] = m
       const productNames: Record<string, string> = {}
       for (const pr of db.products) productNames[pr.id] = pr.name
-      const payments = scopePayments(db.payments, memberMap, user)
+      const payments = scopePayments(db.payments, memberMap, user).filter((p) => matchesSiteScope(memberMap[p.member_id]?.meta, siteScope))
       return paymentStats(payments, productNames, q.from, q.to)
     },
     staleTime: 0,
     refetchOnMount: 'always',
-    placeholderData: (prev) => prev,
   })
 }
 
@@ -452,8 +455,9 @@ export interface ConsultReportQuery {
 
 export function useConsultReport(q: ConsultReportQuery) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: ['stats', 'consult', q.dimension, q.period, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: ['stats', 'consult', q.dimension, q.period, q.from, q.to, user?.id ?? 'anon', user?.role ?? 'none', siteScope],
     queryFn: async (): Promise<ConsultReportRow[]> => {
       if (dataSource === 'supabase') {
         const { data, error } = await sb().rpc('admin_consult_report', {
@@ -461,13 +465,14 @@ export function useConsultReport(q: ConsultReportQuery) {
           p_period: q.period,
           p_from: q.from,
           p_to: q.to,
+          p_source_site: rpcSourceSite(siteScope),
         })
         if (error) throw error
         return (data as ConsultReportRow[] | null) ?? []
       }
       const db =
         readDb()
-      const members = scopeMembers(db.members, user)
+      const members = scopeMembers(db.members, user).filter((m) => matchesSiteScope(m.meta, siteScope))
       // computeConsultReport 가 members 스코프 밖 이벤트를 자동 제외한다(팀장/담당 경계 보장).
       return computeConsultReport(db.logs as LogEntry[], members, db.staff as Staff[], {
         dimension: q.dimension,
@@ -478,6 +483,5 @@ export function useConsultReport(q: ConsultReportQuery) {
     },
     staleTime: 0,
     refetchOnMount: 'always',
-    placeholderData: (prev) => prev,
   })
 }

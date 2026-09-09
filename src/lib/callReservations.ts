@@ -7,6 +7,8 @@ import { readDb } from './db/store'
 import { dataSource } from './supabase'
 import { sb } from './db/remote'
 import { useCurrentUser, type CurrentUser } from './auth'
+import { matchesSiteScope, siteScopeOrFilter, type SiteScope } from './siteScope'
+import { useSiteScope } from './siteScopeStore'
 
 // 우측하단 고정 팝업 켜기/끄기(현장 피드백 7/30) — 실무자마다 선호가 달라 브라우저별 로컬 설정으로
 // 둔다(site_settings 전역 설정이 아님). 상단바 벨 배지/드롭다운은 이 설정과 무관하게 항상 동작한다.
@@ -51,12 +53,13 @@ function dueReservations(members: readonly ReservationRow[], user: CurrentUser):
   return out.sort((a, b) => Date.parse(a.reserved_at) - Date.parse(b.reserved_at))
 }
 
-async function fetchDueReservationsRemote(user: CurrentUser): Promise<CallReservationAlert[]> {
+async function fetchDueReservationsRemote(user: CurrentUser, siteScope: SiteScope): Promise<CallReservationAlert[]> {
   let q = sb()
     .from('members')
     .select('id, name, phone, assigned_staff_id, meta')
     .not('meta->>call_reservation_at', 'is', null)
   if (user.role === 'rep') q = q.eq('assigned_staff_id', user.id)
+  if (siteScope !== 'all') q = q.or(siteScopeOrFilter(siteScope))
   const { data, error } = await q
   if (error) throw error
   return dueReservations((data ?? []) as ReservationRow[], user)
@@ -74,12 +77,13 @@ export const callReservationAlertsKey = ['call-reservation-alerts'] as const
  */
 export function useCallReservationAlerts() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: [...callReservationAlertsKey, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: [...callReservationAlertsKey, user?.id ?? 'anon', user?.role ?? 'none', siteScope],
     queryFn: async (): Promise<CallReservationAlert[]> => {
       if (!user) return []
-      if (dataSource === 'supabase') return fetchDueReservationsRemote(user)
-      return dueReservations(readDb().members, user)
+      if (dataSource === 'supabase') return fetchDueReservationsRemote(user, siteScope)
+      return dueReservations(readDb().members.filter((member) => matchesSiteScope(member.meta, siteScope)), user)
     },
     enabled: !!user,
     staleTime: 15_000,
