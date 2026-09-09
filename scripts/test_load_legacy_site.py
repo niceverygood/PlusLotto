@@ -72,6 +72,33 @@ class LegacyLoaderTest(unittest.TestCase):
         self.assertFalse(member['outcall_done'])
         self.assertIsNone(member['inflow_type'])
 
+    def test_zero_recommendation_count_is_preserved_as_an_explicit_stop(self):
+        row = user()
+        row['itemOptionSlot'] = '0'
+        row['schedulePickSmsWeek'] = ''
+        member, reason = loader.build_member(row, 'lotto815', loader.GRADE_BY_SITE['lotto815'])
+        self.assertIsNone(reason)
+        self.assertEqual(member['meta']['weekly_reco_count'], 0)
+        self.assertTrue(member['meta']['reco_paused'])
+        self.assertNotIn('weekly_reco_day', member['meta'])
+
+    def test_invalid_recommendation_counts_are_reported_and_not_defaulted(self):
+        for value in ('', '-1', '1.5', 'invalid'):
+            with self.subTest(value=value):
+                row = user()
+                row['itemOptionSlot'] = value
+                plan = loader.build_import_plan([row], [payment()], 'lotto815')
+                self.assertEqual(plan.members, [])
+                self.assertEqual(plan.payments, [])
+                self.assertEqual(plan.skipped_members['조합 수 누락 또는 오류'], 1)
+
+    def test_unknown_member_status_is_not_imported_as_active(self):
+        row = user()
+        row['statCode'] = 'unknown'
+        plan = loader.build_import_plan([row], [], 'lotto815')
+        self.assertEqual(plan.members, [])
+        self.assertEqual(plan.skipped_members['회원 상태 미대응'], 1)
+
     def test_missing_join_date_uses_earliest_operational_timestamp(self):
         row = user()
         row['insertDateTimeOrg'] = ''
@@ -107,6 +134,31 @@ class LegacyLoaderTest(unittest.TestCase):
         self.assertEqual(len(plan.payments), 2)
         self.assertEqual(plan.payments[0]['member_id'], plan.payments[1]['member_id'])
         self.assertEqual(plan.member_conflicts['중복 전화 원본 PK를 첫 회원에 연결'], 1)
+
+    def test_invalid_payment_values_are_reported_without_fabricating_approved_revenue(self):
+        for field, value, reason in (
+            ('statCode', 'unknown', '결제 상태 미대응'),
+            ('payMethodCode', 'unknown', '결제수단 미대응'),
+            ('itemWon', '', '결제액 누락 또는 오류'),
+            ('itemWon', 'not-a-number', '결제액 누락 또는 오류'),
+            ('itemWon', '-1', '결제액 누락 또는 오류'),
+            ('itemWon', '10.5', '결제액 누락 또는 오류'),
+        ):
+            with self.subTest(field=field, value=value):
+                row = payment()
+                row[field] = value
+                plan = loader.build_import_plan([user()], [row], 'lotto815')
+                self.assertEqual(len(plan.members), 1)
+                self.assertEqual(plan.payments, [])
+                self.assertEqual(plan.products, [])
+                self.assertEqual(plan.skipped_payments[reason], 1)
+
+    def test_zero_payment_amount_is_preserved(self):
+        row = payment()
+        row['itemWon'] = '0'
+        plan = loader.build_import_plan([user()], [row], 'lotto815')
+        self.assertEqual(len(plan.payments), 1)
+        self.assertEqual(plan.payments[0]['amount'], 0)
 
     def test_existing_member_resumes_payments_and_existing_payment_is_skipped(self):
         state = loader.ExistingState(

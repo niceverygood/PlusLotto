@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Bell, BellOff, LogOut, PanelLeft, RefreshCw, X } from 'lucide-react'
 import { navIcons } from '@/design-system/icons'
 import { useUiStore } from '@/app/uiStore'
@@ -12,6 +13,8 @@ import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
 import { canAccessWith, ROLE_LABEL, type NavKey } from '@/lib/permissions'
 import { BRAND } from '@/lib/brand'
+import { DEFAULT_SITE_SCOPE, isSiteScope, SITE_SCOPES, type SiteScope } from '@/lib/siteScope'
+import { useSiteScope, useSiteScopeStore } from '@/lib/siteScopeStore'
 import { cn } from '@/lib/cn'
 import { datetime } from '@/lib/format'
 import { MemberDrawer } from '@/features/members/MemberDrawer'
@@ -75,7 +78,13 @@ export function AppShell() {
   const pageDesc = useUiStore((s) => s.pageDesc)
   const user = useCurrentUser()
   const signOut = useSignOut()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const siteScope = useSiteScope()
+  const setSiteScope = useSiteScopeStore((s) => s.setSiteScope)
+  const hasSiteData = /^\/admin\/(dashboard|members|payments|revenue|stats|my\/(customers|sms))(\/|$)/.test(location.pathname)
   const { data: navMap } = useNavAccess()
   const navCounts = useNavBadges()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -94,6 +103,29 @@ export function AppShell() {
   const closePaymentDrawer = usePaymentDrawerStore((s) => s.close)
   const newVersionAvailable = useNewVersionAvailable()
 
+  useLayoutEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const value = params.get('site') ?? params.get('src')
+    const next = value === null ? siteScope : isSiteScope(value) ? value : DEFAULT_SITE_SCOPE
+    if (next !== siteScope) setSiteScope(next)
+    // 첫 진입/기존 링크에도 사이트를 기록해 새로고침과 뒤로가기가 같은 범위를 복원한다.
+    if (params.get('site') !== next || params.has('src')) {
+      params.set('site', next)
+      params.delete('src')
+      setSearchParams(params, { replace: true })
+    }
+  }, [location.search, siteScope, setSiteScope, setSearchParams])
+
+  const previousSite = useRef(siteScope)
+  useLayoutEffect(() => {
+    if (previousSite.current === siteScope) return
+    previousSite.current = siteScope
+    useMemberDrawerStore.getState().closeAll()
+    usePaymentDrawerStore.getState().close()
+    setNotifOpen(false)
+    setDismissedIds(new Set())
+  }, [siteScope])
+
   if (!user) return null // RequireAuth 가 /login 으로 보냄
   const roleLabel = ROLE_LABEL[user.role]
 
@@ -106,7 +138,19 @@ export function AppShell() {
   async function handleLogout() {
     setMenuOpen(false)
     await signOut()
+    queryClient.clear()
+    useMemberDrawerStore.getState().closeAll()
+    usePaymentDrawerStore.getState().close()
+    setSiteScope(DEFAULT_SITE_SCOPE)
     navigate('/admin/login', { replace: true })
+  }
+
+  function changeSite(next: SiteScope) {
+    const params = new URLSearchParams(searchParams)
+    params.set('site', next)
+    for (const key of ['src', 'page', 'member', 'payment']) params.delete(key)
+    setSiteScope(next)
+    setSearchParams(params)
   }
 
   return (
@@ -165,7 +209,7 @@ export function AppShell() {
                 return (
                   <NavLink
                     key={item.to}
-                    to={item.to}
+                    to={`${item.to}?site=${siteScope}`}
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
                       cn(
@@ -212,6 +256,19 @@ export function AppShell() {
           >
             <PanelLeft className="h-[18px] w-[18px]" />
           </button>
+          <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-gray-600">
+            <span>{hasSiteData ? '관리 사이트' : '공통 관리'}</span>
+            <select
+              aria-label="관리 사이트"
+              value={siteScope}
+              disabled={!hasSiteData}
+              onChange={(event) => { if (isSiteScope(event.target.value)) changeSite(event.target.value) }}
+              className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-ink-900 focus:border-primary-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
+              title={hasSiteData ? '목록과 집계에 적용할 사이트' : '이 화면은 사이트 공통으로 관리합니다'}
+            >
+              {SITE_SCOPES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
+            </select>
+          </label>
           <div className="min-w-0">
             <span className="text-[15px] font-bold text-ink-900">{pageTitle}</span>
             {pageDesc && <span className="ml-2 text-[12px] text-gray-400">{pageDesc}</span>}
@@ -309,7 +366,7 @@ export function AppShell() {
         </header>
 
         <main className="relative min-h-0 flex-1 overflow-auto bg-gray-50 p-4">
-          <Outlet />
+          <Outlet key={siteScope} />
         </main>
       </div>
 

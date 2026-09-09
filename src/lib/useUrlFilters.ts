@@ -50,7 +50,7 @@ export function useUrlFilters() {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams()
-          for (const k of keep) {
+          for (const k of new Set(['site', ...keep])) {
             const v = prev.get(k)
             if (v != null) sp.set(k, v)
           }

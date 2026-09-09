@@ -7,6 +7,8 @@ import { eachDayOfInterval, format, parseISO, subDays } from 'date-fns'
 import type { Grade, Member, Payment } from '@/types/db'
 import { readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
+import { matchesSiteScope, rpcSourceSite } from '@/lib/siteScope'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { operationalKeys } from '@/lib/queryKeys'
@@ -77,19 +79,20 @@ function methodLabelOf(p: Payment): string {
 
 export function useDashboard() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: operationalKeys.dashboard(`${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: operationalKeys.dashboard(`${siteScope}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<DashboardResult> => {
       if (dataSource === 'supabase') {
-        const { data, error } = await sb().rpc('admin_dashboard')
+        const { data, error } = await sb().rpc('admin_dashboard', { p_source_site: rpcSourceSite(siteScope) })
         if (error) throw error
         return data as DashboardResult
       }
       const db = readDb()
-      const members = scopeMembers(db.members, user)
+      const members = scopeMembers(db.members, user).filter((m) => matchesSiteScope(m.meta, siteScope))
       const memberMap: Record<string, Member> = {}
       for (const m of db.members) memberMap[m.id] = m
-      const payments = scopePayments(db.payments, memberMap, user)
+      const payments = scopePayments(db.payments, memberMap, user).filter((p) => matchesSiteScope(memberMap[p.member_id]?.meta, siteScope))
 
       const today = format(new Date(), 'yyyy-MM-dd')
       const weekAgo = format(subDays(new Date(), 6), 'yyyy-MM-dd')
@@ -176,6 +179,5 @@ export function useDashboard() {
     },
     staleTime: 30_000,
     refetchOnMount: 'always',
-    placeholderData: (prev) => prev,
   })
 }

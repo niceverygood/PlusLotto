@@ -1,0 +1,69 @@
+name: Admin validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Typecheck, build and regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Build/test fixtures are local; no production credentials or customer dumps are needed.
+      VITE_DATA_SOURCE: mock
+      VITE_BRAND: pluslotto
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install application dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check legacy import and preflight safety with synthetic fixtures
+        run: |
+          bash -n scripts/preflight-legacy-load.sh
+          python3 scripts/test_load_legacy_site.py
+          python3 scripts/test_preflight_legacy_load.py
+
+      - name: Run TypeScript regressions
+        run: node --import tsx --test scripts/tests/*.test.ts
+
+      - name: Install in-memory PostgreSQL test runtime
+        run: npm install --prefix "$RUNNER_TEMP/pluslotto-site-scope-pgtest" --no-package-lock --no-audit --no-fund --ignore-scripts @electric-sql/pglite@0.5.8
+
+      - name: Run database scope regressions in memory
+        env:
+          PGLITE_MODULE: ${{ runner.temp }}/pluslotto-site-scope-pgtest/node_modules/@electric-sql/pglite/dist/index.js
+        run: node --test scripts/tests/admin-site-scope.test.mjs
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build

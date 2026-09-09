@@ -6,6 +6,8 @@ import { Button, Modal } from '@/design-system/components'
 import { cn } from '@/lib/cn'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
+import { useSiteScope } from '@/lib/siteScopeStore'
+import { siteScopeLabel } from '@/lib/siteScope'
 import type { Grade } from '@/types/db'
 import { useBulkImportMembers, type BulkImportResult, type MemberCreateInput } from './api'
 import { autoMapHeaders, IMPORT_FIELDS, parseLeadFile, type ParsedSheet } from './import'
@@ -21,6 +23,7 @@ const onlyDigits = (s: string) => s.replace(/\D/g, '')
 type Step = 'upload' | 'map' | 'preview'
 
 export function ImportMembersModal({ onClose }: { onClose: () => void }) {
+  const siteScope = useSiteScope()
   const importMut = useBulkImportMembers()
   const { data: staff = [] } = useStaff()
 
@@ -176,7 +179,7 @@ export function ImportMembersModal({ onClose }: { onClose: () => void }) {
     )
 
   return (
-    <Modal open onClose={onClose} title="회원 일괄 임포트" size="lg" footer={footer}>
+    <Modal open onClose={onClose} title={`${siteScopeLabel(siteScope)} · 회원 일괄 임포트`} size="lg" footer={footer}>
       {/* 단계 표시 */}
       <div className="mb-3 flex items-center gap-1.5 text-[11.5px] font-semibold">
         {(['upload', 'map', 'preview'] as Step[]).map((s, i) => (

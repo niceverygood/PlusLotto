@@ -226,27 +226,42 @@ class DumpSource:
         if not zipfile.is_zipfile(self.archive):
             raise ValueError('--archive 경로가 유효한 ZIP이 아닙니다')
         with zipfile.ZipFile(self.archive) as archive:
-            infos = archive.infolist()
-            for info in infos:
-                path = PurePosixPath(info.filename)
-                if path.is_absolute() or '..' in path.parts or '\\' in info.filename:
-                    raise ValueError('ZIP에 안전하지 않은 경로가 있습니다')
-                if stat.S_ISLNK(info.external_attr >> 16):
-                    raise ValueError('ZIP에 심볼릭 링크가 있습니다')
-            matches = [
-                info for info in infos
-                if not info.is_dir() and PurePosixPath(info.filename).name in self._names(table)
-            ]
-            if len(matches) != 1:
-                raise ValueError(f'{self.site}/{table}: ZIP의 알려진 SQL 파일이 정확히 1개여야 합니다')
-            info = matches[0]
-            if info.flag_bits & 0x1:
-                raise ValueError(f'{self.site}/{table}: 암호화된 ZIP 항목은 지원하지 않습니다')
+            info = self._zip_entry(archive, table)
             with archive.open(info) as raw:
                 if info.filename.endswith('.gz'):
                     with gzip.GzipFile(fileobj=raw) as stream:
                         return _read_limited(stream, f'{self.site}/{table}')
                 return _read_limited(raw, f'{self.site}/{table}')
+
+    def _zip_entry(self, archive: zipfile.ZipFile, table: str) -> zipfile.ZipInfo:
+        infos = archive.infolist()
+        for info in infos:
+            path = PurePosixPath(info.filename)
+            if path.is_absolute() or '..' in path.parts or '\\' in info.filename:
+                raise ValueError('ZIP에 안전하지 않은 경로가 있습니다')
+            if stat.S_ISLNK(info.external_attr >> 16):
+                raise ValueError('ZIP에 심볼릭 링크가 있습니다')
+        matches = [
+            info for info in infos
+            if not info.is_dir() and PurePosixPath(info.filename).name in self._names(table)
+        ]
+        if len(matches) != 1:
+            raise ValueError(f'{self.site}/{table}: ZIP의 알려진 SQL 파일이 정확히 1개여야 합니다')
+        info = matches[0]
+        if info.flag_bits & 0x1:
+            raise ValueError(f'{self.site}/{table}: 암호화된 ZIP 항목은 지원하지 않습니다')
+        return info
+
+    def validate_archive(self) -> None:
+        """사전 점검용: 로더와 같은 파일 규칙 및 ZIP CRC를 확인한다. SQL/DB 처리는 하지 않는다."""
+        if self.archive is None or not zipfile.is_zipfile(self.archive):
+            raise ValueError('--archive 경로가 유효한 ZIP이 아닙니다')
+        with zipfile.ZipFile(self.archive) as archive:
+            for table in sorted(ALLOWED_TABLES):
+                self._zip_entry(archive, table)
+            # testzip은 CRC 오류를 예외 대신 파일명으로 반환할 수도 있다.
+            if archive.testzip() is not None:
+                raise ValueError('ZIP CRC 검사에 실패했습니다')
 
 
 def digits(value: str | None) -> str:
@@ -321,7 +336,12 @@ def build_member(
     if not re.fullmatch(r'01\d{8,9}', phone):
         return None, '휴대폰 형식 오류'
     legacy_status = user.get('statCode', '')
-    status = STATUS_MAP.get(legacy_status, 'active')
+    if legacy_status not in STATUS_MAP:
+        return None, '회원 상태 미대응'
+    status = STATUS_MAP[legacy_status]
+    slot = num(user.get('itemOptionSlot'))
+    if slot is None or slot < 0:
+        return None, '조합 수 누락 또는 오류'
     legacy_consult = user.get('statTmCode', '')
     legacy_inflow = user.get('statAdmCode', '')
     try:
@@ -351,9 +371,8 @@ def build_member(
     day = WEEKDAY.get(user.get('schedulePickSmsWeek', ''))
     if day is not None:
         meta['weekly_reco_day'] = day
-    slot = num(user.get('itemOptionSlot'))
-    if slot:
-        meta['weekly_reco_count'] = slot
+    # 0은 발급/발송 중단이다. 생략하면 일시정지 해제 후 전역 기본값으로 발급된다.
+    meta['weekly_reco_count'] = slot
     row = {
         'id': stable_id('member', site, legacy_idx),
         'user_id': user.get('id') or fallback_login_id(site, legacy_idx, set()),
@@ -392,13 +411,21 @@ def build_payment(
     if legacy_idx is None:
         raise ValueError('원본 결제 PK 오류')
     legacy_status = payment.get('statCode', '')
+    if legacy_status not in PAYMENT_STATUS_MAP:
+        raise ValueError('결제 상태 미대응')
+    method = METHOD_MAP.get(payment.get('payMethodCode', ''))
+    if method is None:
+        raise ValueError('결제수단 미대응')
+    amount = num(payment.get('itemWon'))
+    if amount is None or amount < 0:
+        raise ValueError('결제액 누락 또는 오류')
     return {
         'id': stable_id('payment', site, legacy_idx),
         'member_id': member_id,
         'product_id': product_id,
-        'amount': num(payment.get('itemWon'), 0),
-        'method': METHOD_MAP.get(payment.get('payMethodCode', ''), 'manual'),
-        'status': PAYMENT_STATUS_MAP.get(legacy_status, 'approved'),
+        'amount': amount,
+        'method': method,
+        'status': PAYMENT_STATUS_MAP[legacy_status],
         'period_start': ts(payment.get('itemStartDateTime')),
         'period_end': ts(payment.get('itemEndDateTime')),
         'depositor_name': payment.get('userBankName') or None,
@@ -523,10 +550,13 @@ def build_import_plan(
         if product is None:
             skipped_payments['상품 코드 미대응'] += 1
             continue
+        try:
+            row = build_payment(payment, site, idx_to_member[user_idx], product['id'], batch_id)
+        except ValueError as error:
+            skipped_payments[str(error)] += 1
+            continue
         needed_products[product['id']] = product
-        todo_payments.append(
-            build_payment(payment, site, idx_to_member[user_idx], product['id'], batch_id)
-        )
+        todo_payments.append(row)
 
     products = [needed_products[key] for key in sorted(needed_products)]
     return ImportPlan(

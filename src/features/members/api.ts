@@ -6,6 +6,8 @@ import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, Pay
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { cancelPaymentInDb, cancelPaymentRemote } from '@/lib/db/paymentCancel'
 import { dataSource } from '@/lib/supabase'
+import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { callReservationAlertsKey } from '@/lib/callReservations'
@@ -197,21 +199,22 @@ interface MemberFacets {
   inflowCodes: string[]
 }
 
-function resolvedFilter(q: MembersQuery): MemberFilter {
-  return { ...getView(q.view).filter, ...q.extra, search: q.search }
+function resolvedFilter(q: MembersQuery, siteScope: SiteScope): MemberFilter {
+  return { ...getView(q.view).filter, ...q.extra, search: q.search, sourceSite: rpcSourceSite(siteScope) ?? undefined }
 }
 
 function useMemberFacets(scope: 'all' | 'mine') {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: memberKeys.facets(`${scope}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: memberKeys.facets(`${siteScope}:${scope}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<MemberFacets> => {
       if (dataSource === 'supabase') {
-        return supa.fetchMemberFacets(scope === 'mine' ? (user?.id ?? '') : null)
+        return supa.fetchMemberFacets(scope === 'mine' ? (user?.id ?? '') : null, siteScope)
       }
-      const base = scope === 'mine'
+      const base = (scope === 'mine'
         ? scopeMine(readDb().members, user)
-        : scopeMembers(readDb().members, user)
+        : scopeMembers(readDb().members, user)).filter((m) => matchesSiteScope(m.meta, siteScope))
       const roleMap = staffRoleById()
       const inflowCodes = Array.from(
         new Set(base.map((m) => m.inflow_code).filter((code): code is string => !!code && code.trim().length > 0)),
@@ -252,17 +255,17 @@ function countsFrom(base: readonly Member[], roleMap: Record<string, Role>): Rec
 
 export function useMembers(q: MembersQuery) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: memberKeys.list({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
+    queryKey: memberKeys.list({ ...q, siteScope, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
     queryFn: async (): Promise<MembersResult> => {
       if (dataSource === 'supabase') {
         return supa.fetchMembersPage(
-          resolvedFilter(q), q.page, q.pageSize, q.sortId, q.sortDesc ?? false,
+          resolvedFilter(q, siteScope), q.page, q.pageSize, q.sortId, q.sortDesc ?? false,
         )
       }
-      return listFrom(scopeMembers(readDb().members, user), q, staffRoleById())
+      return listFrom(scopeMembers(readDb().members, user), { ...q, extra: resolvedFilter(q, siteScope) }, staffRoleById())
     },
-    placeholderData: (prev) => prev,
   })
 }
 
@@ -276,6 +279,7 @@ export async function fetchAllMembersForExport(
   user: CurrentUser | null,
   limit: number,
   onProgress?: (loaded: number, total: number) => void,
+  siteScope: SiteScope = 'all',
 ): Promise<{ rows: Member[]; total: number }> {
   const PAGE = 1000 // admin_members_page 의 p_limit 상한
   const out: Member[] = []
@@ -283,8 +287,8 @@ export async function fetchAllMembersForExport(
   for (let page = 1; ; page++) {
     const res =
       dataSource === 'supabase'
-        ? await supa.fetchMembersPage(resolvedFilter(q as MembersQuery), page, PAGE, q.sortId, q.sortDesc ?? false)
-        : listFrom(scopeMembers(readDb().members, user), { ...q, page, pageSize: PAGE }, staffRoleById())
+        ? await supa.fetchMembersPage(resolvedFilter(q as MembersQuery, siteScope), page, PAGE, q.sortId, q.sortDesc ?? false)
+        : listFrom(scopeMembers(readDb().members, user), { ...q, extra: resolvedFilter(q as MembersQuery, siteScope), page, pageSize: PAGE }, staffRoleById())
     total = res.total
     out.push(...res.rows)
     onProgress?.(out.length, total)
@@ -299,9 +303,10 @@ export async function fetchAllMembersForExport(
  */
 export function useLogMemberExport() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useMutation({
     mutationFn: async (v: { view: string; count: number }) => {
-      const meta = { view: v.view, count: v.count }
+      const meta = { view: v.view, count: v.count, source_site: rpcSourceSite(siteScope) }
       if (dataSource === 'supabase') {
         await supa.logMemberExport(user?.id ?? null, meta)
         return v
@@ -335,17 +340,17 @@ function scopeMine(all: readonly Member[], user: CurrentUser | null): Member[] {
 
 export function useMyCustomers(q: MembersQuery) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: memberKeys.list({ ...q, scope: 'mine', uid: user?.id ?? 'anon' }),
+    queryKey: memberKeys.list({ ...q, siteScope, scope: 'mine', uid: user?.id ?? 'anon' }),
     queryFn: async (): Promise<MembersResult> => {
       if (dataSource === 'supabase') {
         return supa.fetchMembersPage(
-          resolvedFilter(q), q.page, q.pageSize, q.sortId, q.sortDesc ?? false, user?.id ?? '',
+          resolvedFilter(q, siteScope), q.page, q.pageSize, q.sortId, q.sortDesc ?? false, user?.id ?? '',
         )
       }
-      return listFrom(scopeMine(readDb().members, user), q, staffRoleById())
+      return listFrom(scopeMine(readDb().members, user), { ...q, extra: resolvedFilter(q, siteScope) }, staffRoleById())
     },
-    placeholderData: (prev) => prev,
   })
 }
 
@@ -368,12 +373,13 @@ export interface MySmsRow {
 /** 내 담당 회원에게 발송된 문자 내역(최신순) — 나의고객 문자 발송 센터용. */
 export function useMySmsLog(limit = 80) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: ['my-sms', user?.id ?? 'anon', limit],
+    queryKey: ['my-sms', siteScope, user?.id ?? 'anon', limit],
     queryFn: async (): Promise<MySmsRow[]> => {
-      if (dataSource === 'supabase') return supa.fetchMineSmsLog(user?.id ?? '', limit)
+      if (dataSource === 'supabase') return supa.fetchMineSmsLog(user?.id ?? '', limit, siteScope)
       const db = readDb()
-      const mine = new Map(scopeMine(db.members, user).map((m) => [m.id, m.name]))
+      const mine = new Map(scopeMine(db.members, user).filter((m) => matchesSiteScope(m.meta, siteScope)).map((m) => [m.id, m.name]))
       return db.sms_sends
         .filter((s) => mine.has(s.member_id))
         .sort((a, b) => (b.sent_at ?? '').localeCompare(a.sent_at ?? ''))
@@ -653,10 +659,12 @@ export function useRequestPayment() {
       const id = genId('pay')
       mutateDb((db) => {
         const member = db.members.find((m) => m.id === v.memberId)
+        if (!member) throw new Error('회원을 찾을 수 없습니다.')
         const ts = nowIso()
         const p: Payment = {
           id,
           member_id: v.memberId,
+          meta: { source_site: memberSite(member?.meta) },
           product_id: v.productId,
           amount: v.amount,
           method: v.method,
@@ -898,6 +906,7 @@ export function useBulkUpdateMembers() {
 
 // ── 회원 단건 등록 (§V2-2 DB 입력) ────────────────────────────────────
 export interface MemberCreateInput {
+  sourceSite?: Exclude<SiteScope, 'all'>
   name: string
   phone: string
   user_id?: string | null
@@ -959,6 +968,7 @@ function buildLeadMember(
     is_deleted: false,
     is_withdrawn: false,
     meta: {
+      source_site: input.sourceSite ?? 'pluslotto',
       ...(opts.imported ? { imported: true } : {}),
       ...(input.age_band ? { age_band: input.age_band } : {}),
       ...(input.gender ? { gender: input.gender } : {}),
@@ -991,9 +1001,13 @@ function maxUserSeq(members: readonly { user_id: string }[]): number {
 /** 신규 리드 1건 등록. 전화 중복이면 신규 행을 만들지 않고 기존 DB를 중복으로 표시한다. */
 export function useCreateMember() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   const invalidate = useInvalidateMembers()
   return useMutation({
-    mutationFn: async (input: MemberCreateInput) => {
+    mutationFn: async (raw: MemberCreateInput) => {
+      const sourceSite = siteScope === 'all' ? raw.sourceSite : siteScope
+      if (!sourceSite) throw new Error('등록할 사이트를 먼저 선택해 주세요.')
+      const input = { ...raw, sourceSite }
       if (dataSource === 'supabase') return supa.createMember(input, user?.id ?? null)
       let result: MemberCreateResult = { id: null, created: false }
       mutateDb((db) => {
@@ -1042,9 +1056,15 @@ export function useCreateMember() {
 /** 일괄 임포트(§V2-3) — 전화 중복은 건너뛰고 기존 DB를 중복으로 표시한다. */
 export function useBulkImportMembers() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   const invalidate = useInvalidateMembers()
   return useMutation({
-    mutationFn: async (inputs: MemberCreateInput[]) => {
+    mutationFn: async (raw: MemberCreateInput[]) => {
+      const inputs = raw.map((input) => {
+        const sourceSite = siteScope === 'all' ? input.sourceSite : siteScope
+        if (!sourceSite) throw new Error('등록할 사이트를 먼저 선택해 주세요.')
+        return { ...input, sourceSite }
+      })
       if (dataSource === 'supabase') return supa.bulkImportMembers(inputs, user?.id ?? null)
       let created = 0
       let dupCount = 0

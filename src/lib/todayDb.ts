@@ -3,7 +3,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { readDb } from './db/store'
 import { dataSource } from './supabase'
-import { sb } from './db/remote'
+import { paginateAll, sb } from './db/remote'
+import { useCurrentUser } from './auth'
+import { matchesSiteScope, siteScopeOrFilter, type SiteScope } from './siteScope'
+import type { Assignment } from '@/types/db'
 
 export interface TodayDbCount {
   total: number
@@ -37,26 +40,30 @@ export function tallyTodayDb(
   return out
 }
 
-async function fetchTodayDbCountsRemote(): Promise<Record<string, TodayDbCount>> {
+async function fetchTodayDbCountsRemote(siteScope: SiteScope): Promise<Record<string, TodayDbCount>> {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
-  const { data, error } = await sb()
-    .from('assignments')
-    .select('staff_id, type, created_at')
-    .gte('created_at', start.toISOString())
-  if (error) throw error
-  return tallyTodayDb(
-    (data ?? []) as { staff_id: string | null; type: 'manual' | 'auto'; created_at: string }[],
-  )
+  type TodayAssignment = Pick<Assignment, 'staff_id' | 'type' | 'created_at'>
+  const rows = await paginateAll<TodayAssignment>((from, to) => {
+    let query = sb().from('assignments')
+      .select(siteScope === 'all' ? 'staff_id,type,created_at' : 'staff_id,type,created_at,members!inner(id)')
+      .gte('created_at', start.toISOString()).order('id').range(from, to)
+    if (siteScope !== 'all') query = query.or(siteScopeOrFilter(siteScope), { referencedTable: 'members' })
+    return query.returns<TodayAssignment[]>()
+  })
+  return tallyTodayDb(rows)
 }
 
 /** 관리자별 금일 디비 수량(전체/수동/자동). 관리자 화면·자동할당 모달 표시용. */
-export function useTodayDbCounts() {
+export function useTodayDbCounts(siteScope: SiteScope = 'all') {
+  const user = useCurrentUser()
   return useQuery({
-    queryKey: ['today-db-counts'],
+    queryKey: ['today-db-counts', siteScope, user?.id, user?.role],
     queryFn: async (): Promise<Record<string, TodayDbCount>> => {
-      if (dataSource === 'supabase') return fetchTodayDbCountsRemote()
-      return tallyTodayDb(readDb().assignments)
+      if (dataSource === 'supabase') return fetchTodayDbCountsRemote(siteScope)
+      const db = readDb()
+      const memberIds = new Set(db.members.filter((member) => matchesSiteScope(member.meta, siteScope)).map((member) => member.id))
+      return tallyTodayDb(db.assignments.filter((assignment) => siteScope === 'all' || memberIds.has(assignment.member_id)))
     },
   })
 }

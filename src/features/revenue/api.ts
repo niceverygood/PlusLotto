@@ -4,11 +4,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type { Member, Payment, Staff } from '@/types/db'
+import type { Database } from '@/types/supabase.generated'
 import { mutateDb, readDb } from '@/lib/db/store'
 import { dataSource } from '@/lib/supabase'
+import { matchesSiteScope, rpcSourceSite } from '@/lib/siteScope'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { sb } from '@/lib/db/remote'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
-import { useStaff } from '@/lib/staff'
 import { revenueKeys } from '@/lib/queryKeys'
 import { recognitionIso } from '@/lib/revenueRules'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
@@ -157,8 +159,9 @@ function groupOf(
 
 export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: revenueKeys.summary({ ...q, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
+    queryKey: revenueKeys.summary({ ...q, siteScope, uid: user?.id ?? 'anon', role: user?.role ?? 'none' }),
     enabled: opts.enabled ?? true,
     queryFn: async (): Promise<RevenueResult> => {
       if (dataSource === 'supabase') {
@@ -167,6 +170,7 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
           p_from: q.from,
           p_to: q.to,
           p_group: q.groupBy,
+          p_source_site: rpcSourceSite(siteScope),
         })
         if (error) throw error
         return data as RevenueResult
@@ -181,7 +185,7 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
       const productNames: Record<string, string> = {}
       for (const pr of db.products) productNames[pr.id] = pr.name
 
-      const scoped = scopeApproved(db.payments, user)
+      const scoped = scopeApproved(db.payments, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const convIds = conversionIds(scoped)
       const roleById = staffRoleById(db.staff)
 
@@ -253,7 +257,6 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
 
       return { summary, trend, breakdown, groupDim: dim }
     },
-    placeholderData: (prev) => prev,
   })
 }
 
@@ -282,19 +285,21 @@ export interface RevenueCalendarResult {
 /** month = 'yyyy-MM'. view: 전체매출(real)·팀장매출(conversion=1차결제만)·실장매출(team=1차결제 제외)(현장 피드백 7/28). */
 export function useRevenueCalendar(month: string, view: RevenueView = 'real') {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: revenueKeys.calendar(`${month}:${view}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: revenueKeys.calendar(`${siteScope}:${month}:${view}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<RevenueCalendarResult> => {
       if (dataSource === 'supabase') {
-        const { data, error } = await sb().rpc('admin_revenue_calendar', { p_month: `${month}-01`, p_view: view })
+        const { data, error } = await sb().rpc('admin_revenue_calendar', { p_month: `${month}-01`, p_view: view, p_source_site: rpcSourceSite(siteScope) })
         if (error) throw error
         return data as RevenueCalendarResult
       }
       const db = readDb()
+      const members = indexMembers(db.members)
       const staffNames: Record<string, string> = {}
       for (const s of db.staff) staffNames[s.id] = s.name
 
-      const scoped = scopeApproved(db.payments, user)
+      const scoped = scopeApproved(db.payments, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const roleById = staffRoleById(db.staff)
       // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const viewScoped =
@@ -342,7 +347,6 @@ export function useRevenueCalendar(month: string, view: RevenueView = 'real') {
         days,
       }
     },
-    placeholderData: (prev) => prev,
   })
 }
 
@@ -360,12 +364,13 @@ export interface RevenueDayPaymentRow {
 /** date = 'yyyy-MM-dd'. null 이면 비활성(선택된 날짜 없음). view: 캘린더와 동일 3뷰(현장 피드백 7/28). */
 export function useRevenueDayPayments(date: string | null, view: RevenueView = 'real') {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: ['revenue', 'day-payments', date, view, user?.id ?? 'anon', user?.role ?? 'none'],
+    queryKey: ['revenue', 'day-payments', siteScope, date, view, user?.id ?? 'anon', user?.role ?? 'none'],
     queryFn: async (): Promise<RevenueDayPaymentRow[]> => {
       if (!date) return []
       if (dataSource === 'supabase') {
-        const { data, error } = await sb().rpc('admin_revenue_day_payments', { p_day: date, p_view: view })
+        const { data, error } = await sb().rpc('admin_revenue_day_payments', { p_day: date, p_view: view, p_source_site: rpcSourceSite(siteScope) })
         if (error) throw error
         return (data ?? []) as RevenueDayPaymentRow[]
       }
@@ -376,7 +381,7 @@ export function useRevenueDayPayments(date: string | null, view: RevenueView = '
       const productNames: Record<string, string> = {}
       for (const pr of db.products) productNames[pr.id] = pr.name
 
-      const scoped = scopeApproved(db.payments, user)
+      const scoped = scopeApproved(db.payments, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const roleById = staffRoleById(db.staff)
       // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const viewScoped =
@@ -419,35 +424,26 @@ export interface DailyRevenueRow {
 /** from~to 일자별 요약. 승인 결제만, 인식일(paid_at ?? created_at) 기준. */
 export function useDailyRevenue(from: string, to: string) {
   const user = useCurrentUser()
-  const { data: staffList = [] } = useStaff()
+  const siteScope = useSiteScope()
   return useQuery({
-    queryKey: revenueKeys.daily(`${from}:${to}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
+    queryKey: revenueKeys.daily(`${siteScope}:${from}:${to}:${user?.id ?? 'anon'}:${user?.role ?? 'none'}`),
     queryFn: async (): Promise<DailyRevenueRow[]> => {
-      let payments: Payment[] = []
-      let headCounts: Record<string, number> = {}
-
       if (dataSource === 'supabase') {
-        // 기간이 보통 한 달이라 행 수가 적다 — 전용 RPC 를 새로 만들기보다 승인 결제만 받아 집계한다.
-        const { data, error } = await sb().from('payments').select('*').eq('status', 'approved')
+        // 서버가 전체 기간을 집계한다. 결제를 브라우저로 읽어 1,000행에서 잘리는 누락을 방지한다.
+        const { data, error } = await sb().rpc('admin_revenue_daily_summary', {
+          p_from: from,
+          p_to: to,
+          p_source_site: rpcSourceSite(siteScope) ?? undefined,
+        } satisfies Database['public']['Functions']['admin_revenue_daily_summary']['Args'])
         if (error) throw error
-        payments = (data ?? []) as Payment[]
-        const { data: wc, error: we } = await sb()
-          .from('daily_work_count')
-          .select('day, head_count')
-          .gte('day', from)
-          .lte('day', to)
-        if (we) throw we
-        for (const r of (wc ?? []) as { day: string; head_count: number }[]) {
-          headCounts[r.day] = r.head_count
-        }
-      } else {
-        const db = readDb()
-        payments = db.payments.filter((p) => p.status === 'approved')
-        headCounts = { ...(db.daily_work_count ?? {}) }
+        return (data ?? []) as DailyRevenueRow[]
       }
-
-      const scoped = scopeApproved(payments, user)
-      const roleById = staffRoleById(staffList)
+      const db = readDb()
+      const members = indexMembers(db.members)
+      const headCounts = siteScope === 'all' ? { ...(db.daily_work_count ?? {}) } : {}
+      const scoped = scopeApproved(db.payments, user)
+        .filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
+      const roleById = staffRoleById(db.staff)
       const byDay = new Map<string, DailyRevenueRow>()
       const blank = (day: string): DailyRevenueRow => ({
         day,
@@ -485,9 +481,11 @@ export function useDailyRevenue(from: string, to: string) {
 /** 근무인원 저장(최고관리자·관리자). 저장 즉시 일일요약이 갱신된다. */
 export function useSaveWorkCount() {
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (v: { day: string; headCount: number }) => {
+      if (siteScope !== 'all') throw new Error('근무인원은 전체 사이트 화면에서 입력해 주세요.')
       if (dataSource === 'supabase') {
         const { error } = await sb()
           .from('daily_work_count')

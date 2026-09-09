@@ -20,7 +20,7 @@ import { useCurrentUser, useRole } from '@/lib/auth'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
 import { canExportMembers } from '@/lib/permissions'
-import { LEGACY_SITES, legacySiteLabel } from '@/lib/legacySites'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { GRADE_LABEL, STATUS_META } from '@/design-system/labels'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
@@ -63,6 +63,7 @@ export function MembersPage() {
   usePageMeta('이용자', '26 세그먼트 · 필터 · 일괄작업 · 상세')
   const role = useRole()
   const user = useCurrentUser()
+  const siteScope = useSiteScope()
   const canSeeInflow = role === 'admin' || role === 'manager'
   const { get, set, setMany, remove, clear } = useUrlFilters()
   const { data: staff = [] } = useStaff()
@@ -100,7 +101,6 @@ export function MembersPage() {
   const staffF = get('staff')
   const inflowF = get('inflow')
   const inflowTypeF = get('it')
-  const sourceSiteF = canSeeInflow ? get('src') : undefined
   const consultF = get('cs')
   const dupF = get('dup') === '1' // 중복 디비만(현장 피드백)
   const regFromF = get('rf') // 가입일 from (YYYY-MM-DD)
@@ -114,7 +114,6 @@ export function MembersPage() {
     assignedStaffId: staffF,
     inflowCode: inflowF,
     inflowType: inflowTypeF,
-    sourceSite: sourceSiteF,
     consultStatus: consultF,
     dupPhone: dupF || undefined,
     registeredFrom: regFromF,
@@ -147,6 +146,7 @@ export function MembersPage() {
         user,
         EXPORT_ROW_LIMIT,
         (loaded) => setExportDone(loaded),
+        siteScope,
       )
       if (rows.length === 0) {
         window.alert('내려받을 결과가 없습니다.')
@@ -235,12 +235,6 @@ export function MembersPage() {
   if (inflowF) chips.push({ key: 'inflow', label: `유입코드: ${inflowF}`, onRemove: () => remove('inflow') })
   if (inflowTypeF)
     chips.push({ key: 'it', label: `유입구분: ${inflowTypeF}`, onRemove: () => remove('it') })
-  if (sourceSiteF)
-    chips.push({
-      key: 'src',
-      label: `원본 사이트: ${legacySiteLabel(sourceSiteF)}`,
-      onRemove: () => remove('src'),
-    })
   if (consultF)
     chips.push({ key: 'cs', label: `상담상태: ${consultF}`, onRemove: () => remove('cs') })
   if (dupF) chips.push({ key: 'dup', label: '중복 디비만 · 최근 중복입력순', onRemove: () => remove('dup') })
@@ -253,7 +247,7 @@ export function MembersPage() {
   if (winRoundF) chips.push({ key: 'wr', label: `당첨회차: ${winRoundF}`, onRemove: () => remove('wr') })
   if (winRankF) chips.push({ key: 'wk', label: `당첨등수: ${winRankF}등`, onRemove: () => remove('wk') })
 
-  const clearAll = () => clear(['view'])
+  const clearAll = () => clear(['view', 'site'])
 
   return (
     <div>
@@ -273,10 +267,10 @@ export function MembersPage() {
             {/* 디비 입력(신규 등록·일괄 임포트)은 최고관리자만(현장 피드백) */}
             {role === 'admin' && (
               <>
-                <Button variant="sec" size="sm" onClick={() => setImporting(true)}>
+                <Button variant="sec" size="sm" disabled={siteScope === 'all'} title={siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setImporting(true)}>
                   <Upload className="h-4 w-4" /> 일괄 임포트
                 </Button>
-                <Button variant="pri" size="sm" onClick={() => setCreating(true)}>
+                <Button variant="pri" size="sm" disabled={siteScope === 'all'} title={siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setCreating(true)}>
                   <Plus className="h-4 w-4" /> 신규 등록
                 </Button>
               </>
@@ -394,20 +388,6 @@ export function MembersPage() {
           {/* 레거시 원본/유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21, 8/31) */}
           {canSeeInflow && (
             <>
-              <Field label="원본 사이트">
-                <select
-                  className={selectCls}
-                  value={sourceSiteF ?? ''}
-                  onChange={(e) => set('src', e.target.value || null, { resetPage: true })}
-                >
-                  <option value="">전체</option>
-                  {LEGACY_SITES.map((site) => (
-                    <option key={site.key} value={site.key}>
-                      {site.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label="유입코드">
                 <select
                   className={selectCls}
@@ -464,11 +444,11 @@ export function MembersPage() {
               onChange={(e) => set('rf', e.target.value || null, { resetPage: true })}
             />
           </Field>
-          <Field label="가입일(까지)">
+          <Field label="가입일(까지)" className="col-span-2">
             <div className="flex items-center gap-1.5">
               <input
                 type="date"
-                className={selectCls + ' flex-1'}
+                className={selectCls + ' min-w-0 flex-1'}
                 value={regToF ?? ''}
                 onChange={(e) => set('rt', e.target.value || null, { resetPage: true })}
               />
@@ -567,9 +547,9 @@ export function MembersPage() {
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <label className="block">
+    <label className={`block min-w-0 ${className}`}>
       <span className="mb-1 block text-[11.5px] font-semibold text-gray-500">{label}</span>
       {children}
     </label>
