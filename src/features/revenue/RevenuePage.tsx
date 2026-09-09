@@ -40,6 +40,7 @@ import { useUrlFilters } from '@/lib/useUrlFilters'
 import { krw, num } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { useRole } from '@/lib/auth'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import {
   GROUP_LABEL,
@@ -574,8 +575,9 @@ function DailySummarySection({
   onRange: (from: string, to: string) => void
 }) {
   const role = useRole()
-  const canEdit = role === 'admin' || role === 'manager'
-  const { data: rows = [], isLoading } = useDailyRevenue(from, to)
+  const showHeadCount = useSiteScope() === 'all'
+  const canEdit = showHeadCount && (role === 'admin' || role === 'manager')
+  const { data: rows = [], isLoading, isError, refetch } = useDailyRevenue(from, to)
   const saveWorkCount = useSaveWorkCount()
   const [editing, setEditing] = useState<{ day: string; value: string } | null>(null)
 
@@ -602,6 +604,14 @@ function DailySummarySection({
 
   return (
     <div>
+      {!showHeadCount && (
+        <p className="mb-3 text-sm text-gray-500">근무인원과 1인당 매출은 전체 사이트에서 확인할 수 있습니다.</p>
+      )}
+      {isError && (
+        <div role="alert" className="mb-3 rounded-lg border border-danger bg-white p-3 text-sm text-danger">
+          일일 매출을 불러오지 못했습니다. <button type="button" className="underline" onClick={() => void refetch()}>다시 시도</button>
+        </div>
+      )}
       <div className="mb-3">
         <DateRangeFilter
           value={{ from, to }}
@@ -626,7 +636,7 @@ function DailySummarySection({
               </tr>
             </thead>
             <tbody>
-              {isLoading ? (
+              {isError ? null : isLoading ? (
                 <tr>
                   <td colSpan={9} className="px-3 py-8 text-center text-[12.5px] text-gray-400">
                     불러오는 중…
@@ -667,7 +677,7 @@ function DailySummarySection({
                           )}
                           title={canEdit ? '클릭해서 근무인원 입력' : '근무인원 수정은 최고관리자·관리자만 가능합니다'}
                         >
-                          {r.headCount === 0 ? '-' : r.headCount}
+                          {!showHeadCount || r.headCount === 0 ? '-' : r.headCount}
                         </button>
                       )}
                     </td>
@@ -678,7 +688,7 @@ function DailySummarySection({
                     <td className={td + ' font-bold'}>{krw(r.total)}</td>
                     <td className={td + ' text-gray-500'}>{r.count.toLocaleString('ko-KR')}</td>
                     <td className={td + ' text-gray-500'}>
-                      {r.headCount > 0 ? krw(Math.round(r.total / r.headCount)) : '-'}
+                      {showHeadCount && r.headCount > 0 ? krw(Math.round(r.total / r.headCount)) : '-'}
                     </td>
                   </tr>
                 ))
@@ -688,7 +698,7 @@ function DailySummarySection({
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
                   <td className="px-3 py-2 text-[12px] font-bold text-gray-600">합계</td>
-                  <td className={td + ' font-bold'}>{sum.headCount || '-'}</td>
+                  <td className={td + ' font-bold'}>{showHeadCount ? sum.headCount || '-' : '-'}</td>
                   <td className={td + ' font-bold'}>{krw(sum.leaderTotal)}</td>
                   <td className={td + ' font-bold'}>{krw(sum.managerTotal)}</td>
                   <td className={td + ' font-bold'}>{krw(sum.cardTotal)}</td>

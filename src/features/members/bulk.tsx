@@ -7,6 +7,7 @@ import { STATUS_META, GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
 import { useTodayDbCounts } from '@/lib/todayDb'
+import { useSiteScope } from '@/lib/siteScopeStore'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
@@ -60,7 +61,8 @@ export function MemberBulkActions({
   const { data: staff = [] } = useStaff()
   const { data: templates = [] } = useSmsTemplates()
   // 금일 배분디비 갯수 — 관리자 리스트뿐 아니라 자동할당 대상 선택에도 표시(현장 피드백).
-  const { data: todayDb = {} } = useTodayDbCounts()
+  const siteScope = useSiteScope()
+  const { data: todayDb = {} } = useTodayDbCounts(siteScope)
 
   const bulkUpdate = useBulkUpdateMembers()
   const bulkSettings = useBulkUpdateMemberSettings()

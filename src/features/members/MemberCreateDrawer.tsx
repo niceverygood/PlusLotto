@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { Button, Drawer } from '@/design-system/components'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
+import { useSiteScope } from '@/lib/siteScopeStore'
+import { siteScopeLabel } from '@/lib/siteScope'
 import type { Grade } from '@/types/db'
 import { useCreateMember } from './api'
 import { AGE_BANDS, CONSULT_STATUSES, GENDERS, INFLOW_TYPES, TENDENCIES } from './views'
@@ -46,6 +48,7 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
+  const siteScope = useSiteScope()
   const create = useCreateMember()
   const { data: staff = [] } = useStaff()
   const [serverErr, setServerErr] = useState<string | null>(null)
@@ -110,7 +113,7 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
     <Drawer
       open
       onClose={onClose}
-      title="신규 회원 등록"
+      title={`${siteScopeLabel(siteScope)} · 신규 회원 등록`}
       footer={
         <>
           <Button variant="sec" size="sm" onClick={onClose} disabled={create.isPending}>
