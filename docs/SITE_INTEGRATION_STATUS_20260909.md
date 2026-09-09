@@ -4,7 +4,8 @@
 
 - PlusLotto Supabase 적용 및 운영 읽기 검증 완료. 적용 전후 회원 58,031명, 결제 1,614건, 결제 합계 798,657,002원으로 같았으며, 레거시 출처 회원 0명과 추천 발송 보류 60명도 같았다.
 - 로컬 화면에서 사이트 전환, 회원·결제·매출·통계, URL 복원, 선택 행 초기화, 신규 회원·결제 출처 저장을 가상 데이터로 확인했다. 실제 고객 등록·결제·문자 발송은 하지 않았다.
-- 로컬 브랜치 `codex/site-scope-preflight`에 저장했다. 로컬 Git 인증 부재 및 GitHub 앱의 코드 쓰기 403으로 푸시·PR·머지·Vercel 화면 배포는 미완료다. GitHub 쓰기 연결 복구 후 PR 검사를 통과시켜 기존 Git 배포로 반영한다.
+- GitHub 코드 쓰기 403은 저장소 소유자 계정에 ChatGPT Codex Connector가 설치되지 않은 것이 원인이었다. `niceverygood/PlusLotto`만 선택해 설치한 뒤 36개 파일 업로드와 로컬 Git 트리 일치를 확인했다. Codex의 연결된 GitHub 도구로 업로드하며, 맥 터미널의 Git 로그인 설정은 별개다.
+- 릴리스 브랜치는 `codex/site-scope-preflight`, 검증·병합 기록은 [PR #42](https://github.com/niceverygood/PlusLotto/pull/42)다. Vercel은 기존 Git 연동으로 PR 미리보기와 main 운영 배포를 생성한다. 실제 완료 여부는 PR 검사와 해당 커밋의 Vercel 배포 상태로 확인한다.
 
 ## 이번 변경
 
