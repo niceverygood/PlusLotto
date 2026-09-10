@@ -2,12 +2,15 @@
 // 설계: 읽기는 RLS 가 역할 스코프를 처리하고 목록/뷰/검색/정렬/페이지는 서버 RPC에서 끝낸다.
 //       쓰기는 mock 의 mutateDb 부수효과(§8)를 supabase 호출로 1:1 미러링한다.
 import { type SupabaseClient } from '@supabase/supabase-js'
+import type { Database as LegacyDatabase } from '@/types/legacy815.generated'
+import { parseLegacyHistoryPage, type LegacyHistoryCursor, type LegacyHistoryKind } from './legacyHistory'
 import type { Assignment, CallAiAnalysis, CallRecording, LottoRound, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { genId, nowIso } from '@/lib/db/store'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
+import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
 import { fetchSiteSettings, ID_IN_CHUNK, insertWithOptionalColumns, paginateAll, selectAll, selectByIds, updateByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 
@@ -25,6 +28,16 @@ import type { MemberFilter } from './views'
 function sb(): SupabaseClient {
   if (!supabase) throw new Error('supabase 클라이언트가 초기화되지 않았습니다.')
   return supabase
+}
+
+export async function fetchLegacyMemberHistory(memberId: string, kind: LegacyHistoryKind, cursor: LegacyHistoryCursor | null) {
+  const client = sb() as SupabaseClient<LegacyDatabase>
+  const { data, error } = await client.rpc('member_legacy_history_page', {
+    p_member_id: memberId, p_kind: kind, p_limit: 50,
+    ...(cursor ? { p_before_at: cursor.at, p_before_idx: Number(cursor.idx), p_before_round: cursor.round } : {}),
+  })
+  if (error) throw new Error('과거 이력을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+  return parseLegacyHistoryPage(kind, data)
 }
 
 // 상태 변경 시 파생 불리언 플래그(스키마 컬럼)를 함께 갱신.
@@ -916,6 +929,7 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
   const tpl = tplData as SmsTemplate | null
   // id 청크 조회(URL 414 회피 — 단체문자 300+ 건이면 단일 .in() 가 거절돼 전체 실패하던 버그).
   const members = await selectByIds<Member>('members', '*', ids)
+  assertNoLegacyImportHold(members)
   const { realSend, sender_no, adOptout } = await fetchSmsConfig()
   const ts = nowIso()
   const type = smsTypeForTemplate(templateKey)
@@ -1004,7 +1018,8 @@ async function fetchSmsConfig(): Promise<{ realSend: boolean; sender_no: string;
 /** 직접 입력 문자 발송(<회원정보창> 3) — 템플릿 없이 자유 본문. 실발송 게이트는 mock 과 동일. */
 export async function sendCustomSms(ids: string[], body: string, actor: string | null): Promise<void> {
   // id 청크 조회(URL 414 회피 — 자유본문 단체발송 300+ 건 전체 실패 버그).
-  const members = await selectByIds<{ id: string; phone: string }>('members', 'id, phone', ids)
+  const members = await selectByIds<Pick<Member, 'id' | 'phone' | 'meta'>>('members', 'id, phone, meta', ids)
+  assertNoLegacyImportHold(members)
   const { realSend, sender_no } = await fetchSmsConfig()
   const ts = nowIso()
   // 제한 동시성 발송(순차 시 대량건 수십분).
@@ -1042,6 +1057,7 @@ export async function manualIssueReco(
   const { data: mData } = await sb().from('members').select('id, name, grade, phone, meta').eq('id', v.memberId).maybeSingle()
   const member = mData as { id: string; name: string; grade: Member['grade']; phone: string; meta: Record<string, unknown> | null } | null
   if (!member) throw new Error('회원을 찾을 수 없습니다.')
+  assertNoLegacyImportHold([member])
   const { data: sData, error: se } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
   if (se) throw se
   const settings = sData as SiteSettings

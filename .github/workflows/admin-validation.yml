@@ -60,7 +60,7 @@ jobs:
       - name: Run database scope regressions in memory
         env:
           PGLITE_MODULE: ${{ runner.temp }}/pluslotto-site-scope-pgtest/node_modules/@electric-sql/pglite/dist/index.js
-        run: node --test scripts/tests/admin-site-scope.test.mjs
+        run: node --test --test-concurrency=1 scripts/tests/*.test.mjs
 
       - name: Typecheck
         run: npm run typecheck

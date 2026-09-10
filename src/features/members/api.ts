@@ -1,7 +1,8 @@
 // 이용자 모듈 데이터 훅 (CLAUDE §1·§8). 전부 TanStack Query 경유 —
 // 컴포넌트 직접 fetch 금지. 뮤테이션은 mock DB 를 변경하고 §8 흐름대로
 // 로그/배정/문자 부수효과를 만든 뒤 관련 쿼리를 무효화한다.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { LegacyHistoryCursor, LegacyHistoryKind, LegacyHistoryPage } from './legacyHistory'
 import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, PaymentMethod, Role, SmsSend, Staff, WeeklyRecoIssue } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { cancelPaymentInDb, cancelPaymentRemote } from '@/lib/db/paymentCancel'
@@ -14,6 +15,7 @@ import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { recoSmsBody, renderSms, roundText, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
+import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { membershipTermsUrl } from '@/lib/membership'
@@ -22,6 +24,20 @@ import { filterMembers, getView, MEMBER_VIEWS, type MemberFilter } from './views
 import * as supa from './supa'
 
 export { memberKeys }
+
+export function useLegacyMemberHistory(memberId: string, kind: LegacyHistoryKind) {
+  const user = useCurrentUser()
+  return useInfiniteQuery({
+    queryKey: ['legacy815History', memberId, kind, user?.id, user?.role, user?.teamId],
+    enabled: Boolean(memberId && user),
+    initialPageParam: null as LegacyHistoryCursor | null,
+    queryFn: ({ pageParam }): Promise<LegacyHistoryPage> => dataSource === 'supabase'
+      ? supa.fetchLegacyMemberHistory(memberId, kind, pageParam)
+      : Promise.resolve({ rows: [], hasMore: false, nextCursor: null }),
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextCursor ?? undefined : undefined,
+    staleTime: 30_000,
+  })
+}
 
 // ── RLS 에뮬레이션: 역할별 데이터 스코프 (mock). 실 전환 시 RLS 가 대신. ──
 // 명칭변경/권한(현장 피드백): 최고관리자(admin)·관리자(manager)·실장(leader)=전체 이용자,
@@ -1366,6 +1382,7 @@ export function useSendSms() {
       // 실발송: oneshot_enabled + 발신번호 설정 시. 실제 호출은 /api/send-sms(프록시) — 미배포 시 실패로 기록.
       const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
       const targets = cur.members.filter((m) => v.ids.includes(m.id))
+      assertNoLegacyImportHold(targets)
       const ts = nowIso()
 
       // 추천번호 템플릿: 조합발송과 동일 본문(실 발급조합). 발급분 없으면 즉석 발급 후 meta 적재(현장 피드백 6/22).
@@ -1467,6 +1484,7 @@ export function useSendCustomSms() {
       const sms = cur.site_settings.sms
       const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
       const targets = cur.members.filter((m) => v.ids.includes(m.id))
+      assertNoLegacyImportHold(targets)
       const ts = nowIso()
       const records: SmsSend[] = []
       for (const m of targets) {
@@ -1537,6 +1555,7 @@ export function useManualIssueReco() {
       const cur = readDb()
       const member = cur.members.find((m) => m.id === v.memberId)
       if (!member) throw new Error('회원을 찾을 수 없습니다.')
+      assertNoLegacyImportHold([member])
       const rounds = cur.lotto_rounds
       const exclude = resolveExcludeForGrade(cur.site_settings, member.grade)
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
