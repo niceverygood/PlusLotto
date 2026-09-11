@@ -7,12 +7,10 @@
 import { useState } from 'react'
 import { subDays, format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, isSameMonth, isToday } from 'date-fns'
 import {
-  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Coins,
   Receipt,
-  RefreshCw,
   Repeat,
   TrendingUp,
 } from 'lucide-react'
@@ -34,6 +32,7 @@ import {
   Skeleton,
   Tabs,
   type TabItem,
+  QueryErrorCard,
 } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
@@ -137,7 +136,9 @@ export function RevenuePage() {
           </div>
 
           {isError ? (
-            <RevenueLoadError
+            <QueryErrorCard
+              title="매출 데이터를 불러오지 못했습니다"
+              description="조회 요청이 실패한 상태이며 실제 매출이 0원이라는 뜻이 아닙니다. 잠시 후 다시 시도해 주세요."
               error={error}
               isRetrying={isFetching}
               onRetry={() => {
@@ -212,56 +213,6 @@ export function RevenuePage() {
   )
 }
 
-function revenueErrorMessage(error: unknown): string | null {
-  if (error instanceof Error) return error.message.trim() || null
-  if (typeof error !== 'object' || error === null || !('message' in error)) return null
-  const message = error.message
-  return typeof message === 'string' ? message.trim() || null : null
-}
-
-function RevenueLoadError({
-  error,
-  isRetrying,
-  onRetry,
-}: {
-  error: unknown
-  isRetrying: boolean
-  onRetry: () => void
-}) {
-  const detail = revenueErrorMessage(error)
-
-  return (
-    <section
-      role="alert"
-      className="rounded-xl border border-danger-bd bg-danger-bg px-5 py-6"
-    >
-      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-danger">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-bold text-ink-900">매출 데이터를 불러오지 못했습니다</h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-gray-600">
-            조회 요청이 실패한 상태이며 실제 매출이 0원이라는 뜻이 아닙니다. 잠시 후 다시 시도해 주세요.
-          </p>
-          {detail && (
-            <p className="mt-2 break-words font-mono text-[11px] leading-relaxed text-danger">
-              조회 오류: {detail}
-            </p>
-          )}
-        </div>
-        <Button
-          variant="sec"
-          icon={<RefreshCw className={cn('h-3.5 w-3.5', isRetrying && 'animate-spin')} />}
-          disabled={isRetrying}
-          onClick={onRetry}
-        >
-          {isRetrying ? '재시도 중' : '다시 시도'}
-        </Button>
-      </div>
-    </section>
-  )
-}
 
 // ── 캘린더(현장 피드백 7/24, 정의현 차장 — 기존 전산과 동일 구성) ─────────────────────
 // 월별 달력에 일자별 합계 + 담당자별 내역, 날짜 클릭 시 우측에 그 날의 결제내역을 보여준다.

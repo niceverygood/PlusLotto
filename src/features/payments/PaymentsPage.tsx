@@ -13,6 +13,7 @@ import {
   Tabs,
   type FilterChip,
   type TabItem,
+  QueryErrorCard,
 } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
@@ -86,7 +87,7 @@ export function PaymentsPage() {
     sortDesc,
   }
 
-  const { data, isLoading, isFetching } = usePayments(query)
+  const { data, error, isError, isLoading, isFetching, refetch } = usePayments(query)
   const { data: counts } = usePaymentCounts()
 
   const staffNames = useMemo(() => {
@@ -248,6 +249,18 @@ export function PaymentsPage() {
           </Field>
         </div>
       </FilterBar>
+
+      {/* 조회가 실패하면 빈 표 대신 오류를 보여준다(현장 9/11 — 탭 건수는 있는데 목록만 비어
+          있어 '데이터가 없습니다'로 보였다). 실제 0건과 조회 실패는 다른 상태다. */}
+      {isError && (
+        <QueryErrorCard
+          title="결제 목록을 불러오지 못했습니다"
+          description="조회 요청이 실패한 상태이며 실제 결제가 0건이라는 뜻이 아닙니다. 잠시 후 다시 시도해 주세요."
+          error={error}
+          isRetrying={isFetching}
+          onRetry={() => void refetch()}
+        />
+      )}
 
       {/* 취소 건은 행 전체를 빨간 글자로(현장 8/4) — 색은 설정 > 상태색의 '취소' 값을 따른다. */}
       <DataTable
