@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Button, LottoBalls, Tabs } from '@/design-system/components'
-import { datetime, krw } from '@/lib/format'
+import { krw } from '@/lib/format'
 import { useLegacyMemberHistory } from './api'
-import type { LegacyHistoryKind } from './legacyHistory'
+import { formatLegacySourceDatetime, type LegacyHistoryKind } from './legacyHistory'
 
 const tabs = [{ key: 'memo', label: '상담메모' }, { key: 'sms', label: '문자기록' }, { key: 'win', label: '당첨기록' }]
 
@@ -20,7 +20,7 @@ export function LegacyHistorySection({ memberId }: { memberId: string }) {
     </div>}
     {!query.isPending && !query.isError && rows.length === 0 && <p className="py-6 text-center text-sm text-gray-500">조회할 수 있는 과거 이력이 없습니다.</p>}
     <div className="space-y-3">{rows.map((row) => <article key={`${row.kind}:${row.legacy_idx}:${row.kind === 'win' ? row.round_no : ''}`} className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="mb-2 font-mono text-xs tabular-nums text-gray-500">{datetime(row.source_insert_datetime?.replace(' ', 'T'))}</p>
+      <p className="mb-2 font-mono text-xs tabular-nums text-gray-500">{formatLegacySourceDatetime(row.source_insert_datetime)}</p>
       {row.kind === 'memo' && <p className="whitespace-pre-wrap break-words text-sm text-gray-800">{row.body || '내용 없음'}</p>}
       {row.kind === 'sms' && <>
         {row.subject && <p className="mb-1 font-semibold text-gray-800">{row.subject}</p>}

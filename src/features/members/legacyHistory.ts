@@ -1,4 +1,23 @@
 import { z } from 'zod'
+import { datetime } from '@/lib/format'
+
+/** 원본 wall time은 Date의 잘못된 날짜 자동 보정 전에 검증한다. */
+export function formatLegacySourceDatetime(value: string | null | undefined): string {
+  if (!value) return datetime(null)
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(value)
+  if (match) {
+    const [year, month, day, hour, minute, second] = match.slice(1).map(Number)
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+    const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= monthDays[month - 1]
+      && hour <= 23 && minute <= 59 && second <= 59) {
+      const formatted = datetime(value.replace(' ', 'T'))
+      // 브라우저 시간대의 DST 공백에서도 원본 wall time을 다른 시각으로 바꾸지 않는다.
+      return formatted === value.slice(0, 16) ? formatted : value.slice(0, 16)
+    }
+  }
+  return `${value} (시각 확인 필요)`
+}
 
 export type LegacyHistoryKind = 'memo' | 'sms' | 'win'
 const sourceKey = z.string().regex(/^[1-9]\d*$/)
