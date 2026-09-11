@@ -27,6 +27,7 @@ import { endDateForGrade } from '@/lib/membershipTerm'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, roundForGrade, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
+import { memberSite } from '@/lib/siteScope'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
 import type { CallRecording, Grade, SmsSend, WeeklyRecoIssue } from '@/types/db'
@@ -62,10 +63,11 @@ import {
   type ResetMemo,
 } from './api'
 import type { Payment, PaymentMethod } from '@/types/db'
+import { LegacyHistorySection } from './LegacyHistorySection'
 
 const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
 // 메모는 별도 탭이 아니라 '기본정보' 탭 최하단에 표시(현장 피드백 7/3).
-type DrawerTab = 'info' | 'payments' | 'sms' | 'assignments' | 'reco' | 'calls' | 'complaints'
+type DrawerTab = 'info' | 'payments' | 'sms' | 'assignments' | 'reco' | 'calls' | 'complaints' | 'legacy-history'
 
 function readWeeklyRecos(meta: Record<string, unknown> | undefined): WeeklyRecoIssue[] {
   const list = meta?.weekly_recos as WeeklyRecoIssue[] | undefined
@@ -307,6 +309,7 @@ export function MemberDrawer({
       ? [{ key: 'calls', label: '통화녹음', count: readCallRecordings(member).length || undefined } as TabItem]
       : []),
     { key: 'complaints', label: '민원관리', count: readComplaints(member).length || undefined },
+    ...(memberSite(member.meta) === 'lotto815' ? [{ key: 'legacy-history', label: '이전 전산 이력' }] : []),
   ]
 
   const title = (
@@ -444,6 +447,7 @@ export function MemberDrawer({
       </div>
 
       <Tabs tabs={tabs} value={tab} onChange={(k) => setTab(k as DrawerTab)} className="mb-4" />
+      {tab === 'legacy-history' && memberSite(member.meta) === 'lotto815' && <LegacyHistorySection key={id} memberId={id} />}
 
       {tab === 'info' && (
         <dl className="grid grid-cols-3 gap-x-4 gap-y-3">
@@ -560,7 +564,9 @@ export function MemberDrawer({
             </>
           )}
           <Row label="담당자">{member.assigned_staff_id ? staffName[member.assigned_staff_id] ?? '-' : '미지정'}</Row>
-          <Row label="팀">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
+          {memberSite(member.meta) !== 'lotto815' && (
+            <Row label="팀">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
+          )}
           <Row label="가입일시" mono>
             {datetime(member.registered_at)}
           </Row>

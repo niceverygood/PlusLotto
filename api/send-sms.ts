@@ -11,9 +11,32 @@
 // 이 파일은 api/ 디렉터리라 Vite 앱 빌드(tsconfig include=src)에 포함되지 않는다(Vercel 함수로 빌드).
 import { ProxyAgent, fetch as uFetch, FormData as UFormData } from 'undici'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '../src/types/supabase.generated'
 import crypto from 'node:crypto'
 
 const ONESHOT_BASE = 'https://api2.msgagent.com/api/webshot/send/general'
+
+// 모든 발송 경로(수동/가입/당첨/재시도/크론)가 공유하는 이관 검토 보류.
+// 서비스 전용 RPC가 전체 회원의 정규화된 전화번호를 비교한다. 동일 번호 회원 중
+// 하나라도 legacy_import_review 보류 중이면 발송하지 않으며, 명시적 보류 해제 후에는 허용한다.
+// RPC 배포/DB 접근 실패를 '보류 없음'으로 간주하면 실제 문자가 나가므로 반드시 닫힌 상태로 실패한다.
+async function legacyImportHoldStatus(phone: string): Promise<'held' | 'clear' | 'unavailable'> {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return 'unavailable'
+  try {
+    const admin = createClient<Database>(url, key, { auth: { persistSession: false } })
+    const { data, error } = await admin
+      .rpc('sms_is_legacy_import_held', { p_phone: phone })
+      .abortSignal(AbortSignal.timeout(5_000))
+    if (error) return 'unavailable'
+    if (data === true) return 'held'
+    if (data === false) return 'clear'
+    return 'unavailable'
+  } catch {
+    return 'unavailable'
+  }
+}
 
 // 호출자 인증(보안 D68): 무인증 공개 시 검증된 발신번호로 임의 SMS 가 무제한 발송 가능 →
 //   ① 서버-서버(크론): x-internal-secret === CRON_SECRET, 또는
@@ -29,7 +52,7 @@ async function isAuthorized(req: any): Promise<boolean> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!token || !url || !key) return false
   try {
-    const admin = createClient(url, key, { auth: { persistSession: false } })
+    const admin = createClient<Database>(url, key, { auth: { persistSession: false } })
     const { data: ures } = await admin.auth.getUser(token)
     const uid = ures?.user?.id
     if (!uid) return false
@@ -55,9 +78,29 @@ export default async function handler(req: any, res: any) {
     const dest = String(body.dest_phone ?? '').replace(/\D/g, '')
     const msg = String(body.msg_body ?? '')
     const msgType = body.msgType === 'LMS' || body.msgType === 'MMS' ? body.msgType : 'SMS'
+    const checkOnly = body.check_only === true
 
-    if (!dest || !msg || !sender)
+    if (body.check_only !== undefined && typeof body.check_only !== 'boolean')
+      return res.status(400).json({ ok: false, code: 'PARAM', message: 'check_only는 boolean 값이어야 합니다.' })
+    if (!dest || (!checkOnly && (!msg || !sender)))
       return res.status(400).json({ ok: false, code: '200', message: '필수 값 누락(dest_phone/msg_body/send_phone)' })
+
+    const hold = await legacyImportHoldStatus(dest)
+    if (hold === 'unavailable')
+      return res.status(503).json({
+        ok: false,
+        code: 'SMS_HOLD_CHECK',
+        message: '발송 보류 상태를 확인할 수 없어 문자를 보내지 않았습니다. 연결 상태 확인 후 다시 시도해 주세요.',
+      })
+    if (hold === 'held')
+      return res.status(423).json({
+        ok: false,
+        code: 'LEGACY_IMPORT_HOLD',
+        message: '이관 검토 중인 수신번호는 발송이 보류됩니다. 검토를 마친 후 발송 보류를 해제해 주세요.',
+      })
+    // 운영 smoke 점검용: 정상 인증과 동일 보류 검사를 수행하되 실제 발송 경로로는 진입하지 않는다.
+    if (checkOnly)
+      return res.status(200).json({ ok: true, code: 'CHECK_ONLY', message: '발송 보류 확인 완료. 문자는 발송하지 않았습니다.' })
 
     // ── Solapi 경로 (API키 HMAC 인증 → 고정IP/프록시 불필요). 키 설정 시 우선 사용. Fixie 한도 영구 해소(현장 6/30). ──
     // SOLAPI_ENABLED='true' 일 때만 Solapi 사용(IP화이트리스트 해제 검증 후 활성화). 그 전엔 OneShot 유지(현장 6/30).
