@@ -19,6 +19,19 @@ interface FilterBarProps {
   className?: string
 }
 
+/**
+ * 타이핑이 멎을 때까지 기다리는 시간(ms).
+ *
+ * 왜 필요한가 — 현장 9/11 "전산 검색의 속도가 매우 느립니다".
+ * 검색어는 URL 쿼리로 올라가고 그때마다 서버 조회 RPC가 돈다. 디바운스가 없으면
+ * 휴대폰 번호 11자리를 치는 동안 조회가 11번 나간다. 게다가 앞 3~4글자("0", "01",
+ * "010"…)는 회원 거의 전부와 일치해서 매번 최악의 전체 스캔이 되고, 목록 RPC는
+ * 총건수까지 세느라 그 비용을 두 번 치른다. 정작 쓸모 있는 결과는 마지막 한 번뿐이다.
+ * 200,000행 재현 환경 측정: "0"·"01"·"010" 각 60~170ms, "01012" 이후 2~3ms.
+ * 타이핑이 멎은 뒤 한 번만 보내면 앞의 비싼 조회가 통째로 사라진다.
+ */
+const SEARCH_DEBOUNCE_MS = 350
+
 export function FilterBar({
   searchValue,
   onSearchChange,
@@ -34,14 +47,39 @@ export function FilterBar({
   // 조합 중에는 부모(URL)로 전파하지 않고, 조합 종료 시에만 반영한다(현장 피드백 — 검색창 한글 깨짐).
   const [local, setLocal] = useState(searchValue)
   const composing = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 최신 콜백을 참조로 들고 있어야 디바운스 타이머가 예전 클로저를 붙잡지 않는다.
+  const onSearchChangeRef = useRef(onSearchChange)
+  onSearchChangeRef.current = onSearchChange
+
+  /** 대기 중인 조회를 취소하고 지금 바로 반영. */
+  const commit = (v: string) => {
+    if (timer.current !== null) clearTimeout(timer.current)
+    timer.current = null
+    onSearchChangeRef.current(v)
+  }
+  /** 타이핑이 멎으면 반영. 그 전에 또 치면 앞의 예약은 버린다. */
+  const schedule = (v: string) => {
+    if (timer.current !== null) clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      timer.current = null
+      onSearchChangeRef.current(v)
+    }, SEARCH_DEBOUNCE_MS)
+  }
+  useEffect(() => () => {
+    if (timer.current !== null) clearTimeout(timer.current)
+  }, [])
+
   useEffect(() => {
-    // 외부에서 값이 바뀌면(필터칩 해제·초기화 등) 동기화 — 단 조합 중에는 건드리지 않음.
-    if (!composing.current && searchValue !== local) setLocal(searchValue)
+    // 외부에서 값이 바뀌면(필터칩 해제·초기화 등) 동기화 — 단 조합 중이거나 우리가 보낸 값이
+    // 아직 반영 대기 중이면 건드리지 않는다. 대기 중에 덮어쓰면 방금 친 글자가 지워진다.
+    if (timer.current === null && !composing.current && searchValue !== local) setLocal(searchValue)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchValue])
   const clearSearch = () => {
     setLocal('')
-    onSearchChange('')
+    commit('')
   }
 
   return (
@@ -53,14 +91,18 @@ export function FilterBar({
             value={local}
             onChange={(e) => {
               setLocal(e.target.value)
-              if (!composing.current) onSearchChange(e.target.value) // 비조합(영문·숫자)은 즉시 반영
+              if (!composing.current) schedule(e.target.value) // 비조합(영문·숫자)은 타이핑이 멎으면 반영
             }}
             onCompositionStart={() => {
               composing.current = true
             }}
             onCompositionEnd={(e) => {
               composing.current = false
-              onSearchChange((e.target as HTMLInputElement).value) // 한글 조합 완료 후 반영
+              schedule((e.target as HTMLInputElement).value) // 한글 조합 완료 후 반영
+            }}
+            onKeyDown={(e) => {
+              // 다 치고 엔터를 누르면 기다리지 않는다.
+              if (e.key === 'Enter' && !composing.current) commit(e.currentTarget.value)
             }}
             placeholder={searchPlaceholder}
             className="h-9 w-full rounded-md border border-gray-300 bg-white pl-8 pr-8 text-[13px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-primary-500"
