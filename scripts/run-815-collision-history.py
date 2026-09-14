@@ -50,6 +50,17 @@ def load_history_manifest(member_sha,history_sha):
     return value
 
 class ScopedClient(r.Client):
+    def count(self,table):
+        r.require(table in EXPECTED,'table_not_allowed')
+        # The digit day bounds use the existing BTREE under en_US.UTF-8.
+        # Retain LIKE so unexpected suffixes in this exact family still count.
+        rows,total=self.request(table,[('select','legacy_idx'),
+            ('import_batch','gte.lotto815-hist-collision-20260914'),
+            ('import_batch','lt.lotto815-hist-collision-20260915'),
+            ('import_batch','like.'+PREFIX+'*'),('limit','1')],count=True)
+        r.require(type(total)is int and total>=0,'exact_count_missing')
+        r.require(isinstance(rows,list) and len(rows)==min(total,1),'count_result')
+        return total
     def verify_members(self,targets):
         actual=self.base.select_all('members','id,meta',[('meta->>source_site','eq.lotto815'),('meta->>import_batch','like.'+c.FAMILY+'-*')])
         r.require(len(actual)==len(targets),'live_member_count');seen=set()
