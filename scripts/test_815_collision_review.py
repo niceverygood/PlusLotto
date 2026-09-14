@@ -22,7 +22,7 @@ def native_snapshot():
     return {'members':[{'id':'native-1','user_id':'native-user','phone':'01000000000','memo':'original','meta':{}}],
             'payments':[{'id':'native-pay-1','member_id':'native-1','amount':100,'status':'approved'}]}
 def identities(snapshot):
-    return [{'id':row['id'],'user_id':row['user_id'],'phone':row['phone'],'source_site':row.get('meta',{}).get('source_site'),'legacy_idx':row.get('meta',{}).get('legacy_idx'),'import_batch':row.get('meta',{}).get('import_batch')} for row in snapshot['members']]
+    return [{'id':row['id'],'user_id':row['user_id'],'phone':row['phone'],'source_site':row.get('meta',{}).get('source_site'),'legacy_idx':str(row['meta']['legacy_idx']) if row.get('meta',{}).get('legacy_idx') is not None else None,'import_batch':row.get('meta',{}).get('import_batch')} for row in snapshot['members']]
 
 class CollisionTests(unittest.TestCase):
     def test_two_inactive_source_keys_are_preserved_on_same_phone(self):
@@ -74,6 +74,68 @@ class CollisionTests(unittest.TestCase):
         client=object.__new__(m.Client);client.url=m.pilot.PROJECT_URL
         with self.assertRaises(m.Stop):client._req('POST','members',[])
         with self.assertRaises(m.Stop):client.rpc('send_sms',{})
+    def test_scoped_phone_peer_rpc_is_one_read_call_without_write_permission(self):
+        data,_=fixture();client=object.__new__(m.Client);client.url=m.pilot.PROJECT_URL;client.key='synthetic';client.allow_writes=False;client.attempted=set()
+        client.configure_peer_scope([data]);response=identities(native_snapshot())+identities({'members':[data['members'][0]]})
+        with patch.object(m.pilot,'request_json',return_value=(200,response)) as http,patch.object(client,'select_all') as full_scan:
+            self.assertEqual(client.member_identifiers(),response)
+        self.assertEqual(http.call_count,1);full_scan.assert_not_called()
+        url,headers,body=http.call_args.args
+        self.assertEqual(url,m.pilot.PROJECT_URL+'/rest/v1/rpc/'+m.PHONE_PEER_RPC)
+        self.assertEqual(set(headers),{'apikey','Authorization','Content-Type'})
+        self.assertEqual(body,{'p_phones':['01000000000'],'p_member_ids':sorted(row['id'] for row in data['members'])})
+        self.assertEqual(client.attempted,set())
+    def test_global_conflict_inventory_still_scans_members_and_payments_once(self):
+        client=object.__new__(m.Client)
+        with patch.object(client,'select_all',side_effect=[['all-members'],['all-payments']]) as full_scan,patch.object(client,'rpc') as rpc:
+            self.assertEqual(client.identifiers(),(['all-members'],['all-payments']))
+        self.assertEqual([call.args[0] for call in full_scan.call_args_list],['members','payments']);rpc.assert_not_called()
+    def test_scope_requires_frozen_domestic_phones_and_member_ids_and_cannot_change(self):
+        data,_=fixture();client=object.__new__(m.Client)
+        with self.assertRaisesRegex(m.Stop,'scope_unset'):client.member_identifiers()
+        client.configure_peer_scope([data])
+        with self.assertRaisesRegex(m.Stop,'already_configured'):client.configure_peer_scope([data])
+        for field,value in [('phone','+821000000000'),('phone',None),('id','arbitrary-id')]:
+            changed=copy.deepcopy(data);changed['members'][0][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(m.Stop):m.frozen_peer_scope([changed])
+        client.url=m.pilot.PROJECT_URL;client.key='synthetic';client.allow_writes=False
+        changed={'p_phones':['01000000001'],'p_member_ids':list(client.peer_scope[1])}
+        with patch.object(m.pilot,'request_json') as http,self.assertRaisesRegex(m.Stop,'scope_changed'):client.rpc(m.PHONE_PEER_RPC,changed)
+        http.assert_not_called()
+    def test_phone_peer_arrays_over_2666_or_malformed_reject_before_network(self):
+        data,_=fixture();client=object.__new__(m.Client);client.url=m.pilot.PROJECT_URL;client.configure_peer_scope([data])
+        valid={'p_phones':list(client.peer_scope[0]),'p_member_ids':list(client.peer_scope[1])}
+        candidates=[dict(valid,p_phones=[f'010{i:08d}' for i in range(2667)]),
+                    dict(valid,p_member_ids=[m.loader.stable_id('member','lotto815',i+1) for i in range(2667)]),
+                    dict(valid,p_phones=[]),dict(valid,p_member_ids=[]),dict(valid,p_phones=[None]),
+                    dict(valid,p_member_ids=[['nested']]),dict(valid,p_phones=['01000000000','01000000000']),dict(valid,extra=True)]
+        for body in candidates:
+            with self.subTest(body_keys=sorted(body)),patch.object(m.pilot,'request_json') as http,self.assertRaises(m.Stop):client.rpc(m.PHONE_PEER_RPC,body)
+            http.assert_not_called()
+        oversized={'members':[dict(data['members'][0],id=m.loader.stable_id('member','lotto815',i+1)) for i in range(2667)]}
+        with self.assertRaisesRegex(m.Stop,'query_limit'):m.frozen_peer_scope([oversized])
+        exact_limit={'p_phones':[f'010{i:08d}' for i in range(2666)],'p_member_ids':[m.loader.stable_id('member','lotto815',i+1) for i in range(2666)]}
+        m.validate_peer_query(exact_limit)
+    def test_peer_response_strict_columns_types_unique_ids_and_scope(self):
+        data,_=fixture();scope=m.frozen_peer_scope([data]);native=identities(native_snapshot())[0]
+        m.validate_peer_identifiers([native],scope)
+        candidates=[{},[native,native],[dict(native,extra=None)],[{key:value for key,value in native.items() if key!='legacy_idx'}],
+                    [dict(native,id='')],[dict(native,user_id=None)],[dict(native,phone=None)],[dict(native,phone='invalid')],
+                    [dict(native,source_site={'forged':True})],[dict(native,source_site='unknown-site')],
+                    [dict(native,legacy_idx=123)],[dict(native,import_batch=[])],[dict(native,phone='01000000001')]]
+        for rows in candidates:
+            with self.subTest(rows=rows),self.assertRaises(m.Stop):m.validate_peer_identifiers(rows,scope)
+    def test_planned_member_with_moved_phone_is_returned_and_rejected_by_identity_check(self):
+        data,_=fixture();baseline=native_snapshot();manifest={'protected_member_ids':['native-1']};scope=m.frozen_peer_scope([data])
+        moved=identities({'members':[data['members'][0]]})[0];moved['phone']='01000000001'
+        rows=identities(baseline)+[moved]
+        self.assertEqual(m.validate_peer_identifiers(rows,scope),rows)
+        with self.assertRaisesRegex(m.Stop,'planned_peer_identity_changed'):m.verify_collision_peers(rows,manifest,baseline,[data])
+    def test_peer_rpc_failure_never_falls_back_to_global_scan_or_retry(self):
+        data,_=fixture();client=object.__new__(m.Client);client.url=m.pilot.PROJECT_URL;client.key='synthetic';client.configure_peer_scope([data])
+        for result in ((503,{}),(200,{}),(200,[{'id':'partial'}])):
+            with self.subTest(result=result),patch.object(m.pilot,'request_json',return_value=result) as http,patch.object(client,'select_all') as scan,self.assertRaises(m.Stop):client.member_identifiers()
+            self.assertEqual(http.call_count,1);scan.assert_not_called()
     def test_ambiguous_rpc_without_durable_proof_never_completes_or_replays(self):
         for committed in (True,False):
             with self.subTest(committed=committed),tempfile.TemporaryDirectory() as dirname:
@@ -83,6 +145,7 @@ class CollisionTests(unittest.TestCase):
                 state={'calls':0,'actual':copy.deepcopy(baseline)}
                 class FakeClient:
                     def __init__(self,*args):pass
+                    def configure_peer_scope(self,units):m.frozen_peer_scope(units)
                     def protected(self,*args):return copy.deepcopy(baseline)
                     def by_ids(self,*args):return []
                     def select_all(self,*args):return []
@@ -108,6 +171,7 @@ class CollisionTests(unittest.TestCase):
             for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[]),('settings-baseline.json',[])]:m.save_new(root/name,value)
             class FakeClient:
                 def __init__(self,*args):pass
+                def configure_peer_scope(self,units):m.frozen_peer_scope(units)
                 def protected(self,*args):return baseline
                 def by_ids(self,*args):return []
                 def select_all(self,*args):return []
@@ -123,10 +187,11 @@ class CollisionTests(unittest.TestCase):
             manifest={'batches':[d],'protected_member_ids':['native-1'],'protected_sha256':m.snapshot_digest(baseline),'settings_sha256':m.digest([]),'side_effects_expected':{'sms_sends':0,'bets':0,'assignments':0}}
             original_manifest=copy.deepcopy(manifest);original_data=copy.deepcopy(data)
             for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[]),('settings-baseline.json',[])]:m.save_new(root/name,value)
-            state={'calls':0,'native':copy.deepcopy(baseline),'actual':{'members':[],'payments':[]}}
+            state={'calls':0,'inventory_calls':0,'peer_calls':0,'native':copy.deepcopy(baseline),'actual':{'members':[],'payments':[]}}
             state['native']['members'][0]['memo']='legitimate operation before import'
             class FakeClient:
                 def __init__(self,*args):pass
+                def configure_peer_scope(self,units):m.frozen_peer_scope(units)
                 def protected(self,ids):
                     return {'members':[copy.deepcopy(row) for row in state['native']['members'] if row['id'] in ids],
                             'payments':[copy.deepcopy(row) for row in state['native']['payments'] if row['member_id'] in ids]}
@@ -134,8 +199,12 @@ class CollisionTests(unittest.TestCase):
                 def select_all(self,*args):return []
                 def batch(self,*args):return copy.deepcopy(state['actual'])
                 def hold(self,*args):return {}
-                def identifiers(self):return self.member_identifiers(),[]
-                def member_identifiers(self):return identities(state['native'])+identities(state['actual'])
+                def identifiers(self):
+                    state['inventory_calls']+=1
+                    return identities(state['native'])+identities(state['actual']),[]
+                def member_identifiers(self):
+                    state['peer_calls']+=1
+                    return identities(state['native'])+identities(state['actual'])
                 def side_effects(self,*args):return manifest['side_effects_expected']
                 def apply_unit(self,data,descriptor,protected):
                     self_outer.assertEqual(protected,{'members':1,'payments':1})
@@ -150,6 +219,8 @@ class CollisionTests(unittest.TestCase):
                 self.assertEqual(m.execute(None,m.digest(manifest),True,False,1),0)
                 self.assertEqual(m.execute(None,m.digest(manifest),True,False,1),0)
             self.assertEqual(state['calls'],1)
+            self.assertEqual(state['inventory_calls'],1)
+            self.assertEqual(state['peer_calls'],3) # Before/after one write, then one completed no-op check.
             verified=m.read(next(root.glob('*/batch-001-verified.json')))
             self.assertNotIn('existing_full_rows_unchanged',verified)
             self.assertEqual(verified['atomic_proof_scope'],'existing_phone_peers_during_locked_atomic_rpc')

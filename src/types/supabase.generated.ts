@@ -1121,6 +1121,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_815_collision_phone_peers: {
+        Args: { p_member_ids: string[]; p_phones: string[] }
+        Returns: Json
+      }
       admin_bets_page: {
         Args: {
           p_limit?: number

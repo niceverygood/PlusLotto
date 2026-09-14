@@ -40,6 +40,9 @@ PRIVATE = BACKUP/FAMILY
 EXPECTED = (2666,3246,1553360120)
 DEFAULTS={'members':{'tendency':None,'assigned_staff_id':None,'team_id':None,'win_history':None},'payments':{'pg_provider':None,'staff_id':None}}
 READ_TABLES={'members','payments','products','site_settings','sms_sends','bets','assignments'}
+PHONE_PEER_RPC='admin_815_collision_phone_peers'
+PEER_COLUMNS={'id','user_id','phone','source_site','legacy_idx','import_batch'}
+MEMBER_ID_PATTERN=r'mem_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 class Stop(ValueError): pass
 def require(ok,code):
@@ -92,21 +95,63 @@ def snapshot_digest(snapshot):return digest({k:canonical_rows(v) for k,v in snap
 def partitions(items,size=100):
     for i in range(0,len(items),size):yield items[i:i+size]
 
+def validate_peer_query(body):
+    require(isinstance(body,dict) and set(body)=={'p_phones','p_member_ids'},'phone_peer_query_shape')
+    for key,pattern in (('p_phones',r'01[0-9]{8,9}'),('p_member_ids',MEMBER_ID_PATTERN)):
+        values=body[key]
+        require(isinstance(values,list) and 1<=len(values)<=2666,'phone_peer_query_limit')
+        require(all(isinstance(value,str) and re.fullmatch(pattern,value) for value in values),'phone_peer_query_format')
+        require(len(set(values))==len(values),'phone_peer_query_duplicate')
+
+def frozen_peer_scope(units):
+    rows=[row for unit in units for row in unit['members']]
+    require(1<=len(rows)<=2666,'phone_peer_query_limit')
+    ids=[row['id'] for row in rows]
+    require(all(isinstance(value,str) and re.fullmatch(MEMBER_ID_PATTERN,value) for value in ids),'phone_peer_query_format')
+    require(all(isinstance(row.get('phone'),str) and re.fullmatch(r'01[0-9]{8,9}',row['phone']) for row in rows),'phone_peer_query_format')
+    require(len(set(ids))==len(ids),'phone_peer_scope_duplicate')
+    body={'p_phones':sorted({row['phone'] for row in rows}),'p_member_ids':sorted(ids)}
+    validate_peer_query(body)
+    return tuple(body['p_phones']),tuple(body['p_member_ids'])
+
+def validate_peer_identifiers(rows,scope):
+    require(isinstance(rows,list),'phone_peer_response_shape')
+    phones,planned=map(set,scope);seen=set()
+    for row in rows:
+        require(isinstance(row,dict) and set(row)==PEER_COLUMNS,'phone_peer_response_columns')
+        require(all(isinstance(row[key],str) for key in ('id','user_id','phone')),'phone_peer_response_text')
+        require(re.fullmatch(r'[A-Za-z0-9._-]{1,128}',row['id']) and row['id'] not in seen,'phone_peer_response_identity')
+        seen.add(row['id'])
+        require(all(row[key] is None or isinstance(row[key],str) for key in ('source_site','legacy_idx','import_batch')),'phone_peer_response_metadata')
+        require(operating_site(row) in ('pluslotto','lotto815','cplotto','infolotto'),'phone_peer_response_site')
+        normalized=canonical_phone(row['phone'])
+        require(re.fullmatch(r'0[1-9][0-9]{7,9}',normalized),'phone_peer_response_phone')
+        require(normalized in phones or row['id'] in planned,'phone_peer_response_scope')
+    return rows
+
 class Client(loader.Supa):
     def __init__(self,env_file,apply=False):
         config=pilot.read_config(env_file)
         super().__init__(pilot.PROJECT_URL,config['SUPABASE_SERVICE_ROLE_KEY'],apply)
-        self.attempted=set()
+        self.attempted=set();self.peer_scope=None
     def _req(self,method,path,body=None,prefer=None):
         require(self.url==pilot.PROJECT_URL and method=='GET' and body is None and prefer is None and path.partition('?')[0] in READ_TABLES,'read_request_scope')
         status,value=pilot.request_json(self.url+'/rest/v1/'+path,{'apikey':self.key,'Authorization':'Bearer '+self.key})
         require(status==200 and isinstance(value,list),'read_request_failed');return value
     def rpc(self,name,body):
-        require(name in ('admin_import_815_collision_batch','admin_verify_815_batch_holds'),'rpc_scope')
+        require(self.url==pilot.PROJECT_URL and name in ('admin_import_815_collision_batch','admin_verify_815_batch_holds',PHONE_PEER_RPC),'rpc_scope')
+        if name==PHONE_PEER_RPC:
+            # This service-only STABLE RPC only SELECTs identifier rows. Never
+            # reuse the write RPC or allow caller-selected peer scopes here.
+            validate_peer_query(body)
+            scope=getattr(self,'peer_scope',None);require(scope is not None,'phone_peer_scope_unset')
+            require(body=={'p_phones':list(scope[0]),'p_member_ids':list(scope[1])},'phone_peer_scope_changed')
         if name=='admin_import_815_collision_batch':
             batch=body['p_batch_id'];require(self.allow_writes and batch not in self.attempted,'write_scope');self.attempted.add(batch)
         status,value=pilot.request_json(self.url+'/rest/v1/rpc/'+name,{'apikey':self.key,'Authorization':'Bearer '+self.key,'Content-Type':'application/json'},body)
-        require(status==200 and isinstance(value,dict),'rpc_result_unconfirmed');return value
+        require(status==200,'rpc_result_unconfirmed')
+        if name==PHONE_PEER_RPC:return validate_peer_identifiers(value,self.peer_scope)
+        require(isinstance(value,dict),'rpc_result_unconfirmed');return value
     def hold(self,d,count):
         value=self.rpc('admin_verify_815_batch_holds',{'p_batch_id':d['batch']})
         expected={'batch_id':d['batch'],'members':count,'held_metadata_members':count,'held_rpc_members':count,'consent_review_members':count}
@@ -115,10 +160,16 @@ class Client(loader.Supa):
         validate_unit(data,d)
         value=self.rpc('admin_import_815_collision_batch',{'p_batch_id':d['batch'],'p_members':data['members'],'p_payments':data['payments'],'p_expected_member_count':d['members'],'p_expected_payment_count':d['payments'],'p_expected_amount':d['amount']})
         verify_atomic_proof(value,d,protected);return value
+    def configure_peer_scope(self,units):
+        require(getattr(self,'peer_scope',None) is None,'phone_peer_scope_already_configured')
+        self.peer_scope=frozen_peer_scope(units)
     def member_identifiers(self):
-        return self.select_all('members','id,user_id,phone,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx,import_batch:meta->>import_batch')
+        scope=getattr(self,'peer_scope',None);require(scope is not None,'phone_peer_scope_unset')
+        return self.rpc(PHONE_PEER_RPC,{'p_phones':list(scope[0]),'p_member_ids':list(scope[1])})
     def identifiers(self):
-        members=self.member_identifiers()
+        # Initial source ID / login / payment conflict checks need the complete
+        # global inventory once. Per-batch phone checks use the fixed read RPC.
+        members=self.select_all('members','id,user_id,phone,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx,import_batch:meta->>import_batch')
         payments=self.select_all('payments','id,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx')
         return members,payments
     def by_ids(self,table,ids,column='id',columns='*'):
@@ -356,7 +407,8 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
         require(file_sha(ARCHIVE)==ARCHIVE_SHA,'archive_hash')
         run=PRIVATE/(dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]);run.mkdir(mode=0o700)
         def step(stage,**more):receipt.update(stage=stage,manifest_sha256=manifest_sha,**more);replace_receipt(run/'receipt.json',receipt)
-        client=Client(env_file,apply);baseline=read(PRIVATE/'protected-baseline.json');preflight=check_protected(client,manifest,baseline)
+        client=Client(env_file,apply);client.configure_peer_scope(units)
+        baseline=read(PRIVATE/'protected-baseline.json');preflight=check_protected(client,manifest,baseline)
         save_new(run/'preflight-existing.json',preflight)
         preflight_diff=snapshot_diff(baseline,preflight);save_new(run/'preflight-existing-diff.json',preflight_diff)
         receipt.update(existing_preservation_scope='existing_phone_peers_during_locked_atomic_rpc',baseline_to_preflight_changes=diff_counts(preflight_diff))
@@ -375,8 +427,9 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
         if apply and all_batches:require(progress>=1,'pilot_must_complete_before_all')
         if index is not None:require(1<=index<=len(units) and index<=progress+1,'batch_order')
         chosen=list(range(progress+1,len(units)+1)) if all_batches else ([index] if index and index>progress else [])
-        live_members=client.member_identifiers();verify_collision_peers(live_members,manifest,baseline,units)
-        if not chosen:step('already_complete_verified_noop',completed_batches=progress);return 0
+        if not chosen:
+            verify_collision_peers(client.member_identifiers(),manifest,baseline,units)
+            step('already_complete_verified_noop',completed_batches=progress);return 0
         live_members,live_payments=client.identifiers();verify_conflicts([units[i-1] for i in chosen],live_members,live_payments)
         # New phone peers cannot silently appear between preparation and apply.
         verify_collision_peers(live_members,manifest,baseline,units)
