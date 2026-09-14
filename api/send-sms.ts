@@ -117,8 +117,8 @@ async function memberHoldStatus(
       || !isNullableId(member.assigned_staff_id) || !isNullableId(member.team_id)
       || (member.meta !== null && !isRecord(member.meta))) return 'unavailable'
     if (caller.kind === 'staff') {
-      const allowed = caller.role === 'admin' || caller.role === 'manager'
-        || (caller.role === 'leader' && caller.teamId !== null && member.team_id === caller.teamId)
+      // D51/D55 및 members_rw/app_can_see_member: 실장(leader)은 팀 배정과 무관하게 전체 회원 범위다.
+      const allowed = caller.role === 'admin' || caller.role === 'manager' || caller.role === 'leader'
         || (caller.role === 'rep' && member.assigned_staff_id === caller.id)
       if (!allowed) return 'forbidden'
     }
