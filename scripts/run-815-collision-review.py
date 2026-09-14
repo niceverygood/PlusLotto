@@ -4,6 +4,8 @@
 A ten-member pilot must complete before --all can write. Never aliases source
 accounts, updates existing rows, sends messages, or retries ambiguous writes.
 Customer payloads/before/after snapshots stay in owner-only private files.
+Live operational edits are audited separately from the RPC's locked snapshot
+proof. A lost proof requires recovery even when inserted rows are observable.
 """
 from __future__ import annotations
 import argparse
@@ -62,6 +64,10 @@ def save_new(path,value):
     with os.fdopen(fd,'w') as f:f.write(encoded(value)+'\n');f.flush();os.fsync(f.fileno())
 def replace_receipt(path,value):
     temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp');save_new(temp,value);os.replace(temp,path)
+def sync_directory(path):
+    fd=os.open(path,os.O_RDONLY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
 def canonical_phone(value):
     n=re.sub(r'\D','',value or '')
     if n.startswith('0082'):n=n[4:];return n if n.startswith('0') else '0'+n
@@ -105,12 +111,14 @@ class Client(loader.Supa):
         value=self.rpc('admin_verify_815_batch_holds',{'p_batch_id':d['batch']})
         expected={'batch_id':d['batch'],'members':count,'held_metadata_members':count,'held_rpc_members':count,'consent_review_members':count}
         require(encoded(value)==encoded(expected),'hold_result');return value
-    def apply_unit(self,data,d):
+    def apply_unit(self,data,d,protected):
         validate_unit(data,d)
         value=self.rpc('admin_import_815_collision_batch',{'p_batch_id':d['batch'],'p_members':data['members'],'p_payments':data['payments'],'p_expected_member_count':d['members'],'p_expected_payment_count':d['payments'],'p_expected_amount':d['amount']})
-        require(encoded(value)==encoded({'batch_id':d['batch'],'members':d['members'],'payments':d['payments'],'amount':d['amount'],'held_members':d['members'],'atomic':True}),'atomic_result');return value
+        verify_atomic_proof(value,d,protected);return value
+    def member_identifiers(self):
+        return self.select_all('members','id,user_id,phone,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx,import_batch:meta->>import_batch')
     def identifiers(self):
-        members=self.select_all('members','id,user_id,phone,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx,import_batch:meta->>import_batch')
+        members=self.member_identifiers()
         payments=self.select_all('payments','id,source_site:meta->>source_site,legacy_idx:meta->>legacy_idx')
         return members,payments
     def by_ids(self,table,ids,column='id',columns='*'):
@@ -219,9 +227,89 @@ def verify_actual(actual,data,d):
             require(isinstance(got,dict) and set(got)==set(expected) and canonical(got,expected)==canonical(expected,expected),'whole_row_mismatch')
     return 'complete'
 
+def operating_site(row):
+    meta=row.get('meta') or {};require(isinstance(meta,dict),'protected_source')
+    value=meta.get('source_site') if 'meta' in row else row.get('source_site')
+    require(value is None or isinstance(value,str),'protected_source')
+    return (value or '').strip() or 'pluslotto'
+
+def protected_identity(rows):
+    result={}
+    for row in rows:
+        require(isinstance(row.get('id'),str) and row['id'] not in result and isinstance(row.get('phone'),str),'protected_identity')
+        normalized=canonical_phone(row['phone']);require(re.fullmatch(r'0[1-9][0-9]{7,9}',normalized),'protected_phone')
+        result[row['id']]=(normalized,operating_site(row))
+    return result
+
 def check_protected(client,manifest,baseline):
     require(snapshot_digest(baseline)==manifest['protected_sha256'],'baseline_hash')
-    current=client.protected(manifest['protected_member_ids']);require(snapshot_digest(current)==manifest['protected_sha256'],'existing_rows_changed');return current
+    original=protected_identity(baseline['members'])
+    require(set(original)==set(manifest['protected_member_ids']) and all(site=='pluslotto' for _,site in original.values()),'baseline_identity')
+    current=client.protected(manifest['protected_member_ids'])
+    require(protected_identity(current['members'])==original,'protected_identity_changed')
+    require(all(row['member_id'] in original for row in current['payments']),'protected_payment_scope')
+    return current
+
+def verify_collision_peers(live,manifest,baseline,units):
+    phones={canonical_phone(row['phone']) for unit in units for row in unit['members']}
+    planned={row['id']:row for unit in units for row in unit['members']}
+    require(len({row['id'] for row in live})==len(live),'live_member_duplicate')
+    for row in live:
+        if row['id'] in planned:
+            expected=planned[row['id']]
+            require(canonical_phone(row['phone'])==canonical_phone(expected['phone']) and operating_site(row)=='lotto815' and row.get('import_batch')==expected['meta']['import_batch'],'planned_peer_identity_changed')
+    peers=[row for row in live if canonical_phone(row['phone']) in phones and row['id'] not in planned]
+    require(protected_identity(peers)==protected_identity(baseline['members']) and {row['id'] for row in peers}==set(manifest['protected_member_ids']),'collision_peers_changed')
+
+def snapshot_diff(before,after):
+    result={}
+    for table in ('members','payments'):
+        old={row['id']:row for row in canonical_rows(before[table])};new={row['id']:row for row in canonical_rows(after[table])}
+        require(len(old)==len(before[table]) and len(new)==len(after[table]),'snapshot_duplicate')
+        result[table]={'added':[new[key] for key in sorted(new.keys()-old.keys())],
+                      'removed':[old[key] for key in sorted(old.keys()-new.keys())],
+                      'changed':[{'id':key,'fields':sorted(field for field in old[key].keys()|new[key].keys() if (field not in old[key] or field not in new[key] or old[key][field]!=new[key][field])),
+                                  'before':old[key],'after':new[key]} for key in sorted(old.keys()&new.keys()) if old[key]!=new[key]]}
+    return result
+
+def diff_counts(delta):
+    return {table:{kind:len(rows) for kind,rows in changes.items()} for table,changes in delta.items()}
+
+def record_existing_audit(run,index,baseline,before,after,proof,peer_before,peer_after):
+    deltas={'baseline_to_before':snapshot_diff(baseline,before),'baseline_to_after':snapshot_diff(baseline,after),'before_to_after':snapshot_diff(before,after)}
+    save_new(run/f'batch-{index:03d}-existing-diff.json',deltas)
+    return {'scope':'separate_read_observations_outside_atomic_rpc',
+            'baseline_sha256':snapshot_digest(baseline),'before_sha256':snapshot_digest(before),'after_sha256':snapshot_digest(after),
+            'outside_snapshot_rows_unchanged':snapshot_digest(before)==snapshot_digest(after),
+            'changes':{name:diff_counts(delta) for name,delta in deltas.items()},
+            'rpc_protected_payments':proof['protected_payments'],
+            'observed_peer_payments_before':len(peer_before['payments']),'observed_peer_payments_after':len(peer_after['payments']),
+            'rpc_payment_count_matches_before_observation':proof['protected_payments']==len(peer_before['payments']),
+            'rpc_payment_count_matches_after_observation':proof['protected_payments']==len(peer_after['payments'])}
+
+def verify_atomic_proof(value,d,protected):
+    expected={'batch_id':d['batch'],'members':d['members'],'payments':d['payments'],'amount':d['amount'],'held_members':d['members'],'atomic':True}
+    extra={'protected_members','protected_payments','existing_full_rows_unchanged'}
+    require(isinstance(value,dict) and set(value)==set(expected)|extra,'atomic_proof_shape')
+    require(encoded({key:value[key] for key in expected})==encoded(expected),'atomic_result')
+    require(type(protected.get('members'))is int and protected['members']>=0 and type(protected.get('payments'))is int and protected['payments']>=0,'protected_counts')
+    require(type(value['protected_members'])is int and value['protected_members']==protected['members'],'atomic_protected_member_count')
+    # Payment counts are observed under DB locks. Legitimate payment edits can
+    # precede/follow those locks; outside observations are recorded, not equated.
+    require(type(value['protected_payments'])is int and value['protected_payments']>=0,'atomic_protected_payment_count')
+    require(value['existing_full_rows_unchanged'] is True,'atomic_protected_rows_changed')
+
+def load_completed_proof(fence,manifest_sha,d):
+    require(fence.get('proof_version')==1 and isinstance(fence.get('protected_before_counts'),dict),'completed_atomic_proof_missing')
+    directory=Path(fence.get('receipt_directory',''))
+    require(directory.parent==PRIVATE and re.fullmatch(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}',directory.name),'completed_receipt_scope')
+    safe_path(directory,directory=True)
+    proof_path=directory/f"batch-{d['index']:03d}-atomic-proof.json"
+    require(proof_path.exists(),'completed_atomic_proof_missing')
+    proof=read(proof_path)
+    require(set(proof)=={'manifest_sha256','payload_sha256','batch','scope','result'} and proof['manifest_sha256']==manifest_sha and proof['payload_sha256']==d['payload_sha256'] and proof['batch']==d['batch'] and proof['scope']=='existing_phone_peers_during_locked_atomic_rpc','completed_atomic_proof_mismatch')
+    verify_atomic_proof(proof['result'],d,fence['protected_before_counts'])
+    return proof
 
 def check_products(client,units,expected=None):
     needed={r['id']:r for u in units for r in u['products']}
@@ -259,7 +347,10 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
         require(file_sha(ARCHIVE)==ARCHIVE_SHA,'archive_hash')
         run=PRIVATE/(dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]);run.mkdir(mode=0o700)
         def step(stage,**more):receipt.update(stage=stage,manifest_sha256=manifest_sha,**more);replace_receipt(run/'receipt.json',receipt)
-        client=Client(env_file,apply);baseline=read(PRIVATE/'protected-baseline.json');check_protected(client,manifest,baseline)
+        client=Client(env_file,apply);baseline=read(PRIVATE/'protected-baseline.json');preflight=check_protected(client,manifest,baseline)
+        save_new(run/'preflight-existing.json',preflight)
+        preflight_diff=snapshot_diff(baseline,preflight);save_new(run/'preflight-existing-diff.json',preflight_diff)
+        receipt.update(existing_preservation_scope='existing_phone_peers_during_locked_atomic_rpc',baseline_to_preflight_changes=diff_counts(preflight_diff))
         check_products(client,units,read(PRIVATE/'products-baseline.json'))
         require(digest(canonical_rows(client.select_all('site_settings','*')))==manifest['settings_sha256'],'settings_changed')
         states=[verify_actual(client.batch(d['batch']),u,d) for u,d in zip(units,manifest['batches'])]
@@ -267,16 +358,17 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
         for data,d in zip(units[:progress],manifest['batches'][:progress]):
             fence=read(PRIVATE/f"batch-{d['index']:03d}-attempt.json")
             require(fence.get('manifest_sha256')==manifest_sha and fence.get('payload_sha256')==d['payload_sha256'] and fence.get('batch')==d['batch'],'completed_fence_mismatch')
+            load_completed_proof(fence,manifest_sha,d)
             client.hold(d,d['members'])
             require(client.side_effects([row['id'] for row in data['members']])==manifest['side_effects_expected'],'completed_side_effects')
         if apply and all_batches:require(progress>=1,'pilot_must_complete_before_all')
         if index is not None:require(1<=index<=len(units) and index<=progress+1,'batch_order')
         chosen=list(range(progress+1,len(units)+1)) if all_batches else ([index] if index and index>progress else [])
+        live_members=client.member_identifiers();verify_collision_peers(live_members,manifest,baseline,units)
         if not chosen:step('already_complete_verified_noop',completed_batches=progress);return 0
         live_members,live_payments=client.identifiers();verify_conflicts([units[i-1] for i in chosen],live_members,live_payments)
         # New phone peers cannot silently appear between preparation and apply.
-        phones={canonical_phone(r['phone']) for u in units for r in u['members']};planned_ids={r['id'] for u in units for r in u['members']}
-        peers={r['id'] for r in live_members if canonical_phone(r['phone']) in phones and r['id'] not in planned_ids};require(peers==set(manifest['protected_member_ids']),'collision_peers_changed')
+        verify_collision_peers(live_members,manifest,baseline,units)
         for i in chosen:
             fence=PRIVATE/f'batch-{i:03d}-attempt.json';require(not fence.exists() and not fence.is_symlink(),'uncertain_prior_attempt')
             d=manifest['batches'][i-1];client.hold(d,0)
@@ -286,22 +378,38 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
             d=manifest['batches'][i-1];data=read(PRIVATE/d['file']);validate_unit(data,d)
             require(verify_actual(client.batch(d['batch']),data,d)=='empty','batch_changed')
             before=check_protected(client,manifest,baseline);save_new(run/f'batch-{i:03d}-existing-before.json',before)
+            live_members=client.member_identifiers();verify_collision_peers(live_members,manifest,baseline,units)
+            batch_phones={canonical_phone(row['phone']) for row in data['members']}
+            peer_ids=sorted(row['id'] for row in live_members if canonical_phone(row['phone']) in batch_phones)
+            require(not set(peer_ids)&{row['id'] for row in data['members']},'batch_peer_identity')
+            peer_before=client.protected(peer_ids)
+            require(all(canonical_phone(row['phone']) in batch_phones for row in peer_before['members']),'batch_peer_phone_changed')
+            save_new(run/f'batch-{i:03d}-phone-peers-before.json',peer_before)
+            protected_counts={table:len(rows) for table,rows in peer_before.items()}
             ids=[r['id'] for r in data['members']];require(client.side_effects(ids)==manifest['side_effects_expected'],'preexisting_side_effects')
-            save_new(PRIVATE/f'batch-{i:03d}-attempt.json',{'manifest_sha256':manifest_sha,'payload_sha256':d['payload_sha256'],'batch':d['batch'],'receipt_directory':str(run)})
-            dirfd=os.open(PRIVATE,os.O_RDONLY)
-            try:os.fsync(dirfd)
-            finally:os.close(dirfd)
+            save_new(PRIVATE/f'batch-{i:03d}-attempt.json',{'manifest_sha256':manifest_sha,'payload_sha256':d['payload_sha256'],'batch':d['batch'],'receipt_directory':str(run),'proof_version':1,'protected_before_counts':protected_counts})
+            sync_directory(run);sync_directory(PRIVATE)
             step('applying_atomic',writes_attempted=receipt['writes_attempted']+1,current_batch=d['batch'])
-            result=client.apply_unit(data,d);actual=client.batch(d['batch']);require(verify_actual(actual,data,d)=='complete','partial_batch');client.hold(d,d['members'])
+            result=client.apply_unit(data,d,protected_counts);verify_atomic_proof(result,d,protected_counts)
+            save_new(run/f'batch-{i:03d}-atomic-proof.json',{'manifest_sha256':manifest_sha,'payload_sha256':d['payload_sha256'],'batch':d['batch'],'scope':'existing_phone_peers_during_locked_atomic_rpc','result':result})
+            sync_directory(run)
+            actual=client.batch(d['batch']);require(verify_actual(actual,data,d)=='complete','partial_batch');client.hold(d,d['members'])
             effects=client.side_effects(ids);require(effects==manifest['side_effects_expected'],'unexpected_side_effects')
             after=check_protected(client,manifest,baseline);save_new(run/f'batch-{i:03d}-existing-after.json',after)
+            verify_collision_peers(client.member_identifiers(),manifest,baseline,units)
+            peer_after=client.protected(peer_ids);save_new(run/f'batch-{i:03d}-phone-peers-after.json',peer_after)
+            require(protected_identity(peer_after['members'])==protected_identity(peer_before['members']),'batch_peer_identity_changed')
+            audit=record_existing_audit(run,i,baseline,before,after,result,peer_before,peer_after)
             save_new(run/f'batch-{i:03d}-inserted.json',actual)
-            save_new(run/f'batch-{i:03d}-verified.json',{'stage':'complete_verified','atomic_result':result,'actual_sha256':snapshot_digest(actual),'existing_full_rows_unchanged':True,'side_effects':effects,'manifest_sha256':manifest_sha})
+            save_new(run/f'batch-{i:03d}-verified.json',{'stage':'complete_verified','atomic_result':result,'atomic_proof_scope':'existing_phone_peers_during_locked_atomic_rpc','actual_sha256':snapshot_digest(actual),'existing_rows_audit':audit,'side_effects':effects,'manifest_sha256':manifest_sha})
+            sync_directory(run)
             step('batch_complete_verified',completed_batches=i);print(encoded({'stage':'batch_complete_verified','batch':d['batch'],'members':d['members'],'payments':d['payments']}),flush=True)
         check_products(client,units,read(PRIVATE/'products-baseline.json'));require(digest(canonical_rows(client.select_all('site_settings','*')))==manifest['settings_sha256'],'settings_changed')
         step('complete_verified',all_batches_complete=chosen[-1]==len(units));return 0
     except (Exception,SystemExit) as error:
-        receipt.update(failed_stage=receipt['stage'],stage='stopped_recovery_required' if receipt['writes_attempted'] else 'stopped_without_writes',reason_code=str(error) if isinstance(error,Stop) else 'verification_or_transport_error')
+        reason=str(error) if isinstance(error,Stop) else 'verification_or_transport_error'
+        recovery=bool(receipt['writes_attempted']) or reason in ('uncertain_prior_attempt','completed_atomic_proof_missing','completed_atomic_proof_mismatch','completed_receipt_scope')
+        receipt.update(failed_stage=receipt['stage'],stage='stopped_recovery_required' if recovery else 'stopped_without_writes',reason_code=reason,recovery_required=recovery)
         if run:replace_receipt(run/'receipt.json',receipt)
         print(encoded({k:receipt[k] for k in ('stage','failed_stage','reason_code','writes_attempted')}));return 1
     finally:

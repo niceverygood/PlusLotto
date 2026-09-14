@@ -9,6 +9,7 @@ const db = new PGlite()
 const load = (file) => readFile(new URL(`../../supabase/migrations/${file}`, import.meta.url), 'utf8')
 const portalSql = await load('20260914032620_scoped_legacy_portal.sql')
 const importSql = await load('20260914032636_atomic_815_collision_import.sql')
+const protectedSql = await load('20260914033702_atomic_815_collision_protected_snapshot.sql')
 const flags = Object.fromEntries(['groupSystemYN', 'groupAdminYN', 'groupPartnerYN', 'groupSalesYN',
   'groupSecondSalesYN', 'groupStaffYN', 'groupDummyYN', 'groupTeamAdmYN', 'groupTeamYN'].map((key) => [key, 'N']))
 const adminUid = '00000000-0000-0000-0000-000000000001'
@@ -127,6 +128,7 @@ before(async () => {
     FOR EACH ROW EXECUTE FUNCTION public.enforce_member_admin_ops();`)
   await db.exec(portalSql)
   await db.exec(importSql)
+  await db.exec(protectedSql)
 })
 after(() => db.close())
 
@@ -134,6 +136,7 @@ test('migration replay changes no data and import permission is service-only', a
   const previous = await snapshot()
   await db.exec(portalSql)
   await db.exec(importSql)
+  await db.exec(protectedSql)
   assert.deepEqual(await snapshot(), previous)
   const fn = (await db.query(`SELECT prosecdef,proconfig FROM pg_proc
     WHERE oid='public.admin_import_815_collision_batch(text,jsonb,jsonb,integer,integer,bigint)'::regprocedure`)).rows[0]
@@ -150,7 +153,8 @@ test('same-phone PlusLotto and held 815 remain separate with every native row an
   const previous = await snapshot()
   const b = batch(), m = member(b, { phone: '01011112222' }), p = payment(b, m)
   const result = await as('service_role', () => call(b, [m], [p]))
-  assert.deepEqual(result, { batch_id: b, members: 1, payments: 1, amount: 1000, held_members: 1, atomic: true })
+  assert.deepEqual(result, { batch_id: b, members: 1, payments: 1, amount: 1000, held_members: 1, atomic: true,
+    protected_members: 1, protected_payments: 1, existing_full_rows_unchanged: true })
   const next = await snapshot()
   assert.deepEqual(next.members.filter((row) => row.id !== m.id), previous.members)
   assert.deepEqual(next.payments.filter((row) => row.id !== p.id), previous.payments)
@@ -167,7 +171,10 @@ test('native international phone spellings do not cause updates during domestic 
     const b = batch(), m = member(b), id = `native-alias-${++serial}`
     await directMember(id, forms(m.phone)[i + 1], { unchanged: true })
     const previous = await snapshot()
-    await as('service_role', () => call(b, [m], []))
+    const proof = await as('service_role', () => call(b, [m], []))
+    assert.equal(proof.protected_members, 1)
+    assert.equal(proof.protected_payments, 0)
+    assert.equal(proof.existing_full_rows_unchanged, true)
     const next = await snapshot()
     assert.deepEqual(next.members.filter((row) => row.id !== m.id), previous.members)
     assert.deepEqual(next.logs, previous.logs)
@@ -181,6 +188,9 @@ test('two inactive 815 source accounts at the same phone keep distinct source ke
   const result = await as('service_role', () => call(b, [a, c], []))
   assert.equal(result.members, 2)
   assert.equal(result.held_members, 2)
+  assert.equal(result.protected_members, 0)
+  assert.equal(result.protected_payments, 0)
+  assert.equal(result.existing_full_rows_unchanged, true)
   const rows = (await db.query('SELECT id,meta FROM members WHERE id=ANY($1)', [[a.id, c.id]])).rows
   assert.equal(new Set(rows.map((row) => row.meta.legacy_idx)).size, 2)
   await as('anon', async () => assert.equal(await portal(a.phone, a.phone.slice(-4), 'lotto815'), null))
@@ -322,3 +332,62 @@ test('existing multiple PlusLotto accounts retain newest selection without cross
   })
   assert.deepEqual(await snapshot(), previous)
 })
+
+test('atomic proof protects all preexisting sites and linked payment statuses at the destination phone', async () => {
+  const phone = member(batch()).phone
+  const peers = ['pluslotto', 'infolotto', 'cplotto'].map((site) => ({ site, id: `proof-peer-${site}-${++serial}` }))
+  for (const [index, peer] of peers.entries()) {
+    await directMember(peer.id, forms(phone)[index + 1], { source_site: peer.site },
+      index === 2 ? { status: 'withdrawn', is_withdrawn: true } : {})
+    await db.query(`INSERT INTO payments(id,member_id,amount,method,status,meta)
+      VALUES ($1,$2,500,'manual',$3,'{"preserved":true}')`,
+    [`peer-payment-${++serial}`, peer.id, index === 2 ? 'cancelled' : 'approved'])
+  }
+  const before = await snapshot(), b = batch(), m = member(b, { phone })
+  const proof = await as('service_role', () => call(b, [m], []))
+  assert.equal(proof.protected_members, 3)
+  assert.equal(proof.protected_payments, 3)
+  assert.equal(proof.existing_full_rows_unchanged, true)
+  const after = await snapshot()
+  assert.deepEqual(after.members.filter((row) => row.id !== m.id), before.members)
+  assert.deepEqual(after.payments, before.payments)
+})
+
+test('legitimate native edits before the import transaction are preserved without requiring stale values', async () => {
+  await db.exec(`UPDATE members SET memo='normal operator edit',consult_status='재통화',
+    meta=meta||'{"end_date":"2027-12-31","weekly_reco_count":12}' WHERE id='native'`)
+  const before = await snapshot(), b = batch(), m = member(b, { phone: '01011112222' })
+  const proof = await as('service_role', () => call(b, [m], []))
+  assert.equal(proof.existing_full_rows_unchanged, true)
+  const after = await snapshot()
+  assert.deepEqual(after.members.filter((row) => row.id !== m.id), before.members)
+  assert.deepEqual(after.payments, before.payments)
+})
+
+const protectedSideEffects = [
+  ['member metadata', 'members', "UPDATE public.members SET meta=meta||'{\"unexpected\":true}' WHERE id='native';"],
+  ['member phone moved out of cohort', 'members', "UPDATE public.members SET phone='01099998888' WHERE id='native';"],
+  ['existing payment amount', 'payments', "UPDATE public.payments SET amount=amount+1 WHERE id='native-pay';"],
+  ['existing payment deletion', 'payments', "DELETE FROM public.payments WHERE id='native-pay';"],
+  ['new payment for existing member', 'payments', "INSERT INTO public.payments(id,member_id,amount,method,status) VALUES ('unexpected-pay','native',1,'manual','approved');"],
+  ['unexpected additional same-phone contract', 'members', "INSERT INTO public.members(id,user_id,name,phone,meta) VALUES ('unexpected-peer','unexpected-peer','synthetic','01011112222','{\"source_site\":\"infolotto\"}');"],
+]
+for (const [name, table, effect] of protectedSideEffects) {
+  test(`a trigger changing ${name} rolls back every import row and the side effect`, async () => {
+    await db.exec(`CREATE FUNCTION public.synthetic_protected_side_effect() RETURNS trigger
+      LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $attack$
+      BEGIN
+        IF NEW.meta->>'import_batch' LIKE 'lotto815-collision-%' THEN ${effect} END IF;
+        RETURN NEW;
+      END; $attack$;
+      CREATE TRIGGER synthetic_protected_side_effect AFTER INSERT ON public.${table}
+      FOR EACH ROW EXECUTE FUNCTION public.synthetic_protected_side_effect();`)
+    try {
+      const b = batch(), m = member(b, { phone: '01011112222' }), p = payment(b, m)
+      await rejectsUnchanged(b, [m], [p], undefined, 'P0001')
+    } finally {
+      await db.exec(`DROP TRIGGER synthetic_protected_side_effect ON public.${table};
+        DROP FUNCTION public.synthetic_protected_side_effect();`)
+    }
+  })
+}
