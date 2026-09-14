@@ -981,7 +981,7 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
     // 실발송(oneshot_enabled+발신번호) 시 OneShot 호출 — 미설정이면 '미발송'으로 기록만.
     let status = '미발송'
     if (realSend) {
-      const r = await sendOneShot({ dest_phone: m.phone, msg_body: body, send_phone: sender_no })
+      const r = await sendOneShot({ member_id: m.id, source_site: memberSite(m.meta), dest_phone: m.phone, msg_body: body, send_phone: sender_no })
       status = r.ok ? '발송완료' : `실패(${r.code ?? '?'})`
     }
     return {
@@ -1026,7 +1026,7 @@ export async function sendCustomSms(ids: string[], body: string, actor: string |
   const rows: SmsSend[] = await mapPool(members, SMS_SEND_CONC, async (m) => {
     let status = '미발송'
     if (realSend) {
-      const r = await sendOneShot({ dest_phone: m.phone, msg_body: body, send_phone: sender_no })
+      const r = await sendOneShot({ member_id: m.id, source_site: memberSite(m.meta), dest_phone: m.phone, msg_body: body, send_phone: sender_no })
       status = r.ok ? '발송완료' : '실패'
     }
     return {
@@ -1080,7 +1080,7 @@ export async function manualIssueReco(
     const { realSend, sender_no } = await fetchSmsConfig()
     let status = '미발송'
     if (realSend) {
-      const r = await sendOneShot({ dest_phone: member.phone, msg_body: body, send_phone: sender_no })
+      const r = await sendOneShot({ member_id: member.id, source_site: memberSite(member.meta), dest_phone: member.phone, msg_body: body, send_phone: sender_no })
       status = r.ok ? '발송완료' : '실패'
     }
     const { error } = await sb().from('sms_sends').insert({

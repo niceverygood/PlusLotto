@@ -72,6 +72,7 @@ function koByteLength(s: string): number {
 /** 검증된 발송 함수(/api/send-sms, 고정 IP 프록시 경유)를 재사용해 1건 발송. */
 async function sendOne(
   base: string,
+  memberId: string,
   dest: string,
   body: string,
   sender: string,
@@ -84,6 +85,7 @@ async function sendOne(
         ...(process.env.CRON_SECRET ? { 'x-internal-secret': process.env.CRON_SECRET } : {}),
       },
       body: JSON.stringify({
+        member_id: memberId,
         dest_phone: dest,
         msg_body: body,
         send_phone: sender,
@@ -206,7 +208,7 @@ export default async function handler(req: any, res: any) {
       const slice = pending.slice(i, i + CONC)
       await Promise.all(
         slice.map(async (r) => {
-          const out = await sendOne(selfBase, r.phone, r.body, sender)
+          const out = await sendOne(selfBase, r.member_id, r.phone, r.body, sender)
           if (out.ok) {
             sent++
             await sb

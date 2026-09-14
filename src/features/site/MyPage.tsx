@@ -21,6 +21,7 @@ import { CalendarClock, Hash, LogIn, Phone, Sparkles, Ticket } from 'lucide-reac
 import { Badge, LottoBalls } from '@/design-system/components'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { datetime, phone as fmtPhone } from '@/lib/format'
+import { siteScopeLabel } from '@/lib/siteScope'
 import { cn } from '@/lib/cn'
 import type { Grade, WeeklyRecoIssue } from '@/types/db'
 import { useMemberAuth } from './auth'
@@ -238,6 +239,9 @@ export function MyPage() {
                   <span className="text-[15px] font-bold text-gray-400"> 님</span>
                 </h1>
                 <Badge grade={member.grade}>{gradeLabel(member.grade)}</Badge>
+                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+                  {siteScopeLabel(member.sourceSite)}
+                </span>
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-[13px] text-gray-500">
                 <Phone className="h-3.5 w-3.5" />

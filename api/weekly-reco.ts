@@ -846,6 +846,7 @@ function koByteLength(s: string): number {
 /** 검증된 발송 함수(/api/send-sms, Fixie 프록시 경유)를 재사용해 1건 발송. */
 async function sendComboSms(
   base: string,
+  memberId: string,
   dest: string,
   body: string,
   sender: string,
@@ -860,6 +861,7 @@ async function sendComboSms(
       },
       // msgType 명시(D68): 조합 본문은 90byte 초과라 LMS — 미지정 시 SMS 로 처리돼 402 길이초과 전건 실패.
       body: JSON.stringify({
+        member_id: memberId,
         dest_phone: dest,
         msg_body: body,
         send_phone: sender,
@@ -1115,7 +1117,7 @@ export default async function handler(req: any, res: any) {
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
         const smsBody = formatComboSms(r.name ?? '', targetRound, sets, recoTplBody)
-        const sres = await sendComboSms(selfBase, r.phone, smsBody, sender)
+        const sres = await sendComboSms(selfBase, r.id, r.phone, smsBody, sender)
         await sb.from('sms_sends').insert({
           // 병렬 동시삽입 PK 충돌 방지: 시간+난수+회원 꼬리.
           id: `sms_cron_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}_${r.id.slice(-6)}`,
