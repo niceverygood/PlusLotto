@@ -6,6 +6,7 @@ const { PGlite } = await import(process.env.PGLITE_MODULE ?? '@electric-sql/pgli
 const db = new PGlite()
 const load = name => readFile(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8')
 const migration = await load('20260910140000_legacy_815_member_history.sql')
+const reviewAccess = await load('20260914052203_legacy_history_leader_review_access.sql')
 const hash = 'a'.repeat(64)
 let sequence = 100
 async function as(role, id, fn) {
@@ -13,7 +14,7 @@ async function as(role, id, fn) {
   await db.exec(`SET ROLE ${role}`)
   try { return await fn() } finally { await db.exec('RESET ROLE') }
 }
-const users = {admin:1,manager:2,leader:3,rep:4,other:5}
+const users = {admin:1,manager:2,leader:3,rep:4,other:5,leaderNoTeam:6,noStaff:7}
 const uuid = key => `00000000-0000-0000-0000-${String(users[key]).padStart(12,'0')}`
 async function insert(table, overrides={}) {
   const common = {source_site:'lotto815',legacy_idx:++sequence,source_user_idx:1,member_id:'m1',
@@ -45,24 +46,30 @@ before(async()=>{
   await db.exec(sites.slice(sites.indexOf('CREATE OR REPLACE FUNCTION public.member_operating_site'),sites.indexOf('CREATE INDEX IF NOT EXISTS members_operating_site')))
   await db.exec('GRANT SELECT,UPDATE ON public.members TO service_role;')
   await db.exec("INSERT INTO teams(id,name) VALUES ('t1','Team 1'),('t2','Team 2')")
-  for(const [key,id] of Object.entries(users)) {
+  for(const key of Object.keys(users)) {
     await db.query('INSERT INTO auth.users VALUES ($1)',[uuid(key)])
+    if(key==='noStaff') continue
     await db.query('INSERT INTO staff(id,login_id,name,role,team_id,auth_user_id) VALUES ($1,$1,$1,$2,$3,$4)',
-      [key,key==='other'?'rep':key,key==='other'?'t2':'t1',uuid(key)])
+      [key,key==='other'?'rep':key==='leaderNoTeam'?'leader':key,key==='leaderNoTeam'?null:key==='other'?'t2':'t1',uuid(key)])
   }
-  for (const [id,idx,team,staff] of [['m1',1,'t1','rep'],['m2',2,'t2','other'],['m3',3,'t1','manager']])
+  for (const [id,idx,team,staff] of [['m1',1,'t1','rep'],['m2',2,'t2','other'],['m3',3,'t1','manager'],['m4',4,null,'admin']])
     await db.query('INSERT INTO members(id,user_id,name,team_id,assigned_staff_id,meta) VALUES ($1,$1,$1,$2,$3,$4)',
       [id,team,staff,JSON.stringify({source_site:'lotto815',legacy_idx:idx,reco_paused:true})])
   await db.exec(migration)
+  await db.exec(reviewAccess)
 })
 after(()=>db.close())
 test('replay preserves members, current RLS, and never populates operational queues',async()=>{
   const before=(await db.query('SELECT jsonb_agg(to_jsonb(m)) AS data FROM members m')).rows
   const policy=(await db.query("SELECT qual,with_check FROM pg_policies WHERE tablename='members'")).rows
+  const historyPolicies=(await db.query("SELECT tablename,policyname,roles,cmd,qual,with_check FROM pg_policies WHERE tablename IN ('legacy_member_memos','legacy_member_sms','legacy_member_wins') ORDER BY tablename,policyname")).rows
   await db.exec(migration)
+  await db.exec(reviewAccess)
+  await db.exec(reviewAccess)
   for(const kind of ['memos','sms','wins']) await as('service_role',null,()=>insert(kind))
   assert.deepEqual((await db.query('SELECT jsonb_agg(to_jsonb(m)) AS data FROM members m')).rows,before)
   assert.deepEqual((await db.query("SELECT qual,with_check FROM pg_policies WHERE tablename='members'")).rows,policy)
+  assert.deepEqual((await db.query("SELECT tablename,policyname,roles,cmd,qual,with_check FROM pg_policies WHERE tablename IN ('legacy_member_memos','legacy_member_sms','legacy_member_wins') ORDER BY tablename,policyname")).rows,historyPolicies)
   for(const table of ['sms_sends','bets','assignments'])
     assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n,0)
 })
@@ -99,23 +106,46 @@ test('source mutation is blocked while ordinary member updates remain valid',asy
   await db.exec("UPDATE members SET meta=meta||'{\"legacy_idx\":3}' WHERE id='m3'")
   await assert.rejects(db.exec("DELETE FROM members WHERE id='m1'"),{code:'23001'})
 })
-test('new history narrows wide leader policy; private memo requires actual assignment or admin',async()=>{
+test('reviewers see all history across teams including private memos; reps remain assigned-only',async()=>{
   await insert('memos',{legacy_idx:900,source_team_open_yn:'N',source_author_idx:'9007199254740993'})
   await insert('memos',{legacy_idx:901,source_team_open_yn:null})
-  for(const kind of ['memos','sms','wins']) await insert(kind,{member_id:'m2',source_user_idx:2})
-  for(const kind of ['memo','sms','win']) {
-    await as('authenticated',uuid('leader'),async()=>{
-      assert.equal((await db.query('SELECT count(*)::int AS n FROM members')).rows[0].n,3)
-      assert.equal((await page(kind,'m2')).rows.length,0)
-      assert.ok((await page(kind)).rows.length>0)
+  for(const [member_id,source_user_idx] of [['m2',2],['m3',3],['m4',4]])
+    for(const kind of ['memos','sms','wins']) await insert(kind,{member_id,source_user_idx})
+  for(const key of ['admin','manager','leader','leaderNoTeam']) {
+    await as('authenticated',uuid(key),async()=>{
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM members')).rows[0].n,4)
+      for(const kind of ['memo','sms','win'])
+        for(const member of ['m1','m2','m3','m4']) assert.ok((await page(kind,member)).rows.length>0,`${key}/${kind}/${member}`)
+      for(const table of ['memos','sms','wins'])
+        assert.equal((await db.query(`SELECT count(DISTINCT member_id)::int AS n FROM legacy_member_${table}`)).rows[0].n,4)
     })
-    await as('authenticated',uuid('rep'),async()=>assert.equal((await page(kind,'m2')).rows.length,0))
   }
-  for(const key of ['admin','manager','leader','rep','other']) await as('authenticated',uuid(key),async()=>{
+  for(const key of ['admin','manager','leader','leaderNoTeam','rep','other']) await as('authenticated',uuid(key),async()=>{
     const ids=(await page('memo')).rows.map(r=>r.legacy_idx)
-    assert.equal(ids.includes('900'),['admin','rep'].includes(key))
-    assert.equal(ids.includes('901'),['admin','rep'].includes(key))
+    assert.equal(ids.includes('900'),key!=='other')
+    assert.equal(ids.includes('901'),key!=='other')
     if(key==='admin') assert.equal((await page('memo')).rows.find(r=>r.legacy_idx==='900').source_author_idx,'9007199254740993')
+  })
+  for(const [key,own] of [['rep','m1'],['other','m2']]) await as('authenticated',uuid(key),async()=>{
+    for(const kind of ['memo','sms','win']) {
+      assert.ok((await page(kind,own)).rows.length>0)
+      for(const member of ['m1','m2','m3','m4'].filter(id=>id!==own)) assert.equal((await page(kind,member)).rows.length,0)
+    }
+    for(const table of ['memos','sms','wins'])
+      assert.deepEqual((await db.query(`SELECT DISTINCT member_id FROM legacy_member_${table}`)).rows,[{member_id:own}])
+  })
+})
+test('anonymous and authenticated callers without a staff mapping cannot read history',async()=>{
+  for(const kind of ['memo','sms','win']) {
+    await as('anon',null,()=>assert.rejects(page(kind),{code:'42501'}))
+    for(const id of [null,uuid('noStaff')]) await as('authenticated',id,async()=>{
+      assert.equal((await page(kind)).rows.length,0)
+      assert.equal((await page(kind,'m4')).rows.length,0)
+    })
+  }
+  await as('authenticated',uuid('noStaff'),async()=>{
+    for(const table of ['memos','sms','wins'])
+      assert.equal((await db.query(`SELECT count(*)::int AS n FROM legacy_member_${table}`)).rows[0].n,0)
   })
 })
 test('invalid dates retain raw text without inventing today or timezone',async()=>{
