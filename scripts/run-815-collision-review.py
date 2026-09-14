@@ -319,6 +319,15 @@ def check_products(client,units,expected=None):
     if expected is not None:require(canonical_rows(actual)==canonical_rows(expected),'product_full_rows_changed')
     return actual
 
+def verify_settings(current,baseline,manifest):
+    require(digest(canonical_rows(baseline))==manifest['settings_sha256'],'settings_baseline_hash')
+    # This counter advances during normal assignment operations. Configuration,
+    # schedules, enabled flags and every other field must remain identical.
+    def configuration(rows):
+        return [{key:value for key,value in row.items() if key!='auto_assign_cursor'} for row in canonical_rows(rows)]
+    require(configuration(current)==configuration(baseline),'settings_changed')
+    return current
+
 def prepare(env_file):
     require(not PRIVATE.exists() and not PRIVATE.is_symlink(),'manifest_exists_no_reselection');require(file_sha(ARCHIVE)==ARCHIVE_SHA,'archive_hash')
     selected=selected_exceptions();client=Client(env_file);print(encoded({'stage':'reading_identifiers'}),flush=True);live_members,live_payments=client.identifiers();print(encoded({'stage':'reading_verified_source','existing_members':len(live_members),'existing_payments':len(live_payments)}),flush=True)
@@ -352,7 +361,9 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
         preflight_diff=snapshot_diff(baseline,preflight);save_new(run/'preflight-existing-diff.json',preflight_diff)
         receipt.update(existing_preservation_scope='existing_phone_peers_during_locked_atomic_rpc',baseline_to_preflight_changes=diff_counts(preflight_diff))
         check_products(client,units,read(PRIVATE/'products-baseline.json'))
-        require(digest(canonical_rows(client.select_all('site_settings','*')))==manifest['settings_sha256'],'settings_changed')
+        settings_baseline=read(PRIVATE/'settings-baseline.json')
+        settings_before=verify_settings(client.select_all('site_settings','*'),settings_baseline,manifest)
+        save_new(run/'settings-before.json',settings_before)
         states=[verify_actual(client.batch(d['batch']),u,d) for u,d in zip(units,manifest['batches'])]
         progress=states.index('empty') if 'empty' in states else len(states);require(all(v=='empty' for v in states[progress:]),'batch_order')
         for data,d in zip(units[:progress],manifest['batches'][:progress]):
@@ -404,7 +415,9 @@ def execute(env_file,manifest_sha,apply=False,all_batches=False,index=None):
             save_new(run/f'batch-{i:03d}-verified.json',{'stage':'complete_verified','atomic_result':result,'atomic_proof_scope':'existing_phone_peers_during_locked_atomic_rpc','actual_sha256':snapshot_digest(actual),'existing_rows_audit':audit,'side_effects':effects,'manifest_sha256':manifest_sha})
             sync_directory(run)
             step('batch_complete_verified',completed_batches=i);print(encoded({'stage':'batch_complete_verified','batch':d['batch'],'members':d['members'],'payments':d['payments']}),flush=True)
-        check_products(client,units,read(PRIVATE/'products-baseline.json'));require(digest(canonical_rows(client.select_all('site_settings','*')))==manifest['settings_sha256'],'settings_changed')
+        check_products(client,units,read(PRIVATE/'products-baseline.json'))
+        settings_after=verify_settings(client.select_all('site_settings','*'),settings_baseline,manifest)
+        save_new(run/'settings-after.json',settings_after)
         step('complete_verified',all_batches_complete=chosen[-1]==len(units));return 0
     except (Exception,SystemExit) as error:
         reason=str(error) if isinstance(error,Stop) else 'verification_or_transport_error'

@@ -79,7 +79,7 @@ class CollisionTests(unittest.TestCase):
             with self.subTest(committed=committed),tempfile.TemporaryDirectory() as dirname:
                 root=Path(dirname).resolve();data,d=fixture();baseline={'members':[],'payments':[]}
                 manifest={'batches':[d],'protected_member_ids':[],'protected_sha256':m.snapshot_digest(baseline),'settings_sha256':m.digest([]),'side_effects_expected':{'sms_sends':0,'bets':0,'assignments':0}}
-                for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[])]:m.save_new(root/name,value)
+                for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[]),('settings-baseline.json',[])]:m.save_new(root/name,value)
                 state={'calls':0,'actual':copy.deepcopy(baseline)}
                 class FakeClient:
                     def __init__(self,*args):pass
@@ -105,7 +105,7 @@ class CollisionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as dirname:
             root=Path(dirname).resolve();data,d=fixture();baseline={'members':[],'payments':[]}
             manifest={'batches':[d],'protected_member_ids':[],'protected_sha256':m.snapshot_digest(baseline),'settings_sha256':m.digest([]),'side_effects_expected':{'sms_sends':0,'bets':0,'assignments':0}}
-            for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[])]:m.save_new(root/name,value)
+            for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[]),('settings-baseline.json',[])]:m.save_new(root/name,value)
             class FakeClient:
                 def __init__(self,*args):pass
                 def protected(self,*args):return baseline
@@ -122,7 +122,7 @@ class CollisionTests(unittest.TestCase):
             root=Path(dirname).resolve();data,d=fixture();baseline=native_snapshot()
             manifest={'batches':[d],'protected_member_ids':['native-1'],'protected_sha256':m.snapshot_digest(baseline),'settings_sha256':m.digest([]),'side_effects_expected':{'sms_sends':0,'bets':0,'assignments':0}}
             original_manifest=copy.deepcopy(manifest);original_data=copy.deepcopy(data)
-            for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[])]:m.save_new(root/name,value)
+            for name,value in [('manifest.json',manifest),('batch-001.json',data),('protected-baseline.json',baseline),('products-baseline.json',[]),('settings-baseline.json',[])]:m.save_new(root/name,value)
             state={'calls':0,'native':copy.deepcopy(baseline),'actual':{'members':[],'payments':[]}}
             state['native']['members'][0]['memo']='legitimate operation before import'
             class FakeClient:
@@ -228,6 +228,17 @@ class CollisionTests(unittest.TestCase):
                 with self.assertRaises(m.Stop):m.load_completed_proof(fence,'other',d)
                 with self.assertRaises(m.Stop):m.load_completed_proof(dict(fence,protected_before_counts={'members':2,'payments':1}),'fixed',d)
                 with self.assertRaises(m.Stop):m.load_completed_proof(dict(fence,receipt_directory=str(root.parent)),'fixed',d)
+    def test_settings_runtime_cursor_can_advance_but_configuration_and_baseline_cannot_change(self):
+        baseline=[{'id':1,'auto_assign_cursor':12,'auto_assign_enabled':True,'weekly_schedule':'monday'}]
+        manifest={'settings_sha256':m.digest(m.canonical_rows(baseline))}
+        current=[dict(baseline[0],auto_assign_cursor=15)]
+        self.assertEqual(m.verify_settings(current,baseline,manifest),current)
+        for change in ({'auto_assign_enabled':False},{'weekly_schedule':'tuesday'},{'extra':1},{'id':2}):
+            with self.subTest(change=change),self.assertRaisesRegex(m.Stop,'settings_changed'):
+                m.verify_settings([dict(current[0],**change)],baseline,manifest)
+        with self.assertRaisesRegex(m.Stop,'settings_baseline_hash'):
+            m.verify_settings(current,current,manifest)
+
     def test_postgres_fractional_timestamps_compared_exactly(self):
         actual={'created_at':'2026-09-14T00:00:00.12345+00:00'}
         expected={'created_at':'2026-09-14T09:00:00.123450+09:00'}
