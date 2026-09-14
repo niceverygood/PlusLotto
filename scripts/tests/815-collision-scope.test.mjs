@@ -7,8 +7,8 @@ import { randomUUID } from 'node:crypto'
 const { PGlite } = await import(process.env.PGLITE_MODULE ?? '@electric-sql/pglite')
 const db = new PGlite()
 const load = (file) => readFile(new URL(`../../supabase/migrations/${file}`, import.meta.url), 'utf8')
-const portalSql = await load('20260914030605_scoped_legacy_portal.sql')
-const importSql = await load('20260914030606_atomic_815_collision_import.sql')
+const portalSql = await load('20260914032620_scoped_legacy_portal.sql')
+const importSql = await load('20260914032636_atomic_815_collision_import.sql')
 const flags = Object.fromEntries(['groupSystemYN', 'groupAdminYN', 'groupPartnerYN', 'groupSalesYN',
   'groupSecondSalesYN', 'groupStaffYN', 'groupDummyYN', 'groupTeamAdmYN', 'groupTeamYN'].map((key) => [key, 'N']))
 const adminUid = '00000000-0000-0000-0000-000000000001'
