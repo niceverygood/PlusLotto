@@ -10,6 +10,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { KeyRound, Loader2, LogIn, Phone, ShieldCheck } from 'lucide-react'
 import { useMemberAuth } from './auth'
+import { DEFAULT_PORTAL_SITE, isPortalSourceSite, PORTAL_SITES, type PortalSourceSite } from '@/lib/portalScope'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
@@ -20,6 +21,7 @@ export function LoginPage() {
   const { login } = useMemberAuth()
   const navigate = useNavigate()
 
+  const [sourceSite, setSourceSite] = useState<PortalSourceSite>(DEFAULT_PORTAL_SITE)
   const [phone, setPhone] = useState('')
   const [pw, setPw] = useState('')
   const [busy, setBusy] = useState(false)
@@ -43,7 +45,7 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      const res = await login(phone, pw)
+      const res = await login(phone, pw, sourceSite)
       if (res.ok) {
         navigate('/mypage')
       } else {
@@ -85,6 +87,22 @@ export function LoginPage() {
           )}
 
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
+            <label className="block">
+              <span className="mb-1.5 block text-[13px] font-semibold text-gray-700">가입 서비스</span>
+              <select
+                className="h-12 w-full rounded-md border border-gray-300 bg-white px-3.5 text-[15px] text-gray-800 outline-none focus:border-primary-500"
+                value={sourceSite}
+                disabled={busy}
+                onChange={(e) => {
+                  if (isPortalSourceSite(e.target.value)) setSourceSite(e.target.value)
+                  setPw('')
+                  setError(null)
+                }}
+              >
+                {PORTAL_SITES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
+              </select>
+              <span className="mt-1.5 block text-[12px] text-gray-500">가입한 서비스를 선택하면 해당 서비스의 발급 내역을 확인할 수 있습니다.</span>
+            </label>
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-semibold text-gray-700">
                 전화번호

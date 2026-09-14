@@ -50,6 +50,8 @@ jobs:
           bash -n scripts/preflight-legacy-load.sh
           python3 scripts/test_load_legacy_site.py
           python3 scripts/test_preflight_legacy_load.py
+          python3 scripts/test_815_collision_review.py
+          python3 scripts/test_815_collision_history.py
 
       - name: Run TypeScript regressions
         run: node --import tsx --test scripts/tests/*.test.ts

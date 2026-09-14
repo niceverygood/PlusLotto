@@ -267,10 +267,10 @@ export function MembersPage() {
             {/* 디비 입력(신규 등록·일괄 임포트)은 최고관리자만(현장 피드백) */}
             {role === 'admin' && (
               <>
-                <Button variant="sec" size="sm" disabled={siteScope === 'all'} title={siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setImporting(true)}>
+                <Button variant="sec" size="sm" disabled={siteScope === 'all' || siteScope === 'lotto815'} title={siteScope === 'lotto815' ? '815로또는 기존 회원 이관과 관리만 지원합니다' : siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setImporting(true)}>
                   <Upload className="h-4 w-4" /> 일괄 임포트
                 </Button>
-                <Button variant="pri" size="sm" disabled={siteScope === 'all'} title={siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setCreating(true)}>
+                <Button variant="pri" size="sm" disabled={siteScope === 'all' || siteScope === 'lotto815'} title={siteScope === 'lotto815' ? '815로또는 기존 회원 이관과 관리만 지원합니다' : siteScope === 'all' ? '상단에서 등록할 사이트를 선택하세요' : undefined} onClick={() => setCreating(true)}>
                   <Plus className="h-4 w-4" /> 신규 등록
                 </Button>
               </>
@@ -541,8 +541,8 @@ export function MembersPage() {
         }}
       />
 
-      {creating && <MemberCreateDrawer onClose={() => setCreating(false)} />}
-      {importing && <ImportMembersModal onClose={() => setImporting(false)} />}
+      {creating && siteScope !== 'lotto815' && <MemberCreateDrawer onClose={() => setCreating(false)} />}
+      {importing && siteScope !== 'lotto815' && <ImportMembersModal onClose={() => setImporting(false)} />}
     </div>
   )
 }

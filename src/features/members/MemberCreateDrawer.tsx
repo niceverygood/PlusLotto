@@ -84,6 +84,10 @@ export function MemberCreateDrawer({ onClose }: { onClose: () => void }) {
   const submit = handleSubmit((v) => {
     setServerErr(null)
     setServerNotice(null)
+    if (siteScope === 'lotto815') {
+      setServerErr('815로또는 기존 회원 이관과 관리만 지원합니다.')
+      return
+    }
     create.mutate(
       {
         name: v.name,

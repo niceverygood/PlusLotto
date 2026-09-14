@@ -60,6 +60,7 @@ function koByteLength(s: string): number {
 /** 검증된 발송 함수(/api/send-sms, Fixie 프록시 경유) 재사용 — weekly-reco.ts 와 동일 경로. */
 async function sendWinSms(
   base: string,
+  memberId: string,
   dest: string,
   body: string,
   sender: string,
@@ -72,6 +73,7 @@ async function sendWinSms(
         ...(process.env.CRON_SECRET ? { 'x-internal-secret': process.env.CRON_SECRET } : {}),
       },
       body: JSON.stringify({
+        member_id: memberId,
         dest_phone: dest,
         msg_body: body,
         send_phone: sender,
@@ -291,7 +293,7 @@ export default async function handler(req: any, res: any) {
         tallied += 1
 
         if (body) {
-          const r = await sendWinSms(base, m.phone as string, body, senderNo)
+          const r = await sendWinSms(base, m.id, m.phone as string, body, senderNo)
           await sb.from('sms_sends').insert({
             id: `sms_${row.round_no}_${m.id}`.slice(0, 60),
             member_id: m.id,
