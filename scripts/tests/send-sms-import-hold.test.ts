@@ -276,13 +276,14 @@ test('대상 회원의 실제 출처·보류 사유·boolean 정지 값으로만
   }
 })
 
-test('회원별 요청은 검증된 직원 역할의 회원·팀 경계를 지킨다', async (t) => {
+test('회원별 요청은 기존 회원 RLS와 같은 직원 역할 범위를 지킨다', async (t) => {
   const cases = [
     { name: 'admin은 전체', role: 'admin', teamId: null, assigned: null, memberTeam: null, allowed: true },
     { name: 'manager는 전체', role: 'manager', teamId: null, assigned: null, memberTeam: null, allowed: true },
     { name: 'leader는 같은 팀', role: 'leader', teamId: 'team-a', assigned: null, memberTeam: 'team-a', allowed: true },
-    { name: 'leader는 다른 팀 거부', role: 'leader', teamId: 'team-a', assigned: 'synthetic-staff', memberTeam: 'team-b', allowed: false },
-    { name: 'leader의 null 팀끼리 일치 불가', role: 'leader', teamId: null, assigned: null, memberTeam: null, allowed: false },
+    { name: 'leader는 다른 팀도 허용', role: 'leader', teamId: 'team-a', assigned: 'other-staff', memberTeam: 'team-b', allowed: true },
+    { name: 'leader는 팀 미지정이어도 전체', role: 'leader', teamId: null, assigned: null, memberTeam: null, allowed: true },
+    { name: 'leader는 팀 미지정이어도 다른 담당·팀 허용', role: 'leader', teamId: null, assigned: 'other-staff', memberTeam: 'team-b', allowed: true },
     { name: 'rep은 본인 담당', role: 'rep', teamId: null, assigned: 'synthetic-staff', memberTeam: null, allowed: true },
     { name: 'rep은 같은 팀이어도 타인 담당 거부', role: 'rep', teamId: 'team-a', assigned: 'other-staff', memberTeam: 'team-a', allowed: false },
     { name: 'rep은 미배정 거부', role: 'rep', teamId: null, assigned: null, memberTeam: null, allowed: false },
@@ -300,6 +301,41 @@ test('회원별 요청은 검증된 직원 역할의 회원·팀 경계를 지�
       assert.equal(result.solapiCalls + result.oneshotCalls, 0)
       assert.deepEqual(result.holdRequests, [])
     })
+  }
+})
+
+test('실장 수동 발송의 팀 미지정 회귀를 복구해도 이관 보류·대상 검증·담당자 제한은 유지한다', async (t) => {
+  const cases = [
+    { name: '실장 팀 미지정 정상 대상', role: 'leader', body: targetBody, status: 200 },
+    { name: '실장 보류 815', role: 'leader', body: { ...targetBody, member_id: 'synthetic-815' }, status: 423 },
+    { name: '실장 다른 전화번호', role: 'leader', body: { ...targetBody, dest_phone: '010-0000-0002' }, status: 403 },
+    { name: '실장 위조 출처', role: 'leader', body: { ...targetBody, source_site: 'lotto815' }, status: 403 },
+    { name: '담당자 타인 회원', role: 'rep', body: targetBody, status: 403 },
+  ]
+  for (const provider of ['solapi', 'oneshot'] as const) {
+    for (const scenario of cases) {
+      await t.test(`${provider}/${scenario.name}`, async () => {
+        const memberId = scenario.body.member_id
+        const held = memberId === 'synthetic-815'
+        const result = await invoke({
+          provider, auth: 'staff',
+          staff: { data: { ...activeStaff, role: scenario.role, team_id: null } },
+          member: { data: {
+            ...targetMember, id: memberId, assigned_staff_id: 'other-staff', team_id: 'team-b',
+            meta: held ? { source_site: 'lotto815', reco_paused: true, reco_pause_reason: 'legacy_import_review' } : {},
+          } },
+          body: scenario.body,
+        })
+        assert.equal(result.response.statusCode, scenario.status)
+        assert.equal(result.response.body.ok, scenario.status === 200)
+        if (scenario.status !== 200) {
+          assert.equal(result.response.body.code, scenario.status === 423 ? 'LEGACY_IMPORT_HOLD' : 'SMS_TARGET')
+        }
+        assert.equal(result.solapiCalls + result.oneshotCalls, scenario.status === 200 ? 1 : 0)
+        assert.deepEqual(result.holdRequests, [])
+        assert.deepEqual(result.events, scenario.status === 200 ? ['member-check', provider] : ['member-check'])
+      })
+    }
   }
 })
 
