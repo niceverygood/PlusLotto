@@ -9,8 +9,10 @@ type Provider = 'solapi' | 'oneshot'
 type RpcResult = { data?: unknown; error?: boolean; throws?: boolean }
 type FixtureOptions = {
   provider?: Provider
-  auth?: 'cron' | 'staff'
+  auth?: 'cron' | 'staff' | 'none'
   rpc?: RpcResult
+  staff?: RpcResult
+  member?: RpcResult
   missingConfig?: 'url' | 'key'
   body?: Record<string, unknown>
 }
@@ -41,6 +43,7 @@ async function invoke(options: FixtureOptions = {}) {
   let solapiCalls = 0
   let oneshotCalls = 0
   const holdRequests: unknown[] = []
+  const memberRequests: string[] = []
   const events: string[] = []
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
     status, headers: { 'content-type': 'application/json' },
@@ -57,7 +60,30 @@ async function invoke(options: FixtureOptions = {}) {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
     if (url.origin === 'https://sms-hold-test.supabase.co') {
       if (url.pathname === '/auth/v1/user') return json({ id: 'synthetic-user' })
-      if (url.pathname === '/rest/v1/staff') return json({ id: 'synthetic-staff', is_active: true })
+      if (url.pathname === '/rest/v1/staff') {
+        if (options.staff?.throws) throw new Error('synthetic private staff error')
+        if (options.staff?.error) return json({ code: 'TEST_ERROR' }, 500)
+        return json(options.staff ? options.staff.data : {
+          id: 'synthetic-staff', is_active: true, role: 'admin', team_id: 'synthetic-team',
+        })
+      }
+      if (url.pathname === '/rest/v1/members') {
+        events.push('member-check')
+        const memberId = (url.searchParams.get('id') ?? '').replace(/^eq\./, '')
+        memberRequests.push(memberId)
+        if (options.member?.throws) throw new Error('synthetic private member error: 010-0000-0001')
+        if (options.member?.error) return json({ code: 'TEST_ERROR', message: 'synthetic private member error' }, 500)
+        if (options.member) return json(options.member.data)
+        return json(memberId === 'synthetic-plus' || memberId === 'synthetic-815' ? {
+          id: memberId,
+          phone: '010-0000-0001',
+          assigned_staff_id: 'synthetic-staff',
+          team_id: 'synthetic-team',
+          meta: memberId === 'synthetic-815'
+            ? { source_site: 'lotto815', reco_paused: true, reco_pause_reason: 'legacy_import_review' }
+            : {},
+        } : null)
+      }
       if (url.pathname === '/rest/v1/rpc/sms_is_legacy_import_held') {
         events.push('hold-check')
         holdRequests.push(JSON.parse(String(init?.body)))
@@ -87,12 +113,12 @@ async function invoke(options: FixtureOptions = {}) {
   try {
     await handler({
       method: 'POST',
-      headers: options.auth === 'staff'
+      headers: options.auth === 'none' ? {} : options.auth === 'staff'
         ? { authorization: 'Bearer synthetic-staff-token' }
         : { 'x-internal-secret': 'synthetic-cron-secret' },
       body: options.body ?? { dest_phone: '010-0000-0001', msg_body: '격리된 테스트 메시지' },
     }, response)
-    return { response, solapiCalls, oneshotCalls, holdRequests, events }
+    return { response, solapiCalls, oneshotCalls, holdRequests, memberRequests, events }
   } finally {
     globalThis.fetch = originalFetch
     setGlobalDispatcher(originalDispatcher)
@@ -196,5 +222,232 @@ test('잘못된 check_only 값이 실제 발송으로 오인되지 않는다', a
     body: { dest_phone: '010-0000-0001', msg_body: '격리된 테스트 메시지', check_only: 'true' },
   })
   assert.equal(result.response.statusCode, 400)
+  assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+})
+
+const targetBody = {
+  member_id: 'synthetic-plus', dest_phone: '010-0000-0001', msg_body: '격리된 테스트 메시지',
+}
+const targetMember = {
+  id: 'synthetic-plus', phone: '010-0000-0001', assigned_staff_id: 'synthetic-staff',
+  team_id: 'synthetic-team', meta: {},
+}
+const activeStaff = {
+  id: 'synthetic-staff', is_active: true, role: 'admin', team_id: 'synthetic-team',
+}
+
+test('같은 전화번호의 플러스 회원은 발송 가능하고 이관 보류 중인 815 회원만 차단한다', async (t) => {
+  for (const provider of ['solapi', 'oneshot'] as const) {
+    for (const auth of ['cron', 'staff'] as const) {
+      for (const memberId of ['synthetic-plus', 'synthetic-815']) {
+        await t.test(`${provider}/${auth}/${memberId}`, async () => {
+          const held = memberId === 'synthetic-815'
+          const result = await invoke({ provider, auth, rpc: { data: true }, body: { ...targetBody, member_id: memberId } })
+          assert.equal(result.response.statusCode, held ? 423 : 200)
+          assert.equal(result.response.body.ok, !held)
+          assert.equal(result.solapiCalls + result.oneshotCalls, held ? 0 : 1)
+          assert.deepEqual(result.holdRequests, [])
+          assert.deepEqual(result.memberRequests, [memberId])
+          assert.deepEqual(result.events, held ? ['member-check'] : ['member-check', provider])
+        })
+      }
+    }
+  }
+})
+
+test('대상 회원의 실제 출처·보류 사유·boolean 정지 값으로만 이관 보류를 판단한다', async (t) => {
+  const cases = [
+    { meta: { source_site: 'lotto815', reco_paused: true, reco_pause_reason: 'legacy_import_review' }, held: true },
+    { meta: { source_site: 'cplotto', reco_paused: true, reco_pause_reason: 'legacy_import_review' }, held: true },
+    { meta: { source_site: 'infolotto', reco_paused: true, reco_pause_reason: 'legacy_import_review' }, held: true },
+    { meta: { source_site: 'lotto815', reco_paused: false, reco_pause_reason: 'legacy_import_review' }, held: false },
+    { meta: { source_site: 'lotto815', reco_paused: true, reco_pause_reason: 'other_reason' }, held: false },
+    { meta: { source_site: 'pluslotto', reco_paused: true, reco_pause_reason: 'legacy_import_review' }, held: false },
+    { meta: { source_site: null }, held: false },
+    { meta: null, held: false },
+  ]
+  for (const [index, scenario] of cases.entries()) {
+    await t.test(String(index), async () => {
+      const result = await invoke({ member: { data: { ...targetMember, meta: scenario.meta } }, body: { ...targetBody, check_only: true } })
+      assert.equal(result.response.statusCode, scenario.held ? 423 : 200)
+      assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+      assert.deepEqual(result.holdRequests, [])
+    })
+  }
+})
+
+test('회원별 요청은 기존 회원 RLS와 같은 직원 역할 범위를 지킨다', async (t) => {
+  const cases = [
+    { name: 'admin은 전체', role: 'admin', teamId: null, assigned: null, memberTeam: null, allowed: true },
+    { name: 'manager는 전체', role: 'manager', teamId: null, assigned: null, memberTeam: null, allowed: true },
+    { name: 'leader는 같은 팀', role: 'leader', teamId: 'team-a', assigned: null, memberTeam: 'team-a', allowed: true },
+    { name: 'leader는 다른 팀도 허용', role: 'leader', teamId: 'team-a', assigned: 'other-staff', memberTeam: 'team-b', allowed: true },
+    { name: 'leader는 팀 미지정이어도 전체', role: 'leader', teamId: null, assigned: null, memberTeam: null, allowed: true },
+    { name: 'leader는 팀 미지정이어도 다른 담당·팀 허용', role: 'leader', teamId: null, assigned: 'other-staff', memberTeam: 'team-b', allowed: true },
+    { name: 'rep은 본인 담당', role: 'rep', teamId: null, assigned: 'synthetic-staff', memberTeam: null, allowed: true },
+    { name: 'rep은 같은 팀이어도 타인 담당 거부', role: 'rep', teamId: 'team-a', assigned: 'other-staff', memberTeam: 'team-a', allowed: false },
+    { name: 'rep은 미배정 거부', role: 'rep', teamId: null, assigned: null, memberTeam: null, allowed: false },
+  ]
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const result = await invoke({
+        auth: 'staff', staff: { data: { ...activeStaff, role: scenario.role, team_id: scenario.teamId } },
+        member: { data: { ...targetMember, assigned_staff_id: scenario.assigned, team_id: scenario.memberTeam } },
+        // 클라이언트가 보낸 역할·담당자·팀은 권한 근거로 쓰지 않는다.
+        body: { ...targetBody, check_only: true, role: 'admin', staff_id: 'other-staff', team_id: 'team-a' },
+      })
+      assert.equal(result.response.statusCode, scenario.allowed ? 200 : 403)
+      assert.equal(result.response.body.code, scenario.allowed ? 'CHECK_ONLY' : 'SMS_TARGET')
+      assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+      assert.deepEqual(result.holdRequests, [])
+    })
+  }
+})
+
+test('실장 수동 발송의 팀 미지정 회귀를 복구해도 이관 보류·대상 검증·담당자 제한은 유지한다', async (t) => {
+  const cases = [
+    { name: '실장 팀 미지정 정상 대상', role: 'leader', body: targetBody, status: 200 },
+    { name: '실장 보류 815', role: 'leader', body: { ...targetBody, member_id: 'synthetic-815' }, status: 423 },
+    { name: '실장 다른 전화번호', role: 'leader', body: { ...targetBody, dest_phone: '010-0000-0002' }, status: 403 },
+    { name: '실장 위조 출처', role: 'leader', body: { ...targetBody, source_site: 'lotto815' }, status: 403 },
+    { name: '담당자 타인 회원', role: 'rep', body: targetBody, status: 403 },
+  ]
+  for (const provider of ['solapi', 'oneshot'] as const) {
+    for (const scenario of cases) {
+      await t.test(`${provider}/${scenario.name}`, async () => {
+        const memberId = scenario.body.member_id
+        const held = memberId === 'synthetic-815'
+        const result = await invoke({
+          provider, auth: 'staff',
+          staff: { data: { ...activeStaff, role: scenario.role, team_id: null } },
+          member: { data: {
+            ...targetMember, id: memberId, assigned_staff_id: 'other-staff', team_id: 'team-b',
+            meta: held ? { source_site: 'lotto815', reco_paused: true, reco_pause_reason: 'legacy_import_review' } : {},
+          } },
+          body: scenario.body,
+        })
+        assert.equal(result.response.statusCode, scenario.status)
+        assert.equal(result.response.body.ok, scenario.status === 200)
+        if (scenario.status !== 200) {
+          assert.equal(result.response.body.code, scenario.status === 423 ? 'LEGACY_IMPORT_HOLD' : 'SMS_TARGET')
+        }
+        assert.equal(result.solapiCalls + result.oneshotCalls, scenario.status === 200 ? 1 : 0)
+        assert.deepEqual(result.holdRequests, [])
+        assert.deepEqual(result.events, scenario.status === 200 ? ['member-check', provider] : ['member-check'])
+      })
+    }
+  }
+})
+
+test('활성 직원과 유효한 역할을 확인하지 못하면 대상 조회 전에 인증을 거부한다', async (t) => {
+  const cases: Record<string, RpcResult> = {
+    inactive: { data: { ...activeStaff, is_active: false } },
+    nullActive: { data: { ...activeStaff, is_active: null } },
+    missingActive: { data: { ...activeStaff, is_active: undefined } },
+    unknownRole: { data: { ...activeStaff, role: 'owner' } },
+    missingTeam: { data: { ...activeStaff, team_id: undefined } },
+    missingStaff: { data: null },
+    failed: { error: true },
+    unavailable: { throws: true },
+  }
+  for (const [name, staff] of Object.entries(cases)) {
+    await t.test(name, async () => {
+      const result = await invoke({ auth: 'staff', staff, body: targetBody })
+      assert.equal(result.response.statusCode, 401)
+      assert.deepEqual(result.events, [])
+      assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+    })
+  }
+  const noAuth = await invoke({ auth: 'none', body: { ...targetBody, check_only: true } })
+  assert.equal(noAuth.response.statusCode, 401)
+  assert.deepEqual(noAuth.memberRequests, [])
+})
+
+test('국내·+82·0082·820·00820 표현은 서버 회원 전화번호와 같은 번호일 때만 허용한다', async (t) => {
+  const phones = ['010-0000-0001', '+82 10-0000-0001', '0082-10-0000-0001', '+82 (0)10-0000-0001', '0082 (0)10-0000-0001']
+  for (const storedPhone of phones) {
+    for (const requestedPhone of phones) {
+      await t.test(`${storedPhone}/${requestedPhone}`, async () => {
+        const result = await invoke({
+          member: { data: { ...targetMember, phone: storedPhone } },
+          body: { ...targetBody, dest_phone: requestedPhone, check_only: true, source_site: 'pluslotto' },
+        })
+        assert.equal(result.response.statusCode, 200)
+        assert.equal(result.response.body.code, 'CHECK_ONLY')
+        assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+      })
+    }
+    await t.test(`815 hold/${storedPhone}`, async () => {
+      const result = await invoke({ body: { ...targetBody, member_id: 'synthetic-815', dest_phone: storedPhone } })
+      assert.equal(result.response.statusCode, 423)
+      assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+    })
+  }
+})
+
+test('대상 누락·다른 전화번호·위조 출처는 번호 전체 조회로 폴백하지 않는다', async (t) => {
+  const cases = [
+    { body: { ...targetBody, member_id: 'missing-member' }, status: 403 },
+    { body: { ...targetBody, dest_phone: '010-0000-0002' }, status: 403 },
+    { body: { ...targetBody, dest_phone: '000' }, status: 403 },
+    { body: { ...targetBody, source_site: 'lotto815' }, status: 403 },
+    { body: { ...targetBody, member_id: 'synthetic-815', source_site: 'pluslotto' }, status: 403 },
+    { body: { ...targetBody, source_site: 'all' }, status: 400 },
+    { body: { ...targetBody, source_site: null }, status: 400 },
+    { body: { ...targetBody, member_id: '' }, status: 400 },
+    { body: { ...targetBody, member_id: ' ' }, status: 400 },
+    { body: { ...targetBody, member_id: null }, status: 400 },
+    { body: { ...targetBody, member_id: 123 }, status: 400 },
+    { body: { ...targetBody, member_id: ['synthetic-plus'] }, status: 400 },
+    { body: { dest_phone: '010-0000-0001', msg_body: '테스트', source_site: 'pluslotto' }, status: 400 },
+  ]
+  for (const [index, scenario] of cases.entries()) {
+    await t.test(String(index), async () => {
+      const result = await invoke({ rpc: { data: false }, body: scenario.body })
+      assert.equal(result.response.statusCode, scenario.status)
+      assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+      assert.deepEqual(result.holdRequests, [])
+      assert.doesNotMatch(JSON.stringify(result.response.body), /synthetic|010[-]?0000[-]?0001/)
+    })
+  }
+})
+
+test('대상 회원 조회 오류·알 수 없는 응답은 두 벤더 모두 개인정보 없이 닫힌 상태로 실패한다', async (t) => {
+  const cases: Record<string, FixtureOptions> = {
+    error: { member: { error: true } },
+    connection: { member: { throws: true } },
+    wrongId: { member: { data: { ...targetMember, id: 'wrong-member' } } },
+    multipleRows: { member: { data: [targetMember, targetMember] } },
+    noPhone: { member: { data: { ...targetMember, phone: null } } },
+    invalidPhone: { member: { data: { ...targetMember, phone: '000' } } },
+    missingAssignment: { member: { data: { ...targetMember, assigned_staff_id: undefined } } },
+    wrongTeam: { member: { data: { ...targetMember, team_id: 123 } } },
+    missingMeta: { member: { data: { ...targetMember, meta: undefined } } },
+    arrayMeta: { member: { data: { ...targetMember, meta: [] } } },
+    unknownSite: { member: { data: { ...targetMember, meta: { source_site: 'unknown' } } } },
+    invalidSite: { member: { data: { ...targetMember, meta: { source_site: 123 } } } },
+    stringPause: { member: { data: { ...targetMember, meta: { source_site: 'lotto815', reco_paused: 'false' } } } },
+    invalidReason: { member: { data: { ...targetMember, meta: { reco_pause_reason: [] } } } },
+    missingUrl: { missingConfig: 'url' },
+    missingKey: { missingConfig: 'key' },
+  }
+  for (const [name, options] of Object.entries(cases)) {
+    for (const provider of ['solapi', 'oneshot'] as const) {
+      await t.test(`${name}/${provider}`, async () => {
+        const result = await invoke({ ...options, provider, body: targetBody })
+        assert.equal(result.response.statusCode, 503)
+        assert.equal(result.response.body.code, 'SMS_HOLD_CHECK')
+        assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+        assert.deepEqual(result.holdRequests, [])
+        assert.doesNotMatch(JSON.stringify(result.response.body), /synthetic|010[-]?0000[-]?0001/)
+      })
+    }
+  }
+})
+
+test('회원 check_only는 실제 본문이 있어도 정상 대상 검증 뒤 벤더를 호출하지 않는다', async () => {
+  const result = await invoke({ provider: 'oneshot', body: { ...targetBody, check_only: true } })
+  assert.equal(result.response.body.code, 'CHECK_ONLY')
+  assert.deepEqual(result.events, ['member-check'])
   assert.equal(result.solapiCalls + result.oneshotCalls, 0)
 })

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       assignments: {
@@ -279,6 +254,252 @@ export type Database = {
           },
           {
             foreignKeyName: "inquiries_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_member_memos: {
+        Row: {
+          archive_sha256: string
+          body: string | null
+          import_batch: string
+          imported_at: string
+          legacy_idx: number
+          member_id: string
+          occurred_at: string | null
+          prepared_record_sha256: string
+          source_author_idx: number | null
+          source_consult_status: string | null
+          source_insert_datetime: string | null
+          source_reservation_checked_yn: string | null
+          source_reserve_datetime: string | null
+          source_reserved_yn: string | null
+          source_site: string
+          source_status: string | null
+          source_team_open_yn: string | null
+          source_type: string | null
+          source_update_datetime: string | null
+          source_updater_idx: number | null
+          source_user_idx: number
+        }
+        Insert: {
+          archive_sha256: string
+          body?: string | null
+          import_batch: string
+          imported_at?: string
+          legacy_idx: number
+          member_id: string
+          occurred_at?: string | null
+          prepared_record_sha256: string
+          source_author_idx?: number | null
+          source_consult_status?: string | null
+          source_insert_datetime?: string | null
+          source_reservation_checked_yn?: string | null
+          source_reserve_datetime?: string | null
+          source_reserved_yn?: string | null
+          source_site: string
+          source_status?: string | null
+          source_team_open_yn?: string | null
+          source_type?: string | null
+          source_update_datetime?: string | null
+          source_updater_idx?: number | null
+          source_user_idx: number
+        }
+        Update: {
+          archive_sha256?: string
+          body?: string | null
+          import_batch?: string
+          imported_at?: string
+          legacy_idx?: number
+          member_id?: string
+          occurred_at?: string | null
+          prepared_record_sha256?: string
+          source_author_idx?: number | null
+          source_consult_status?: string | null
+          source_insert_datetime?: string | null
+          source_reservation_checked_yn?: string | null
+          source_reserve_datetime?: string | null
+          source_reserved_yn?: string | null
+          source_site?: string
+          source_status?: string | null
+          source_team_open_yn?: string | null
+          source_type?: string | null
+          source_update_datetime?: string | null
+          source_updater_idx?: number | null
+          source_user_idx?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_member_memos_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_member_sms: {
+        Row: {
+          archive_sha256: string
+          body: string | null
+          body_policy: string
+          contents_type: string
+          from_phone: string | null
+          import_batch: string
+          imported_at: string
+          legacy_idx: number
+          member_id: string
+          occurred_at: string | null
+          prepared_record_sha256: string
+          source_author_idx: number | null
+          source_insert_datetime: string | null
+          source_reserve_datetime: string | null
+          source_result_code: string | null
+          source_result_yn: string | null
+          source_site: string
+          source_status: string | null
+          source_type: string | null
+          source_update_datetime: string | null
+          source_updater_idx: number | null
+          source_user_idx: number
+          subject: string | null
+          to_phone: string | null
+        }
+        Insert: {
+          archive_sha256: string
+          body?: string | null
+          body_policy: string
+          contents_type: string
+          from_phone?: string | null
+          import_batch: string
+          imported_at?: string
+          legacy_idx: number
+          member_id: string
+          occurred_at?: string | null
+          prepared_record_sha256: string
+          source_author_idx?: number | null
+          source_insert_datetime?: string | null
+          source_reserve_datetime?: string | null
+          source_result_code?: string | null
+          source_result_yn?: string | null
+          source_site: string
+          source_status?: string | null
+          source_type?: string | null
+          source_update_datetime?: string | null
+          source_updater_idx?: number | null
+          source_user_idx: number
+          subject?: string | null
+          to_phone?: string | null
+        }
+        Update: {
+          archive_sha256?: string
+          body?: string | null
+          body_policy?: string
+          contents_type?: string
+          from_phone?: string | null
+          import_batch?: string
+          imported_at?: string
+          legacy_idx?: number
+          member_id?: string
+          occurred_at?: string | null
+          prepared_record_sha256?: string
+          source_author_idx?: number | null
+          source_insert_datetime?: string | null
+          source_reserve_datetime?: string | null
+          source_result_code?: string | null
+          source_result_yn?: string | null
+          source_site?: string
+          source_status?: string | null
+          source_type?: string | null
+          source_update_datetime?: string | null
+          source_updater_idx?: number | null
+          source_user_idx?: number
+          subject?: string | null
+          to_phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_member_sms_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_member_wins: {
+        Row: {
+          archive_sha256: string
+          import_batch: string
+          imported_at: string
+          legacy_idx: number
+          member_id: string
+          numbers: number[]
+          occurred_at: string | null
+          prepared_record_sha256: string
+          prize: number
+          rank: number
+          round_no: number
+          source_checked_yn: string | null
+          source_insert_datetime: string | null
+          source_pick_from: string | null
+          source_pick_string: string
+          source_pick_type: string | null
+          source_site: string
+          source_status: string | null
+          source_update_datetime: string | null
+          source_user_idx: number
+        }
+        Insert: {
+          archive_sha256: string
+          import_batch: string
+          imported_at?: string
+          legacy_idx: number
+          member_id: string
+          numbers: number[]
+          occurred_at?: string | null
+          prepared_record_sha256: string
+          prize: number
+          rank: number
+          round_no: number
+          source_checked_yn?: string | null
+          source_insert_datetime?: string | null
+          source_pick_from?: string | null
+          source_pick_string: string
+          source_pick_type?: string | null
+          source_site: string
+          source_status?: string | null
+          source_update_datetime?: string | null
+          source_user_idx: number
+        }
+        Update: {
+          archive_sha256?: string
+          import_batch?: string
+          imported_at?: string
+          legacy_idx?: number
+          member_id?: string
+          numbers?: number[]
+          occurred_at?: string | null
+          prepared_record_sha256?: string
+          prize?: number
+          rank?: number
+          round_no?: number
+          source_checked_yn?: string | null
+          source_insert_datetime?: string | null
+          source_pick_from?: string | null
+          source_pick_string?: string
+          source_pick_type?: string | null
+          source_site?: string
+          source_status?: string | null
+          source_update_datetime?: string | null
+          source_user_idx?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_member_wins_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
             referencedRelation: "members"
@@ -900,6 +1121,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_815_collision_phone_peers: {
+        Args: { p_member_ids: string[]; p_phones: string[] }
+        Returns: Json
+      }
       admin_bets_page: {
         Args: {
           p_limit?: number
@@ -922,6 +1147,28 @@ export type Database = {
       admin_dashboard: { Args: { p_source_site?: string }; Returns: Json }
       admin_delete_member_reco: {
         Args: { p_issued_at: string; p_member_id: string; p_round_no: number }
+        Returns: Json
+      }
+      admin_import_815_collision_batch: {
+        Args: {
+          p_batch_id: string
+          p_expected_amount: number
+          p_expected_member_count: number
+          p_expected_payment_count: number
+          p_members: Json
+          p_payments: Json
+        }
+        Returns: Json
+      }
+      admin_import_815_review_batch: {
+        Args: {
+          p_batch_id: string
+          p_expected_amount: number
+          p_expected_member_count: number
+          p_expected_payment_count: number
+          p_members: Json
+          p_payments: Json
+        }
         Returns: Json
       }
       admin_member_facets: {
@@ -991,12 +1238,28 @@ export type Database = {
         Args: { p_source_site: string }
         Returns: string
       }
+      admin_verify_815_batch_holds: {
+        Args: { p_batch_id: string }
+        Returns: Json
+      }
       app_can_see_member: { Args: { mid: string }; Returns: boolean }
       app_role: { Args: never; Returns: Database["public"]["Enums"]["role"] }
       app_staff_id: { Args: never; Returns: string }
       app_team: { Args: never; Returns: string }
       app_touch_login: { Args: never; Returns: undefined }
       canonical_inflow_type: { Args: { p_value: string }; Returns: string }
+      legacy_815_source_datetime: { Args: { p_raw: string }; Returns: string }
+      member_legacy_history_page: {
+        Args: {
+          p_before_at?: string
+          p_before_idx?: number
+          p_before_round?: number
+          p_kind: string
+          p_limit?: number
+          p_member_id: string
+        }
+        Returns: Json
+      }
       member_operating_site: {
         Args: { "": Database["public"]["Tables"]["members"]["Row"] }
         Returns: {
@@ -1005,6 +1268,10 @@ export type Database = {
       }
       portal_member_recos: {
         Args: { p_phone: string; p_pw: string }
+        Returns: Json
+      }
+      portal_member_recos_for_site: {
+        Args: { p_phone: string; p_pw: string; p_source_site: string }
         Returns: Json
       }
       portal_membership_tiers: { Args: never; Returns: Json }
@@ -1157,9 +1424,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       assign_type: ["manual", "auto"],

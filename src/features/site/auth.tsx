@@ -1,10 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 // 플러스로또 고객 홈페이지 — 회원 인증 컨텍스트 (Phase 1 공유 기반)
 // ─────────────────────────────────────────────────────────────────────────
-// 운영콘솔(staff) 인증과 완전히 분리된 "고객 회원" 세션. localStorage('site_member')에 보관.
-// 로그인은 PortalPage 의 portal_member_recos RPC(security definer) 로직을 그대로 재사용.
-//   - 라이브(supabase): supabase.rpc('portal_member_recos', { p_phone, p_pw }) → { name, grade, recos }
-//   - mock: readDb().members 에서 전화/뒷4자리(meta.homepage_pw 우선) 검증
+// 운영콘솔(staff) 인증과 분리된 고객 세션. sourceSite를 포함한 v2 캐시만 복원한다.
+// 양쪽 로그인 화면은 lib/portalLogin을 공유하며 사이트 안에서 기존 계약 선택 규칙을 적용한다.
 // 비밀번호 규칙: member.meta.homepage_pw 우선, 없으면 전화번호 뒷 4자리(homepagePw).
 //
 // ── Phase2 가 쓸 export 시그니처 ─────────────────────────────────────────
@@ -19,7 +17,7 @@
 //       recos: WeeklyRecoIssue[]   // [{ round_no:number; issued_at:string; sets:number[][] }]
 //     }
 //   loading: boolean           // 초기 세션 복원 중 true
-//   login(phone, pw): Promise<{ ok:boolean; error?:string }>
+//   login(phone, pw, sourceSite?): Promise<{ ok:boolean; error?:string }>
 //   logout(): void
 //   signup(input): Promise<{ ok:boolean; error?:string }>   // SignupInput 아래 참조
 //     - 실제 members INSERT 는 RLS(anon)+트리거(members_admin_ops)로 차단 → '가입문의' 폴백.
@@ -35,18 +33,15 @@ import {
   type ReactNode,
 } from 'react'
 import { BRAND } from '@/lib/brand'
-import { homepagePw } from '@/lib/homepage'
 import { dataSource, supabase } from '@/lib/supabase'
-import { readDb } from '@/lib/db/store'
-import type { Grade, WeeklyRecoIssue } from '@/types/db'
+import { loginPortal } from '@/lib/portalLogin'
+import {
+  DEFAULT_PORTAL_SITE, loadPortalSession, savePortalSession,
+  type PortalMemberSession, type PortalSourceSite,
+} from '@/lib/portalScope'
 
 // ── 공개 타입 ────────────────────────────────────────────────────────────
-export interface SiteMember {
-  name: string
-  grade: Grade
-  phone: string
-  recos: WeeklyRecoIssue[]
-}
+export type SiteMember = PortalMemberSession
 
 export interface SignupInput {
   name: string
@@ -63,28 +58,17 @@ export interface AuthResult {
 export interface MemberAuthValue {
   member: SiteMember | null
   loading: boolean
-  login: (phone: string, pw: string) => Promise<AuthResult>
+  login: (phone: string, pw: string, sourceSite?: PortalSourceSite) => Promise<AuthResult>
   logout: () => void
   signup: (input: SignupInput) => Promise<AuthResult>
 }
-
-const STORAGE_KEY = 'site_member'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
 // ── 세션 영속화(localStorage) ────────────────────────────────────────────
 function loadSession(): SiteMember | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const v = JSON.parse(raw) as Partial<SiteMember>
-    if (!v || typeof v.name !== 'string' || typeof v.grade !== 'string') return null
-    return {
-      name: v.name,
-      grade: v.grade as Grade,
-      phone: typeof v.phone === 'string' ? v.phone : '',
-      recos: Array.isArray(v.recos) ? (v.recos as WeeklyRecoIssue[]) : [],
-    }
+    return loadPortalSession(localStorage)
   } catch {
     return null
   }
@@ -92,44 +76,10 @@ function loadSession(): SiteMember | null {
 
 function saveSession(m: SiteMember | null): void {
   try {
-    if (m) localStorage.setItem(STORAGE_KEY, JSON.stringify(m))
-    else localStorage.removeItem(STORAGE_KEY)
+    savePortalSession(localStorage, m)
   } catch {
     /* private 모드 등 — 무시(메모리 세션만 유지) */
   }
-}
-
-// ── 로그인 코어 (PortalPage 로직 재사용) ──────────────────────────────────
-async function doLogin(phone: string, pw: string): Promise<SiteMember | null> {
-  const d = digits(phone)
-  const p = pw.trim()
-  if (d.length < 9 || !p) return null
-
-  if (dataSource === 'supabase' && supabase) {
-    const { data, error } = await supabase.rpc('portal_member_recos', { p_phone: d, p_pw: p })
-    if (error) throw error
-    if (!data) return null
-    const r = data as { name: string; grade: Grade; recos: WeeklyRecoIssue[] }
-    return {
-      name: r.name,
-      grade: r.grade,
-      phone: d,
-      recos: Array.isArray(r.recos) ? r.recos : [],
-    }
-  }
-
-  // mock: 동일 규칙(meta.homepage_pw 우선, 기본=뒷4자리)
-  const m = readDb()
-    .members.filter((x) => digits(x.phone) === d && !x.is_deleted && !x.is_withdrawn)
-    .sort((a, b) => b.registered_at.localeCompare(a.registered_at))[0]
-  if (!m) return null
-  const expected =
-    (typeof m.meta?.homepage_pw === 'string' && m.meta.homepage_pw) || homepagePw(m.phone)
-  if (p !== expected) return null
-  const recos = Array.isArray(m.meta?.weekly_recos)
-    ? (m.meta!.weekly_recos as WeeklyRecoIssue[])
-    : []
-  return { name: m.name, grade: m.grade, phone: d, recos }
 }
 
 // ── 회원가입 코어 ─────────────────────────────────────────────────────────
@@ -199,10 +149,13 @@ export function MemberAuthProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }, [])
 
-  const login = useCallback(async (phone: string, pw: string): Promise<AuthResult> => {
+  const login = useCallback(async (phone: string, pw: string, sourceSite: PortalSourceSite = DEFAULT_PORTAL_SITE): Promise<AuthResult> => {
+    // 다른 사이트의 로그인 실패 후 이전 계약 데이터가 계속 표시되지 않게 비운다.
+    setMember(null)
+    saveSession(null)
     try {
-      const m = await doLogin(phone, pw)
-      if (!m) return { ok: false, error: '전화번호 또는 비밀번호가 일치하지 않습니다.' }
+      const m = await loginPortal(phone, pw, sourceSite)
+      if (!m) return { ok: false, error: '선택한 서비스의 회원 정보와 일치하지 않습니다. 서비스와 전화번호, 비밀번호를 확인해주세요.' }
       setMember(m)
       saveSession(m)
       return { ok: true }

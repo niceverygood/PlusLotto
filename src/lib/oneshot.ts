@@ -25,6 +25,8 @@ export interface OneShotResult {
 }
 
 export interface OneShotSendInput {
+  member_id?: string // 회원 발송 경로는 필수 전달. 서버가 권한·전화번호·이관 보류를 해당 회원 기준으로 확인한다.
+  source_site?: string // 선택적 예상 출처. 실제 출처는 서버의 회원 행을 사용한다.
   dest_phone: string
   msg_body: string
   send_phone: string

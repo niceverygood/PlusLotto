@@ -269,7 +269,7 @@ async function buildJoinSmsRow(
   const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
   let status = '미발송'
   if (realSend) {
-    const r = await sendOneShot({ dest_phone: member.phone, msg_body: body, send_phone: sms.sender_no })
+    const r = await sendOneShot({ member_id: member.id, source_site: memberSite(member.meta), dest_phone: member.phone, msg_body: body, send_phone: sms.sender_no })
     status = r.ok ? '발송완료' : '실패'
   }
   return {

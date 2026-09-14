@@ -12,6 +12,7 @@ import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecor
 import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
 import { mapPool } from '@/lib/async'
 import { sendOneShot } from '@/lib/oneshot'
+import { memberSite } from '@/lib/siteScope'
 import { markWinSmsSent, readWinSms, shouldSendWinSms, winSmsBody, winSmsSentRounds } from '@/lib/winSms'
 import { generateRecommendation } from '@/lib/lottoGenerator'
 import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
@@ -161,6 +162,8 @@ export async function confirmRound(roundNo: number, actor: string | null): Promi
         let status = '미발송'
         if (realSend) {
           const r = await sendOneShot({
+            member_id: member.id,
+            source_site: memberSite(member.meta),
             dest_phone: member.phone,
             msg_body: body,
             send_phone: settings.sms.sender_no,

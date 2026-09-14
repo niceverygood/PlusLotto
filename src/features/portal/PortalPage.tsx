@@ -1,55 +1,26 @@
 // 고객 홈페이지(포털) 최소 버전 (현장 피드백 — 무료회원 주간발급 확인용).
 // 공개 라우트(/portal): 전화번호 + 비밀번호(기본 뒷4자리)로 로그인 → 본인 발급번호 조회.
-// 운영콘솔 staff 인증과 무관. 라이브=portal_member_recos RPC(security definer), mock=로컬 DB 검증.
+// 운영콘솔 staff 인증과 무관. 사이트를 명시한 로그인으로 계약별 조회를 분리한다.
 // 풀 홈페이지(분석/멤버십/고객센터, ilhanglotto.co.kr 참고)는 별도 단계 — ASSUMPTIONS 참조.
 import { useState, type FormEvent } from 'react'
 import { BRAND } from '@/lib/brand'
 import { Loader2, LogIn, LogOut, Phone } from 'lucide-react'
 import { Badge, LottoBalls } from '@/design-system/components'
 import { datetime } from '@/lib/format'
-import { homepagePw } from '@/lib/homepage'
-import { dataSource, supabase } from '@/lib/supabase'
-import { readDb } from '@/lib/db/store'
-import type { Grade, WeeklyRecoIssue } from '@/types/db'
-
-interface PortalSession {
-  name: string
-  grade: Grade
-  recos: WeeklyRecoIssue[]
-}
-
-const digits = (s: string) => s.replace(/\D/g, '')
-
-async function portalLogin(phone: string, pw: string): Promise<PortalSession | null> {
-  const d = digits(phone)
-  if (d.length < 9 || !pw.trim()) return null
-  if (dataSource === 'supabase' && supabase) {
-    const { data, error } = await supabase.rpc('portal_member_recos', { p_phone: d, p_pw: pw.trim() })
-    if (error) throw error
-    if (!data) return null
-    const r = data as { name: string; grade: Grade; recos: WeeklyRecoIssue[] }
-    return { name: r.name, grade: r.grade, recos: Array.isArray(r.recos) ? r.recos : [] }
-  }
-  // mock: 동일 규칙(meta.homepage_pw 우선, 기본=뒷4자리)
-  const m = readDb()
-    .members.filter((x) => digits(x.phone) === d && !x.is_deleted && !x.is_withdrawn)
-    .sort((a, b) => b.registered_at.localeCompare(a.registered_at))[0]
-  if (!m) return null
-  const expected = (typeof m.meta?.homepage_pw === 'string' && m.meta.homepage_pw) || homepagePw(m.phone)
-  if (pw.trim() !== expected) return null
-  const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-  return { name: m.name, grade: m.grade, recos }
-}
+import { loginPortal } from '@/lib/portalLogin'
+import { DEFAULT_PORTAL_SITE, isPortalSourceSite, PORTAL_SITES, type PortalMemberSession, type PortalSourceSite } from '@/lib/portalScope'
+import { siteScopeLabel } from '@/lib/siteScope'
 
 const inputCls =
   'h-12 w-full rounded-md border border-gray-300 bg-white px-3.5 text-[15px] text-gray-800 outline-none focus:border-primary-500'
 
 export function PortalPage() {
+  const [sourceSite, setSourceSite] = useState<PortalSourceSite>(DEFAULT_PORTAL_SITE)
   const [phone, setPhone] = useState('')
   const [pw, setPw] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [session, setSession] = useState<PortalSession | null>(null)
+  const [session, setSession] = useState<PortalMemberSession | null>(null)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -57,9 +28,9 @@ export function PortalPage() {
     setBusy(true)
     setError(null)
     try {
-      const s = await portalLogin(phone, pw)
+      const s = await loginPortal(phone, pw, sourceSite)
       if (s) setSession(s)
-      else setError('전화번호 또는 비밀번호가 일치하지 않습니다.')
+      else setError('선택한 서비스의 회원 정보와 일치하지 않습니다. 서비스와 전화번호, 비밀번호를 확인해주세요.')
     } catch {
       setError('일시적인 오류입니다. 잠시 후 다시 시도해주세요.')
     } finally {
@@ -106,6 +77,22 @@ export function PortalPage() {
             )}
             <form onSubmit={onSubmit} className="space-y-3">
               <label className="block">
+                <span className="mb-1.5 block text-[12.5px] font-semibold text-gray-600">가입 서비스</span>
+                <select
+                  className={inputCls}
+                  value={sourceSite}
+                  disabled={busy}
+                  onChange={(e) => {
+                    if (isPortalSourceSite(e.target.value)) setSourceSite(e.target.value)
+                    setPw('')
+                    setError(null)
+                  }}
+                >
+                  {PORTAL_SITES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
+                </select>
+                <span className="mt-1.5 block text-[12px] text-gray-500">가입한 서비스를 선택하면 해당 서비스의 발급 내역을 확인할 수 있습니다.</span>
+              </label>
+              <label className="block">
                 <span className="mb-1.5 block text-[12.5px] font-semibold text-gray-600">전화번호</span>
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
@@ -115,6 +102,7 @@ export function PortalPage() {
                     autoComplete="tel"
                     placeholder="01012345678"
                     value={phone}
+                    disabled={busy}
                     onChange={(e) => setPhone(e.target.value)}
                   />
                 </div>
@@ -128,6 +116,7 @@ export function PortalPage() {
                   autoComplete="current-password"
                   placeholder="전화번호 뒷 4자리"
                   value={pw}
+                  disabled={busy}
                   onChange={(e) => setPw(e.target.value)}
                 />
               </label>
@@ -145,6 +134,7 @@ export function PortalPage() {
           <div>
             <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-4 py-3.5 shadow-sm">
               <span className="text-[15px] font-bold text-ink-900">{session.name}님</span>
+              <span className="text-xs text-gray-500">{siteScopeLabel(session.sourceSite)}</span>
               <Badge grade={session.grade} />
               <span className="ml-auto text-[11.5px] text-gray-400">
                 발급 {session.recos.length}회
