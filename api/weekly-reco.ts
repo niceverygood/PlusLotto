@@ -1003,7 +1003,23 @@ export default async function handler(req: any, res: any) {
     }
 
     // 전 등급 조회 — 무료=기본 금요일, 그 외 등급=발송요일 설정된 회원만(6/11 피드백).
-    // 대량(15만) 대비 range 페이지네이션.
+    // 대량(15만) 대비 페이지네이션 — 커서(키셋) 방식.
+    //
+    // 왜 오프셋(.range)을 쓰지 않는가 (현장 9/14 사고)
+    //   오프셋은 "앞에서 N개 건너뛰고 1000개"라서, 읽는 도중 앞쪽에 행이 하나 끼어들거나
+    //   빠지면 그 뒤 전체가 한 칸씩 밀린다. 밀리는 방향에 따라 페이지 경계의 회원이
+    //   **두 번 읽히거나**(중복 발송) **아예 안 읽힌다**(조용한 누락). 09:00 발송 시점은
+    //   신규 가입·상태 변경·레거시 적재가 함께 도는 시간이라 이 흔들림이 실제로 일어난다.
+    //
+    //   2026-09-14 실제 사고: 유료회원 한 명에게 1242회차 조합문자가 같은 실행에서 두 번
+    //   나갔다. 증거 — sms_sends 두 행의 member_id 가 동일, sent_at 이 밀리초까지 동일
+    //   (ts 는 실행당 한 번 계산되므로 같은 실행), 행 id 의 시각 접두사만 1ms 차이.
+    //   즉 대상 목록에 같은 회원이 두 번 들어갔고, 멱등 검사(recos[0].round_no)는 목록을
+    //   만들 때 한 번만 보므로 두 번째를 막지 못한다.
+    //
+    //   커서 방식은 "마지막으로 읽은 id 다음부터"라서 동시 삽입·삭제와 무관하게 각 행을
+    //   정확히 한 번 읽는다. 누락 쪽도 같이 닫힌다.
+    const PAGE = 1000
     const rows: {
       id: string
       grade: string
@@ -1011,19 +1027,42 @@ export default async function handler(req: any, res: any) {
       phone: string | null
       meta: Record<string, unknown> | null
     }[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data: mData, error: me } = await sb
+    let cursor: string | null = null
+    for (;;) {
+      let q = sb
         .from('members')
         .select('id, grade, name, phone, meta')
         .eq('is_deleted', false)
         .eq('is_withdrawn', false)
         .eq('is_suspended', false) // 일시정지(정지) 회원은 자동발급·문자 제외(현장 6/26)
         .order('id')
-        .range(from, from + 999)
+        .limit(PAGE)
+      if (cursor !== null) q = q.gt('id', cursor)
+      const { data: mData, error: me } = await q
       if (me) throw me
       const page = (mData ?? []) as typeof rows
       rows.push(...page)
-      if (page.length < 1000) break
+      if (page.length < PAGE) break
+      cursor = page[page.length - 1].id
+    }
+
+    // 방어선. 커서 방식이면 중복이 나올 수 없지만, 여기서 새는 순간 대가가 '유료회원에게
+    // 문자 두 번 + 발송비 이중 지출'이라 값이 싼 검사를 한 겹 더 둔다. 조용히 넘기지 않고
+    // 로그를 남겨, 다시 새면 원인을 바로 짚을 수 있게 한다.
+    const seenIds = new Set<string>()
+    const dupIds: string[] = []
+    const uniqueRows = rows.filter((r) => {
+      if (seenIds.has(r.id)) {
+        dupIds.push(r.id)
+        return false
+      }
+      seenIds.add(r.id)
+      return true
+    })
+    if (dupIds.length > 0) {
+      console.warn(
+        `[weekly-reco] 대상 목록에 중복 ${dupIds.length}건 — 제거 후 진행: ${dupIds.slice(0, 10).join(', ')}`,
+      )
     }
 
     let issued = 0
@@ -1037,12 +1076,12 @@ export default async function handler(req: any, res: any) {
     const issuedByGrade = new Map<string, number>()
     // 1) 적격 회원 선별(게이트) — CPU만, 빠름. 발급/발송은 2)에서 병렬.
     const eligible: {
-      r: (typeof rows)[number]
+      r: (typeof uniqueRows)[number]
       meta: Record<string, unknown>
       recos: WeeklyRecoIssue[]
       count: number
     }[] = []
-    for (const r of rows) {
+    for (const r of uniqueRows) {
       const meta = r.meta ?? {}
       const day =
         typeof meta.weekly_reco_day === 'number'
