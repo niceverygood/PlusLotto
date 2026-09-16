@@ -28,7 +28,7 @@ export { memberKeys }
 export function useLegacyMemberHistory(memberId: string, kind: LegacyHistoryKind) {
   const user = useCurrentUser()
   return useInfiniteQuery({
-    queryKey: ['legacy815History', memberId, kind, user?.id, user?.role, user?.teamId],
+    queryKey: ['legacyMemberHistory', memberId, kind, user?.id, user?.role, user?.teamId],
     enabled: Boolean(memberId && user),
     initialPageParam: null as LegacyHistoryCursor | null,
     queryFn: ({ pageParam }): Promise<LegacyHistoryPage> => dataSource === 'supabase'
