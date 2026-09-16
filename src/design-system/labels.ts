@@ -38,6 +38,7 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   bank: '무통장',
   manual: '수기',
   pg: 'PG',
+  unknown: '이전자료 미기재',
 }
 
 export const SMS_TYPE_LABEL: Record<SmsType, string> = {

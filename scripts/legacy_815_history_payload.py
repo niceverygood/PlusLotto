@@ -1,4 +1,4 @@
-"""Pure conversion of reviewed 815/ilhang history; no I/O, network, or SQL execution.
+"""Pure conversion of reviewed 815/ilhang/info history; no I/O, network, or SQL execution.
 
 The private preparation manifest and source archive must be verified by the caller.
 This module validates one prepared record and returns (table, insert_payload).
@@ -31,7 +31,7 @@ POLICIES = frozenset(('body_preserved', 'credential_type_omitted',
                       'credential_pattern_omitted', 'unreviewed_type_omitted'))
 TABLES = {'userMemo': 'legacy_member_memos', 'pushSms': 'legacy_member_sms',
           'gameBettingNlotto': 'legacy_member_wins'}
-SOURCE_SITES = frozenset(('lotto815', 'cplotto'))
+SOURCE_SITES = frozenset(('lotto815', 'cplotto', 'infolotto'))
 COMMON = {'idx', 'userIdx', 'insertDateTime', 'updateDateTime'}
 ALLOWED = {
     'userMemo': COMMON | set('salesIdx statCode statTmCode groupTeamOpenYN typeCode contents insertUserIdx updateUserIdx reservYN reservCheckYN reservDateTime'.split()),

@@ -1,3 +1,4 @@
+import { legacyPaymentProductName } from '@/lib/legacyPayment'
 // 회원 상세 Drawer — §8 교차연동 허브. 탭(기본정보·결제내역·문자내역·배정이력·메모) +
 // 액션(등급변경·담당변경·정지·아웃콜·문자발송). 모든 액션은 api 뮤테이션 →
 // 관련 쿼리 무효화 + 로그/배정/문자 부수효과를 만든다.
@@ -833,7 +834,7 @@ export function MemberDrawer({
                   })()}
                   <StatusChip status={p.status} />
                   <span className="text-[12.5px] font-semibold text-ink-800">
-                    {p.product_id ? productName[p.product_id] ?? p.product_id : '-'}
+                    {p.product_id ? productName[p.product_id] ?? p.product_id : legacyPaymentProductName(p) ?? '-'}
                   </span>
                   <span className="text-[11.5px] text-gray-400">
                     {PAYMENT_METHOD_LABEL[p.method]}

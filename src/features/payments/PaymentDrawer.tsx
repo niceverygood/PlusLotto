@@ -1,3 +1,4 @@
+import { legacyPaymentProductName } from '@/lib/legacyPayment'
 // 결제 상세 Drawer (CLAUDE §6·§8). 회원 상세의 '결제내역'과 동일 데이터 소스(usePayment).
 // 액션: 승인 / PG취소 — 둘 다 회원 등급·매출에 §8 부수효과가 있으므로 확인 모달(§10).
 // 결제내역 수정(금액·결제수단·PG사·입금자명·상품(등급)·담당자·결제일시)은 실장 이상 전용
@@ -215,7 +216,7 @@ export function PaymentDrawer({
           ) : payment.product ? (
             <Badge grade={payment.product.grade_granted}>{payment.product.name}</Badge>
           ) : (
-            '-'
+            legacyPaymentProductName(payment) ?? '-'
           )}
         </Row>
         <Row label="결제수단">
@@ -226,7 +227,7 @@ export function PaymentDrawer({
                 value={draft.method}
                 onChange={(e) => setDraft({ ...draft, method: e.target.value as PaymentMethod })}
               >
-                {METHODS.map((m) => (
+                {(payment.method === 'unknown' ? [...METHODS, 'unknown' as const] : METHODS).map((m) => (
                   <option key={m} value={m}>
                     {PAYMENT_METHOD_LABEL[m]}
                   </option>

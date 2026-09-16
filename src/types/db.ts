@@ -1,3 +1,4 @@
+import type { Database as PaymentMethodDatabase } from './paymentMethod.generated'
 // 플러스로또 도메인 타입 — 라이브 Supabase 확정 전 수기 작성한 인터림 모델.
 // TODO(live-verify): 실 DB 연결 시 `supabase gen types typescript` 결과로 대체/정합. (DECISIONS D1)
 
@@ -17,7 +18,7 @@ export type MemberStatus = 'active' | 'suspended' | 'deleted' | 'withdrawn'
 
 export type PaymentStatus = 'wait' | 'approved' | 'failed' | 'cancelled'
 
-export type PaymentMethod = 'bank' | 'manual' | 'pg' // 무통장 | 수기 | PG
+export type PaymentMethod = PaymentMethodDatabase['public']['Enums']['payment_method']
 
 export type SmsType = 'join' | 'recommend' | 'win' | 'terms' | 'marketing' | 'direct' // 가입·추천·당첨·약관·마케팅·직접입력
 

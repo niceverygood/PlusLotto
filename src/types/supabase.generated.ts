@@ -1294,7 +1294,7 @@ export type Database = {
       inquiry_status: "open" | "answered"
       log_kind: "admin" | "point" | "sms" | "payment" | "inflow"
       member_status: "active" | "suspended" | "deleted" | "withdrawn"
-      payment_method: "bank" | "manual" | "pg"
+      payment_method: "bank" | "manual" | "pg" | "unknown"
       payment_status: "wait" | "approved" | "failed" | "cancelled"
       report_frequency: "daily" | "weekly" | "monthly"
       role: "admin" | "manager" | "leader" | "rep"
@@ -1431,7 +1431,7 @@ export const Constants = {
       inquiry_status: ["open", "answered"],
       log_kind: ["admin", "point", "sms", "payment", "inflow"],
       member_status: ["active", "suspended", "deleted", "withdrawn"],
-      payment_method: ["bank", "manual", "pg"],
+      payment_method: ["bank", "manual", "pg", "unknown"],
       payment_status: ["wait", "approved", "failed", "cancelled"],
       report_frequency: ["daily", "weekly", "monthly"],
       role: ["admin", "manager", "leader", "rep"],

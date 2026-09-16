@@ -32,7 +32,7 @@ import { paymentColumns } from './columns'
 import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 
 const PAGE_SIZE = 50
-const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg']
+const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg', 'unknown']
 const PRODUCT_GRADES: Grade[] = ['goldp', 'vip', 'royal']
 const PG_PROVIDERS = ['웰컴페이먼츠', '페이허브', '플러스페이']
 const TAB_LABEL: Record<PaymentStatusTab, string> = {
