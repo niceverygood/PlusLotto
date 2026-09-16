@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { Button, LottoBalls, Tabs } from '@/design-system/components'
 import { krw } from '@/lib/format'
+import { legacySiteLabel, type LegacyHistorySite } from '@/lib/legacySites'
 import { useLegacyMemberHistory } from './api'
 import { formatLegacySourceDatetime, type LegacyHistoryKind } from './legacyHistory'
 
 const tabs = [{ key: 'memo', label: '상담메모' }, { key: 'sms', label: '문자기록' }, { key: 'win', label: '당첨기록' }]
 
-export function LegacyHistorySection({ memberId }: { memberId: string }) {
+export function LegacyHistorySection({ memberId, sourceSite }: { memberId: string; sourceSite: LegacyHistorySite }) {
   const [kind, setKind] = useState<LegacyHistoryKind>('memo')
   const query = useLegacyMemberHistory(memberId, kind)
   const rows = query.data?.pages.flatMap((page) => page.rows) ?? []
-  return <section aria-label="815 이전 전산 이력" className="space-y-4">
-    <p className="text-sm text-gray-500">815 이전 전산에 기록된 내용입니다. 아래 시각은 원본 기록 시각이며, 문자 접수·도달 여부와 다를 수 있습니다.</p>
+  const siteLabel = legacySiteLabel(sourceSite)
+  return <section aria-label={`${siteLabel} 이전 전산 이력`} className="space-y-4">
+    <p className="text-sm text-gray-500">{siteLabel} 이전 전산에 기록된 내용입니다. 아래 시각은 원본 기록 시각이며, 문자 접수·도달 여부와 다를 수 있습니다.</p>
     <Tabs tabs={tabs} value={kind} onChange={(value) => setKind(value as LegacyHistoryKind)} />
     {query.isPending && <p role="status" className="py-6 text-center text-sm text-gray-500">이력을 불러오는 중입니다.</p>}
     {query.isError && <div role="alert" className="rounded-lg border border-gray-200 p-4 text-sm text-gray-700">

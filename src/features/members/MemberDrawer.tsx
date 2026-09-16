@@ -28,6 +28,7 @@ import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, roundForGrade, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { memberSite } from '@/lib/siteScope'
+import { supportedLegacyHistorySite } from '@/lib/legacySites'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
 import { AGE_BANDS, COMPLAINT_RESULTS, COMPLAINT_TYPES, CONSULT_STATUSES, GENDERS, TENDENCIES } from './views'
 import type { CallRecording, Grade, SmsSend, WeeklyRecoIssue } from '@/types/db'
@@ -292,6 +293,7 @@ export function MemberDrawer({
     )
   }
   const id = member.id
+  const historySite = supportedLegacyHistorySite(memberSite(member.meta))
   // 발급조합 삭제(§8) — 실장까지 확장(현장 피드백 7/24, 정의현 차장).
   const canDeleteReco = role === 'admin' || role === 'manager' || role === 'leader'
 
@@ -309,7 +311,7 @@ export function MemberDrawer({
       ? [{ key: 'calls', label: '통화녹음', count: readCallRecordings(member).length || undefined } as TabItem]
       : []),
     { key: 'complaints', label: '민원관리', count: readComplaints(member).length || undefined },
-    ...(memberSite(member.meta) === 'lotto815' ? [{ key: 'legacy-history', label: '이전 전산 이력' }] : []),
+    ...(historySite ? [{ key: 'legacy-history', label: '이전 전산 이력' }] : []),
   ]
 
   const title = (
@@ -447,7 +449,7 @@ export function MemberDrawer({
       </div>
 
       <Tabs tabs={tabs} value={tab} onChange={(k) => setTab(k as DrawerTab)} className="mb-4" />
-      {tab === 'legacy-history' && memberSite(member.meta) === 'lotto815' && <LegacyHistorySection key={id} memberId={id} />}
+      {tab === 'legacy-history' && historySite && <LegacyHistorySection key={id} memberId={id} sourceSite={historySite} />}
 
       {tab === 'info' && (
         <dl className="grid grid-cols-3 gap-x-4 gap-y-3">

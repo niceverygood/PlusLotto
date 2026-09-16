@@ -8,6 +8,13 @@ export const LEGACY_SITES = [
 
 export type LegacySiteKey = (typeof LEGACY_SITES)[number]['key']
 
+/** 과거 이력 저장소까지 지원하는 출처. 사이트 선택 목록과 별도로 관리한다. */
+export type LegacyHistorySite = 'lotto815' | 'cplotto'
+
+export function supportedLegacyHistorySite(site: string): LegacyHistorySite | null {
+  return site === 'lotto815' || site === 'cplotto' ? site : null
+}
+
 export function legacySiteLabel(key: string): string {
   return LEGACY_SITES.find((site) => site.key === key)?.label ?? key
 }

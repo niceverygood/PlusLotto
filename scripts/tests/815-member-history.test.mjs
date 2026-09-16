@@ -7,6 +7,8 @@ const db = new PGlite()
 const load = name => readFile(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8')
 const migration = await load('20260910140000_legacy_815_member_history.sql')
 const reviewAccess = await load('20260914052203_legacy_history_leader_review_access.sql')
+const cplottoHistory = await load('20260916020038_cplotto_member_history.sql')
+const validateCplottoHistory = await load('20260916020233_validate_cplotto_member_history.sql')
 const hash = 'a'.repeat(64)
 let sequence = 100
 async function as(role, id, fn) {
@@ -192,4 +194,77 @@ test('repeatable read preserves ordinary edits and refuses identity mutations wi
   await db.exec('BEGIN ISOLATION LEVEL REPEATABLE READ')
   await assert.rejects(db.exec("UPDATE members SET meta=meta||'{\"legacy_idx\":999}' WHERE id='m3'"),{code:'40001'})
   await db.exec('ROLLBACK')
+})
+
+test('cplotto extension preserves existing 815 rows, policies, grants, functions, and queues',async()=>{
+  const state=async()=> (await db.query(`SELECT
+    (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM members m) AS members,
+    (SELECT jsonb_agg(to_jsonb(h) ORDER BY source_site,legacy_idx) FROM legacy_member_memos h) AS memos,
+    (SELECT jsonb_agg(to_jsonb(h) ORDER BY source_site,legacy_idx) FROM legacy_member_sms h) AS sms,
+    (SELECT jsonb_agg(to_jsonb(h) ORDER BY source_site,legacy_idx,round_no) FROM legacy_member_wins h) AS wins,
+    (SELECT jsonb_agg(to_jsonb(p) ORDER BY tablename,policyname) FROM pg_policies p
+      WHERE tablename LIKE 'legacy_member_%') AS policies,
+    (SELECT jsonb_agg(to_jsonb(g) ORDER BY grantee,table_name,privilege_type) FROM information_schema.role_table_grants g
+      WHERE table_name LIKE 'legacy_member_%') AS grants,
+    (SELECT jsonb_agg(pg_get_functiondef(oid) ORDER BY proname) FROM pg_proc
+      WHERE proname IN ('member_legacy_history_page','legacy_history_check_member_source','legacy_history_preserve_member_identity')) AS functions,
+    (SELECT count(*) FROM sms_sends) AS queue_count,
+    (SELECT count(*) FROM bets) AS bets_count`).then(r=>r.rows[0]))
+  const before=await state()
+  await db.exec(cplottoHistory)
+  assert.deepEqual((await db.query(`SELECT convalidated FROM pg_constraint
+    WHERE conname IN ('legacy_member_memos_source_site_check','legacy_member_sms_source_site_check','legacy_member_wins_source_site_check')`)).rows,
+    [{convalidated:false},{convalidated:false},{convalidated:false}])
+  await db.exec(validateCplottoHistory)
+  await db.exec(cplottoHistory)
+  await db.exec(validateCplottoHistory)
+  assert.deepEqual(await state(),before)
+  const constraints=(await db.query(`SELECT convalidated,pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conname IN ('legacy_member_memos_source_site_check','legacy_member_sms_source_site_check','legacy_member_wins_source_site_check')`)).rows
+  assert.equal(constraints.length,3)
+  for(const constraint of constraints) {
+    assert.equal(constraint.convalidated,true)
+    assert.match(constraint.definition,/lotto815.*cplotto/)
+  }
+})
+
+test('cplotto history has independent source keys and preserves all role boundaries',async()=>{
+  for(const [id,idx,staff,site] of [['cp1',1,'rep','cplotto'],['cp2',2,'other','cplotto'],['cp3',3,'admin','cplotto'],['unsupported',1,'rep','infolotto']]) {
+    await db.query('INSERT INTO members(id,user_id,name,assigned_staff_id,meta) VALUES ($1,$1,$1,$2,$3)',
+      [id,staff,JSON.stringify({source_site:site,legacy_idx:idx,reco_paused:true})])
+  }
+  for(const table of ['memos','sms','wins']) {
+    const sharedKey={legacy_idx:888888,source_user_idx:1}
+    await as('service_role',null,()=>insert(table,sharedKey))
+    const cp=await as('service_role',null,()=>insert(table,{...sharedKey,source_site:'cplotto',member_id:'cp1',...(table==='memos'?{source_team_open_yn:'N'}:{})}))
+    await as('service_role',null,()=>assert.rejects(insert(table,cp),{code:'23505'}))
+    for(const [member_id,source_user_idx] of [['cp2',2],['cp3',3]])
+      await as('service_role',null,()=>insert(table,{source_site:'cplotto',member_id,source_user_idx}))
+    for(const overrides of [{source_site:'cplotto',member_id:'m1'}, {source_site:'lotto815',member_id:'cp1'},
+      {source_site:'cplotto',member_id:'cp1',source_user_idx:2}])
+      await as('service_role',null,()=>assert.rejects(insert(table,overrides),{code:'23503'}))
+    await as('service_role',null,()=>assert.rejects(insert(table,{source_site:'infolotto',member_id:'unsupported'}),{code:'23514'}))
+    for(const role of ['anon','authenticated'])
+      await as(role,role==='authenticated'?uuid('admin'):null,()=>assert.rejects(insert(table,{source_site:'cplotto',member_id:'cp1'}),{code:'42501'}))
+  }
+  for(const key of ['admin','manager','leader','leaderNoTeam']) await as('authenticated',uuid(key),async()=>{
+    for(const kind of ['memo','sms','win']) for(const member of ['cp1','cp2','cp3']) {
+      const result=await page(kind,member)
+      assert.ok(result.rows.length>0,`${key}/${kind}/${member}`)
+      assert.ok(result.rows.every(row=>row.source_site==='cplotto'))
+    }
+  })
+  for(const [key,own,other] of [['rep','cp1','cp2'],['other','cp2','cp1']]) await as('authenticated',uuid(key),async()=>{
+    for(const kind of ['memo','sms','win']) {
+      assert.ok((await page(kind,own)).rows.length>0)
+      assert.equal((await page(kind,other)).rows.length,0)
+      assert.equal((await page(kind,'cp3')).rows.length,0)
+    }
+  })
+  for(const kind of ['memo','sms','win']) {
+    await as('anon',null,()=>assert.rejects(page(kind,'cp1'),{code:'42501'}))
+    await as('authenticated',uuid('noStaff'),async()=>assert.equal((await page(kind,'cp1')).rows.length,0))
+  }
+  await assert.rejects(db.exec("UPDATE members SET meta=meta||'{\"source_site\":\"lotto815\"}' WHERE id='cp1'"),{code:'23503'})
+  await assert.rejects(db.exec("DELETE FROM members WHERE id='cp1'"),{code:'23001'})
 })

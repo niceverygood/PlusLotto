@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { formatLegacySourceDatetime, parseLegacyHistoryPage } from '../../src/features/members/legacyHistory'
+import { legacySiteLabel, supportedLegacyHistorySite } from '../../src/lib/legacySites'
 
 const memo = { legacy_idx: '1', source_insert_datetime: '2026-08-31 15:55:54', body: '상담 내용' }
 const page = (rows: unknown[]) => ({ rows, has_more: false, next_cursor: null })
+test('only migrated history sites expose a correctly branded history tab', () => {
+  assert.equal(supportedLegacyHistorySite('lotto815'), 'lotto815')
+  assert.equal(supportedLegacyHistorySite('cplotto'), 'cplotto')
+  assert.equal(legacySiteLabel('lotto815'), '815로또')
+  assert.equal(legacySiteLabel('cplotto'), '일행로또')
+  for (const site of ['pluslotto', 'infolotto', 'unknown', 'all', '']) {
+    assert.equal(supportedLegacyHistorySite(site), null)
+  }
+})
 test('invalid legacy dates retain the original text instead of rolling into a different date', () => {
   for (const value of ['2025-02-29 18:01:02', '2025-01-01 24:00:00', '1900-02-29 18:01:02', '2025-04-31 18:01:02', '2025-01-01 23:59:60', '0000-00-00 00:00:00', '2025-01-01T18:01:02']) {
     assert.equal(formatLegacySourceDatetime(value), `${value} (시각 확인 필요)`)
