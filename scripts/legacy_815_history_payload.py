@@ -1,4 +1,4 @@
-"""Pure conversion of reviewed 815 history records; no I/O, network, or SQL execution.
+"""Pure conversion of reviewed 815/ilhang history; no I/O, network, or SQL execution.
 
 The private preparation manifest and source archive must be verified by the caller.
 This module validates one prepared record and returns (table, insert_payload).
@@ -31,6 +31,7 @@ POLICIES = frozenset(('body_preserved', 'credential_type_omitted',
                       'credential_pattern_omitted', 'unreviewed_type_omitted'))
 TABLES = {'userMemo': 'legacy_member_memos', 'pushSms': 'legacy_member_sms',
           'gameBettingNlotto': 'legacy_member_wins'}
+SOURCE_SITES = frozenset(('lotto815', 'cplotto'))
 COMMON = {'idx', 'userIdx', 'insertDateTime', 'updateDateTime'}
 ALLOWED = {
     'userMemo': COMMON | set('salesIdx statCode statTmCode groupTeamOpenYN typeCode contents insertUserIdx updateUserIdx reservYN reservCheckYN reservDateTime'.split()),
@@ -89,9 +90,10 @@ def source_yn(value):
     return value or None
 
 
-def stable_member_id(idx):
+def stable_member_id(idx, site='lotto815'):
+    require(isinstance(site, str) and site in SOURCE_SITES, 'source_site')
     return 'mem_' + str(uuid.uuid5(uuid.NAMESPACE_URL,
-        f'https://lotto-plus.co.kr/legacy/member/lotto815/{idx}'))
+        f'https://lotto-plus.co.kr/legacy/member/{site}/{idx}'))
 
 
 def history_insert_payload(record, *, archive_sha256, import_batch, expected_members):
@@ -101,10 +103,12 @@ expected_members must map integer source user IDs to their exact stable target I
 All required prepared literals are decoded anew. SMS body gating runs after
 decoding as well. No existing member, payment, or prepared record is modified.
 """
-    require(isinstance(record, dict) and record.get('source_site') == 'lotto815'
+    require(isinstance(record, dict) and isinstance(record.get('source_site'), str)
+            and record['source_site'] in SOURCE_SITES
             and record.get('historical_only') is True
             and record.get('source_values_encoding') == 'mysql_dump_tokens_not_decoded', 'record_envelope')
     table = record.get('source_table')
+    site = record['source_site']
     require(table in TABLES, 'source_table')
     require(isinstance(archive_sha256, str) and re.fullmatch('[0-9a-f]{64}', archive_sha256), 'archive_hash')
     require(isinstance(import_batch, str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,63}', import_batch), 'import_batch')
@@ -115,7 +119,7 @@ decoding as well. No existing member, payment, or prepared record is modified.
     values = {name: decode_mysql_token(token) for name, token in tokens.items()}
     idx = source_integer(values['idx'], minimum=1)
     user_idx = source_integer(values['userIdx'], minimum=1)
-    target = stable_member_id(user_idx)
+    target = stable_member_id(user_idx, site)
     require(type(record.get('source_user_idx')) is int and record['source_user_idx'] == int(user_idx)
             and record.get('target_member_id') == target
             and expected_members.get(int(user_idx)) == target, 'target_identity')
@@ -125,7 +129,7 @@ decoding as well. No existing member, payment, or prepared record is modified.
         key.append(int(source_integer(values['num'], minimum=1, maximum=2147483647)))
     require(record.get('legacy_key') == key
             and all(type(part) is int for part in record['legacy_key']), 'source_key')
-    payload = dict(source_site='lotto815', legacy_idx=idx, source_user_idx=user_idx,
+    payload = dict(source_site=site, legacy_idx=idx, source_user_idx=user_idx,
         member_id=target, source_insert_datetime=values['insertDateTime'],
         source_update_datetime=values['updateDateTime'], archive_sha256=archive_sha256,
         prepared_record_sha256=hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=False,
