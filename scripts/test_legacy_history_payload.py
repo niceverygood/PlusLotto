@@ -31,9 +31,9 @@ class HistoryPayloadTests(unittest.TestCase):
     def test_same_source_key_is_independent_across_sites_and_815_default_is_unchanged(self):
         original = 'mem_' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'https://lotto-plus.co.kr/legacy/member/lotto815/1'))
         self.assertEqual(stable_member_id(1), original)
-        self.assertNotEqual(stable_member_id(1, 'cplotto'), original)
+        self.assertEqual(len({stable_member_id(1, site) for site in ('lotto815', 'cplotto', 'infolotto')}), 3)
         for table in ('userMemo', 'pushSms', 'gameBettingNlotto'):
-            for site in ('lotto815', 'cplotto'):
+            for site in ('lotto815', 'cplotto', 'infolotto'):
                 record = self.record(site, table)
                 before = copy.deepcopy(record)
                 _, row = self.convert(record)
@@ -45,7 +45,7 @@ class HistoryPayloadTests(unittest.TestCase):
 
     def test_wrong_source_or_target_cannot_relabel_815_history_as_cplotto(self):
         record = self.record()
-        for site in ('pluslotto', 'infolotto', '', None, []):
+        for site in ('pluslotto', 'unknown', '', None, []):
             wrong = dict(record, source_site=site)
             with self.subTest(site=site), self.assertRaises(InvalidHistory):
                 self.convert(wrong)
@@ -56,20 +56,34 @@ class HistoryPayloadTests(unittest.TestCase):
         with self.assertRaises(InvalidHistory):
             self.convert(record, {1: stable_member_id(1)})
         with self.assertRaises(InvalidHistory):
-            stable_member_id(1, 'infolotto')
+            stable_member_id(1, 'unknown')
 
-    def test_cplotto_credential_and_unreviewed_sms_bodies_are_still_omitted(self):
+    def test_credential_and_unreviewed_sms_bodies_are_still_omitted_for_each_site(self):
         cases = [('userPwMofiy', 'text', 'credential_type_omitted'),
                  ('admin', 'text', 'unreviewed_type_omitted'),
                  ('thankCharge', 'text', 'unreviewed_type_omitted'),
                  ('autoPick', 'password = secret', 'credential_pattern_omitted')]
-        for contents_type, body, policy in cases:
-            record = self.record(table='pushSms')
-            record['source_sql_values'].update(contentsTypeCode=repr(contents_type), contents=repr(body))
-            _, row = self.convert(record)
-            self.assertEqual(row['body_policy'], policy)
-            for field in ('body', 'subject', 'from_phone', 'to_phone'):
-                self.assertNotIn(field, row)
+        for site in ('lotto815', 'cplotto', 'infolotto'):
+            for contents_type, body, policy in cases:
+                record = self.record(site, table='pushSms')
+                record['source_sql_values'].update(contentsTypeCode=repr(contents_type), contents=repr(body))
+                _, row = self.convert(record)
+                self.assertEqual(row['body_policy'], policy)
+                for field in ('body', 'subject', 'from_phone', 'to_phone'):
+                    self.assertNotIn(field, row)
+
+    def test_infolotto_cannot_accept_other_sites_member_or_unreviewed_source_fields(self):
+        for table in ('userMemo', 'pushSms', 'gameBettingNlotto'):
+            record = self.record('infolotto', table)
+            for site in ('lotto815', 'cplotto'):
+                with self.assertRaisesRegex(InvalidHistory, 'target_identity'):
+                    self.convert(dict(record, target_member_id=stable_member_id(1, site)))
+            # Source-only mirror/contact/status columns are kept in the private
+            # archive; they cannot silently replace reviewed public fields.
+            extra = {'userMemo': 'contentsDec', 'pushSms': 'sendCheckYN', 'gameBettingNlotto': 'userPhone'}[table]
+            record['source_sql_values'][extra] = "'unreviewed'"
+            with self.assertRaisesRegex(InvalidHistory, 'source_field_allowlist'):
+                self.convert(record)
 
     def test_removed_wins_keep_original_status_and_composite_key(self):
         record = self.record(table='gameBettingNlotto')

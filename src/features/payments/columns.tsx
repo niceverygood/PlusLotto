@@ -1,3 +1,4 @@
+import { legacyPaymentProductName } from '@/lib/legacyPayment'
 // 결제 테이블 컬럼 정의 (CLAUDE §6). 컬럼 순서(현장 피드백 7/23 — 담당자 바로 오른쪽에 유저 배치,
 // 8/4·8/12 — 유저 바로 오른쪽에 휴대폰):
 // No·상태·담당·유저·휴대폰·차수·결제수단·PG·금액·상품(Badge)·기간·유입코드·입금자명·결제일시.
@@ -132,7 +133,7 @@ export function paymentColumns(ctx: PaymentColumnsCtx): ColumnDef<PaymentRow>[] 
       enableSorting: false,
       cell: (info) => {
         const pr = info.row.original.product
-        if (!pr) return <span className="text-gray-300">-</span>
+        if (!pr) return <span className="text-gray-600">{legacyPaymentProductName(info.row.original) ?? '-'}</span>
         return <Badge grade={pr.grade_granted}>{pr.name}</Badge>
       },
     },

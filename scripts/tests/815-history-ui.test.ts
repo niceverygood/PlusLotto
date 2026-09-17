@@ -8,9 +8,11 @@ const page = (rows: unknown[]) => ({ rows, has_more: false, next_cursor: null })
 test('only migrated history sites expose a correctly branded history tab', () => {
   assert.equal(supportedLegacyHistorySite('lotto815'), 'lotto815')
   assert.equal(supportedLegacyHistorySite('cplotto'), 'cplotto')
+  assert.equal(supportedLegacyHistorySite('infolotto'), 'infolotto')
   assert.equal(legacySiteLabel('lotto815'), '815로또')
   assert.equal(legacySiteLabel('cplotto'), '일행로또')
-  for (const site of ['pluslotto', 'infolotto', 'unknown', 'all', '']) {
+  assert.equal(legacySiteLabel('infolotto'), '인포로또')
+  for (const site of ['pluslotto', 'unknown', 'all', '']) {
     assert.equal(supportedLegacyHistorySite(site), null)
   }
 })
