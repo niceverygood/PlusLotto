@@ -16,6 +16,7 @@ import { ManualPaymentPage } from '@/features/payments/ManualPaymentPage'
 import { RevenuePage } from '@/features/revenue/RevenuePage'
 import { LottoResultsPage } from '@/features/lotto/LottoResultsPage'
 import { RecommendPage } from '@/features/lotto/RecommendPage'
+import { SendAuditPage } from '@/features/lotto/SendAuditPage'
 import { BetsPage } from '@/features/bets/BetsPage'
 import { AdminsPage } from '@/features/admins/AdminsPage'
 import { RolesPage } from '@/features/admins/RolesPage'
@@ -150,6 +151,7 @@ export function AppRoutes() {
         <Route path="revenue" element={<RequireNav navKey="revenue"><RevenuePage /></RequireNav>} />
         <Route path="lotto/results" element={<RequireNav navKey="lotto"><LottoResultsPage /></RequireNav>} />
         <Route path="lotto/recommend" element={<RequireNav navKey="lotto"><RecommendPage /></RequireNav>} />
+        <Route path="lotto/send-audit" element={<RequireNav navKey="lotto"><SendAuditPage /></RequireNav>} />
         <Route path="bets" element={<RequireNav navKey="bets"><BetsPage /></RequireNav>} />
         <Route path="admins" element={<RequireNav navKey="admins"><AdminsPage /></RequireNav>} />
         <Route path="admins/roles" element={<RequireNav navKey="admins"><RolesPage /></RequireNav>} />
