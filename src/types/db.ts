@@ -236,11 +236,27 @@ export interface PgProvider {
 }
 
 export interface SmsSettings {
-  sender_no: string // 발신번호(OneShot send_phone/CALLBACK — 사전등록 필수)
+  sender_no: string // 발신번호(OneShot send_phone/CALLBACK — 사전등록 필수). 플러스로또 기본값.
+  /**
+   * 사이트별 발신번호(현장 9/18 — 이관 사이트 운영 시작 전 필수).
+   *
+   * 815·인포·일행 회원에게 플러스로또 발신번호로 문자가 나가면 회원은 모르는 번호로 받는다.
+   * 발신번호는 사전등록제라 브랜드별로 따로 등록해야 하고, CLAUDE.md 도 두 전산의 SMS 발신
+   * 계정을 완전히 분리하도록 정하고 있다.
+   *
+   * 여기 없는 사이트는 api/send-sms.ts 가 **발송을 거부한다**(폴백으로 기본 발신번호를 쓰지
+   * 않는다). 설정을 빠뜨린 채 보류만 풀어도 남의 번호로 나가는 일이 없게 하는 안전장치다.
+   */
+  by_site?: Partial<Record<'lotto815' | 'infolotto' | 'cplotto', SiteSmsSettings>>
   smtnt_id: string // OneShot 사용자 아이디(매뉴얼 id, 예: lotto_dream_api)
   smtnt_key: string // (미사용) OneShot 은 IP 화이트리스트 인증이라 API 키 없음 — 보존용
   oneshot_enabled: boolean // 실발송 사용(OneShot 경유) §V2-6
   ad_optout: string // 광고성 무료수신거부 번호(있으면 마케팅 문자에 (광고)+번호 자동표기)
+}
+
+/** 이관 사이트별 문자 설정. 비어 있으면 그 사이트는 발송하지 않는다(api/send-sms.ts). */
+export interface SiteSmsSettings {
+  sender_no: string // 그 사이트 이름으로 사전등록된 발신번호
 }
 
 export interface GradeColor {

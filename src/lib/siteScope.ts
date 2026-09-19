@@ -36,3 +36,14 @@ export function siteScopeOrFilter(scope: Exclude<SiteScope, 'all'>): string {
   // DB computed field와 집계 RPC가 같은 공백/누락 정규화를 사용한다.
   return `member_operating_site.eq.${scope}`
 }
+
+/**
+ * 회원 meta 기준 사이트 이름(문자 본문 $brand 용).
+ * 알 수 없는 출처값·'all' 은 기본(플러스로또) 이름으로 본다 — 문자 본문에 사이트 키가
+ * 그대로 노출되는 일이 없어야 한다.
+ */
+export function memberSiteLabel(meta: Record<string, unknown> | null | undefined): string {
+  const site = memberSite(meta)
+  const scope: SiteScope = isSiteScope(site) && site !== 'all' ? site : DEFAULT_SITE_SCOPE
+  return siteScopeLabel(scope)
+}
