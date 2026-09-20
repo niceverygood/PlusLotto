@@ -2,14 +2,20 @@
 // 템플릿 변수 치환 + 템플릿키→발송유형 매핑. 이용자/나의고객 모듈이 함께 사용.
 import type { Member, SmsType } from '@/types/db'
 import { homepageId, homepagePw } from '@/lib/homepage'
+import { memberSiteLabel } from '@/lib/siteScope'
 
-// 템플릿 본문 변수: $name $id $pw $num $contents $link (CLAUDE §4 sms_templates)
+// 템플릿 본문 변수: $name $id $pw $num $contents $link $brand (CLAUDE §4 sms_templates)
+//
+// $brand — 그 회원이 속한 사이트의 이름(플러스로또 / 815로또 / 인포로또 / 일행로또).
+// 이관 사이트 회원에게 "플러스로또" 라고 적힌 문자가 나가면 회원은 자기가 가입한 곳이 아니라고
+// 본다. 사이트마다 템플릿을 따로 두는 대신 한 벌을 두고 이 변수로 이름만 갈아끼운다(현장 9/18).
+// 빌드 시점 상수 BRAND 는 배포 단위(88로또/플러스로또)라 한 배포 안의 이관 사이트를 가르지 못한다.
 // TODO(live-verify): $num(회차 추천번호)은 실 연동 시 실제 값 주입.
 // overrides: 템플릿별 특수 발송(예: 약관)이 $contents 등을 회원 기본값 대신 채울 때 사용(현장 7/22).
 export function renderSms(
   body: string,
   m: Member,
-  overrides?: Partial<Record<'name' | 'id' | 'pw' | 'num' | 'contents' | 'link', string>>,
+  overrides?: Partial<Record<'name' | 'id' | 'pw' | 'num' | 'contents' | 'link' | 'brand', string>>,
 ): string {
   // 가입환영 문자의 $id/$pw는 실제 고객 홈페이지 로그인 자격증명이어야 한다(전화번호 / 기본 뒷4자리).
   // 예전엔 $id=관리자용 로그인ID(m.user_id)·$pw='****' 리터럴 문자열이 그대로 나가 회원이 안내받은
@@ -21,9 +27,10 @@ export function renderSms(
     num: '— 회차 추천번호 —',
     contents: m.win_history ?? '',
     link: '',
+    brand: memberSiteLabel(m.meta),
     ...overrides,
   }
-  return body.replace(/\$(name|id|pw|num|contents|link)/g, (_, k: string) => vars[k] ?? '')
+  return body.replace(/\$(name|id|pw|num|contents|link|brand)/g, (_, k: string) => vars[k] ?? '')
 }
 
 /**

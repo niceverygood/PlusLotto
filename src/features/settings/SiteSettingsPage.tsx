@@ -84,6 +84,10 @@ const formSchema = z.object({
     smtntKeyNew: z.string(),
     oneshot_enabled: z.boolean(),
     ad_optout: z.string(),
+    // 이관 사이트별 발신번호(현장 9/18). 비워두면 그 사이트는 발송되지 않는다(서버가 거부).
+    sender_lotto815: z.string(),
+    sender_infolotto: z.string(),
+    sender_cplotto: z.string(),
   }),
   win_messages: z.array(z.object({ rank: z.number(), body: z.string().min(1, '문구를 입력하세요.') })),
   // 당첨 안내문자 자동발송(현장 7/28) — 등수별 체크 + 유료/무료 체크. 선택한 분류만 발송.
@@ -140,6 +144,9 @@ function toForm(s: SiteSettings): FormValues {
       smtntKeyNew: '',
       oneshot_enabled: s.sms.oneshot_enabled ?? false,
       ad_optout: s.sms.ad_optout ?? '',
+      sender_lotto815: s.sms.by_site?.lotto815?.sender_no ?? '',
+      sender_infolotto: s.sms.by_site?.infolotto?.sender_no ?? '',
+      sender_cplotto: s.sms.by_site?.cplotto?.sender_no ?? '',
     },
     win_messages: s.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
     win_sms: {
@@ -215,6 +222,17 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
       smtnt_key: v.sms.smtntKeyNew.trim() || prev.sms.smtnt_key,
       oneshot_enabled: v.sms.oneshot_enabled,
       ad_optout: v.sms.ad_optout.trim(),
+      // 비운 사이트는 키를 만들지 않는다 — '미설정'이어야 서버가 발송을 막는다(폴백 금지).
+      by_site: Object.fromEntries(
+        ([
+          ['lotto815', v.sms.sender_lotto815],
+          ['infolotto', v.sms.sender_infolotto],
+          ['cplotto', v.sms.sender_cplotto],
+        ] as const)
+          .map(([site, no]) => [site, no.trim()] as const)
+          .filter(([, no]) => no.length > 0)
+          .map(([site, no]) => [site, { sender_no: no }]),
+      ),
     },
     win_messages: v.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
     win_sms: {
@@ -583,7 +601,34 @@ export function SiteSettingsPage() {
         <FieldRow label="발신번호" htmlFor="sender_no">
           <input id="sender_no" className={cn(inputCls, 'max-w-[220px] font-mono')} {...register('sms.sender_no')} />
           {errors.sms?.sender_no && <p className={errCls}>{errors.sms.sender_no.message}</p>}
-          <p className="mt-1 text-[11.5px] text-gray-400">OneShot 에 사전등록된 발신번호여야 발송됩니다.</p>
+          <p className="mt-1 text-[11.5px] text-gray-400">
+            OneShot 에 사전등록된 발신번호여야 발송됩니다. 아래 사이트별 번호가 없는 회원에게 이 번호가 쓰입니다.
+          </p>
+        </FieldRow>
+        <FieldRow label="사이트별 발신번호" align="start">
+          <div className="grid gap-2 sm:grid-cols-3">
+            {([
+              ['sms.sender_lotto815', '815로또'],
+              ['sms.sender_infolotto', '인포로또'],
+              ['sms.sender_cplotto', '일행로또'],
+            ] as const).map(([field, label]) => (
+              <div key={field}>
+                <label className="mb-1 block text-[11.5px] font-semibold text-gray-500" htmlFor={field}>
+                  {label}
+                </label>
+                <input
+                  id={field}
+                  className={cn(inputCls, 'font-mono')}
+                  placeholder="미설정"
+                  {...register(field)}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] text-warning">
+            이관 회원에게는 각 사이트 이름으로 사전등록된 번호로 나가야 합니다. <b>비워두면 그 사이트는 문자가
+            발송되지 않습니다</b> — 플러스로또 번호로 대신 나가지 않도록 막아둔 것입니다.
+          </p>
         </FieldRow>
         <FieldRow label="OneShot 아이디" htmlFor="smtnt_id">
           <input id="smtnt_id" className={cn(inputCls, 'max-w-[260px]')} {...register('sms.smtnt_id')} />
