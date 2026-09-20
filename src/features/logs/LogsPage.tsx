@@ -45,6 +45,8 @@ const ACTION_LABEL: Record<string, string> = {
   'member.duplicate_rejected': '중복 DB 입력 차단',
   'point.grant': '포인트 적립',
   'point.deduct': '포인트 차감',
+  'reco.weekly_issue': '조합 자동발급',
+  'reco.weekly_audit': '조합발송 점검',
 }
 
 const inputCls =

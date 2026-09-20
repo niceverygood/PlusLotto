@@ -691,6 +691,33 @@ export function buildSeed(): DbShape {
       },
       created_at: '2026-05-24T00:00:00.000Z',
     },
+    // 조합발송 점검(/lotto/send-audit) 데모용 — 실서버에서는 api/weekly-reco.ts?audit=1 이 적재한다.
+    {
+      id: 'log_audit_demo',
+      kind: 'admin',
+      actor: null,
+      action: 'reco.weekly_audit',
+      target_type: 'member',
+      target_id: null,
+      meta: {
+        round_no: 1242,
+        since: '2026-09-15T00:00:00.000Z',
+        checked: 1986,
+        expected: 1035,
+        miss_count: 2,
+        miss_not_issued: 1,
+        miss_sms_missing: 1,
+        miss_sms_failed: 0,
+        excluded: { day: 903, paused: 31, expired: 12, count_zero: 3, registered_after: 2, no_phone: 0 },
+        misses: [
+          { member_id: 'mem-demo-1', name: '남김종덕', phone: '01012341234', grade: 'vip', reason: 'not_issued' },
+          { member_id: 'mem-demo-2', name: '정남인', phone: '01043214321', grade: 'goldp', reason: 'sms_missing' },
+        ],
+        truncated: false,
+        channel: 'cron',
+      },
+      created_at: '2026-09-15T05:00:00.000Z',
+    },
   )
 
   return {

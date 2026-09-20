@@ -56,6 +56,7 @@ const NAV: NavGroup[] = [
     items: [
       { key: 'lotto', label: '로또기록', to: '/admin/lotto/results' },
       { key: 'lotto', label: '추천번호', to: '/admin/lotto/recommend' },
+      { key: 'lotto', label: '조합발송 점검', to: '/admin/lotto/send-audit' },
       { key: 'bets', label: '베팅', to: '/admin/bets' },
     ],
   },
