@@ -1,6 +1,7 @@
 // 기본 문자 멘트 템플릿(sms_templates) 편집 카드 — site_settings 와 별도 엔터티.
 // 저장 시 members(드로어·일괄·나의문자)의 동일 키 캐시도 함께 갱신(§8).
-// 변수: $name $id $pw $num $contents $link (lib/sms.renderSms 와 동일) + $round(조합문자 전용, 현장 8/4).
+// 변수: $name $id $pw $num $contents $link $brand (lib/sms.renderSms 와 동일) + $round(조합문자 전용, 현장 8/4).
+// $brand 는 회원이 속한 사이트 이름 — 이관 사이트 회원에게 "플러스로또" 가 나가지 않게 한다(현장 9/18).
 import { useEffect, useRef, useState } from 'react'
 import type { SmsTemplate } from '@/types/db'
 import { Button } from '@/design-system/components'
@@ -8,7 +9,7 @@ import { cn } from '@/lib/cn'
 import { SectionCard, hintCls, inputCls, labelCls, textareaCls } from './ui'
 import { useSaveSmsTemplates, useSmsTemplates } from './api'
 
-const VARS = ['$name', '$id', '$pw', '$num', '$round', '$contents', '$link']
+const VARS = ['$name', '$id', '$pw', '$num', '$round', '$brand', '$contents', '$link']
 
 export function TemplatesCard() {
   const { data: templates } = useSmsTemplates()

@@ -38,6 +38,56 @@ async function legacyImportHoldStatus(phone: string): Promise<'held' | 'clear' |
   }
 }
 
+// ── 사이트별 발신번호 ────────────────────────────────────────────────────────
+// 이관 사이트(815·인포·일행) 회원에게 플러스로또 발신번호로 문자가 나가면 회원은 모르는 번호로
+// 받는다. 발신번호는 사전등록제라 브랜드별로 따로 등록해야 하고, CLAUDE.md 도 두 전산의 SMS
+// 발신 계정을 완전히 분리하도록 정하고 있다.
+//
+// 호출자가 보낸 send_phone 을 그대로 믿지 않고 **서버가 회원의 사이트로 다시 고른다.** 발송
+// 경로가 11곳이라 호출자마다 고치면 한 곳만 빠져도 새고, 새로 생기는 경로는 또 빠진다.
+//
+// 설정이 없으면 기본 발신번호로 폴백하지 않고 **거부한다.** 보류만 풀고 발신번호 설정을
+// 빠뜨리는 것이 가장 하기 쉬운 실수인데, 폴백하면 그 실수가 곧바로 사고가 된다.
+type SiteSenderMap = Map<string, string>
+let senderCache: { at: number; map: SiteSenderMap } | null = null
+const SENDER_TTL_MS = 60_000 // 대량 발송(수천 건)에서 설정 조회가 건마다 나가지 않도록.
+
+/**
+ * 테스트 전용 — 위 캐시를 비운다. 캐시가 모듈 전역이라 한 프로세스에서 여러 시나리오를 돌리면
+ * 앞 테스트의 설정이 뒤 테스트로 샌다. 운영 코드는 이 함수를 부르지 않는다.
+ */
+export function __resetSiteSenderCacheForTests(): void {
+  senderCache = null
+}
+
+/** site_settings.sms.by_site → 사이트별 발신번호. 조회 실패는 null(= 발송 보류). */
+async function loadSiteSenders(): Promise<SiteSenderMap | null> {
+  const now = Date.now()
+  if (senderCache && now - senderCache.at < SENDER_TTL_MS) return senderCache.map
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  try {
+    const admin = createClient<Database>(url, key, { auth: { persistSession: false } })
+    const { data, error } = await admin.from('site_settings').select('sms').eq('id', 1)
+      .abortSignal(AbortSignal.timeout(5_000)).maybeSingle()
+    if (error || !isRecord(data)) return null
+    const sms = data.sms
+    const map: SiteSenderMap = new Map()
+    if (isRecord(sms) && isRecord(sms.by_site)) {
+      for (const [site, cfg] of Object.entries(sms.by_site)) {
+        if (!LEGACY_SITES.has(site) || !isRecord(cfg)) continue
+        const digits = String(cfg.sender_no ?? '').replace(/\D/g, '')
+        if (digits) map.set(site, digits)
+      }
+    }
+    senderCache = { at: now, map }
+    return map
+  } catch {
+    return null
+  }
+}
+
 // 호출자 인증(보안 D68): 무인증 공개 시 검증된 발신번호로 임의 SMS 가 무제한 발송 가능 →
 //   ① 서버-서버(크론): x-internal-secret === CRON_SECRET, 또는
 //   ② 브라우저(운영자): Authorization Bearer = 로그인 staff 의 Supabase access token.
@@ -46,6 +96,8 @@ type StaffRole = Database['public']['Enums']['role']
 type SmsCaller = { kind: 'cron' } | { kind: 'staff'; id: string; role: StaffRole; teamId: string | null }
 type AuthRequest = { headers?: Record<string, string | string[] | undefined> }
 type HoldStatus = 'held' | 'clear' | 'unavailable' | 'forbidden'
+/** 보류 판정 + 그 회원이 실제로 속한 사이트. 발신번호를 서버에서 고르기 위해 함께 돌려준다. */
+type HoldResult = { status: HoldStatus; site: string | null }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -102,43 +154,46 @@ async function authorize(req: AuthRequest): Promise<SmsCaller | null> {
 // service_role 조회이므로 직원 권한·목적지·출처를 이 경로에서 모두 검증해야 한다.
 async function memberHoldStatus(
   memberId: string, phone: string, expectedSite: string | undefined, caller: SmsCaller,
-): Promise<HoldStatus> {
+): Promise<HoldResult> {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return 'unavailable'
+  if (!url || !key) return { status: 'unavailable', site: null }
   try {
     const admin = createClient<Database>(url, key, { auth: { persistSession: false } })
     const { data: member, error } = await admin.from('members')
       .select('id, phone, assigned_staff_id, team_id, meta').eq('id', memberId)
       .abortSignal(AbortSignal.timeout(5_000)).maybeSingle()
-    if (error) return 'unavailable'
-    if (member === null) return 'forbidden'
+    if (error) return { status: 'unavailable', site: null }
+    if (member === null) return { status: 'forbidden', site: null }
     if (!isRecord(member) || member.id !== memberId || typeof member.phone !== 'string'
       || !isNullableId(member.assigned_staff_id) || !isNullableId(member.team_id)
-      || (member.meta !== null && !isRecord(member.meta))) return 'unavailable'
+      || (member.meta !== null && !isRecord(member.meta))) return { status: 'unavailable', site: null }
     if (caller.kind === 'staff') {
       // D51/D55 및 members_rw/app_can_see_member: 실장(leader)은 팀 배정과 무관하게 전체 회원 범위다.
       const allowed = caller.role === 'admin' || caller.role === 'manager' || caller.role === 'leader'
         || (caller.role === 'rep' && member.assigned_staff_id === caller.id)
-      if (!allowed) return 'forbidden'
+      if (!allowed) return { status: 'forbidden', site: null }
     }
     const actualPhone = domesticPhone(member.phone)
-    if (!actualPhone) return 'unavailable'
-    if (domesticPhone(phone) !== actualPhone) return 'forbidden'
+    if (!actualPhone) return { status: 'unavailable', site: null }
+    if (domesticPhone(phone) !== actualPhone) return { status: 'forbidden', site: null }
     const meta = member.meta ?? {}
     const rawSite = meta.source_site
-    if (rawSite !== undefined && rawSite !== null && typeof rawSite !== 'string') return 'unavailable'
+    if (rawSite !== undefined && rawSite !== null && typeof rawSite !== 'string') return { status: 'unavailable', site: null }
     const site = typeof rawSite === 'string' && rawSite.trim() ? rawSite.trim() : 'pluslotto'
-    if (!MEMBER_SITES.has(site)) return 'unavailable'
-    if (expectedSite !== undefined && expectedSite !== site) return 'forbidden'
+    if (!MEMBER_SITES.has(site)) return { status: 'unavailable', site: null }
+    if (expectedSite !== undefined && expectedSite !== site) return { status: 'forbidden', site: null }
     if (meta.reco_paused !== undefined && meta.reco_paused !== null && typeof meta.reco_paused !== 'boolean')
-      return 'unavailable'
+      return { status: 'unavailable', site: null }
     if (meta.reco_pause_reason !== undefined && meta.reco_pause_reason !== null && typeof meta.reco_pause_reason !== 'string')
-      return 'unavailable'
-    return LEGACY_SITES.has(site) && meta.reco_pause_reason === 'legacy_import_review' && meta.reco_paused === true
-      ? 'held' : 'clear'
+      return { status: 'unavailable', site: null }
+    return {
+      status: LEGACY_SITES.has(site) && meta.reco_pause_reason === 'legacy_import_review' && meta.reco_paused === true
+        ? 'held' : 'clear',
+      site,
+    }
   } catch {
-    return 'unavailable'
+    return { status: 'unavailable', site: null }
   }
 }
 
@@ -173,9 +228,10 @@ export default async function handler(req: any, res: any) {
     if ((hasMember && (typeof body.member_id !== 'string' || !body.member_id.trim() || body.member_id.length > 256))
       || (hasSite && (!hasMember || typeof body.source_site !== 'string' || !MEMBER_SITES.has(body.source_site))))
       return res.status(400).json({ ok: false, code: 'PARAM', message: '잘못된 발송 대상입니다.' })
-    const hold = hasMember
+    const holdResult: HoldResult = hasMember
       ? await memberHoldStatus(String(body.member_id), dest, hasSite ? String(body.source_site) : undefined, caller)
-      : await legacyImportHoldStatus(dest)
+      : { status: await legacyImportHoldStatus(dest), site: null }
+    const hold = holdResult.status
     if (hold === 'forbidden')
       return res.status(403).json({ ok: false, code: 'SMS_TARGET', message: '발송 대상을 확인할 수 없습니다.' })
     if (hold === 'unavailable')
@@ -194,6 +250,27 @@ export default async function handler(req: any, res: any) {
     if (checkOnly)
       return res.status(200).json({ ok: true, code: 'CHECK_ONLY', message: '발송 보류 확인 완료. 문자는 발송하지 않았습니다.' })
 
+    // 이관 사이트 회원이면 그 사이트로 등록된 발신번호를 쓴다. 없으면 보내지 않는다(위 주석 참조).
+    // 플러스로또(및 회원 식별이 없는 구형 요청)는 기존 기본 발신번호를 그대로 쓴다.
+    let effectiveSender = sender
+    if (holdResult.site !== null && LEGACY_SITES.has(holdResult.site)) {
+      const senders = await loadSiteSenders()
+      if (senders === null)
+        return res.status(503).json({
+          ok: false,
+          code: 'SMS_SENDER_LOOKUP',
+          message: '사이트별 발신번호를 확인할 수 없어 문자를 보내지 않았습니다. 연결 상태 확인 후 다시 시도해 주세요.',
+        })
+      const siteSender = senders.get(holdResult.site)
+      if (!siteSender)
+        return res.status(409).json({
+          ok: false,
+          code: 'SMS_SENDER_UNSET',
+          message: `${holdResult.site} 사이트의 발신번호가 설정되지 않아 문자를 보내지 않았습니다. 설정 > 문자 설정에서 사이트별 발신번호를 먼저 등록해 주세요.`,
+        })
+      effectiveSender = siteSender
+    }
+
     // ── Solapi 경로 (API키 HMAC 인증 → 고정IP/프록시 불필요). 키 설정 시 우선 사용. Fixie 한도 영구 해소(현장 6/30). ──
     // SOLAPI_ENABLED='true' 일 때만 Solapi 사용(IP화이트리스트 해제 검증 후 활성화). 그 전엔 OneShot 유지(현장 6/30).
     const solapiKey = process.env.SOLAPI_API_KEY
@@ -205,7 +282,7 @@ export default async function handler(req: any, res: any) {
         const signature = crypto.createHmac('sha256', solapiSecret).update(sdate + salt).digest('hex')
         const message: Record<string, unknown> = {
           to: dest,
-          from: sender,
+          from: effectiveSender,
           text: msg,
           type: msgType === 'MMS' ? 'MMS' : msgType === 'LMS' ? 'LMS' : 'SMS',
         }
@@ -232,7 +309,7 @@ export default async function handler(req: any, res: any) {
     const form = new UFormData()
     form.append('id', id)
     form.append('dest_phone', dest)
-    form.append('send_phone', sender)
+    form.append('send_phone', effectiveSender)
     form.append('msg_body', msg)
     if (msgType !== 'SMS') form.append('subject', String(body.subject ?? '안내').slice(0, 40))
     if (body.send_time) form.append('send_time', String(body.send_time)) // YYYYMMDDHHMISS, 없으면 즉시
