@@ -88,6 +88,7 @@ const formSchema = z.object({
     sender_lotto815: z.string(),
     sender_infolotto: z.string(),
     sender_cplotto: z.string(),
+    sender_lotto88: z.string(),
   }),
   win_messages: z.array(z.object({ rank: z.number(), body: z.string().min(1, '문구를 입력하세요.') })),
   // 당첨 안내문자 자동발송(현장 7/28) — 등수별 체크 + 유료/무료 체크. 선택한 분류만 발송.
@@ -147,6 +148,7 @@ function toForm(s: SiteSettings): FormValues {
       sender_lotto815: s.sms.by_site?.lotto815?.sender_no ?? '',
       sender_infolotto: s.sms.by_site?.infolotto?.sender_no ?? '',
       sender_cplotto: s.sms.by_site?.cplotto?.sender_no ?? '',
+      sender_lotto88: s.sms.by_site?.lotto88?.sender_no ?? '',
     },
     win_messages: s.win_messages.map((w) => ({ rank: w.rank, body: w.body })),
     win_sms: {
@@ -228,6 +230,7 @@ function toSettings(v: FormValues, prev: SiteSettings): SiteSettings {
           ['lotto815', v.sms.sender_lotto815],
           ['infolotto', v.sms.sender_infolotto],
           ['cplotto', v.sms.sender_cplotto],
+          ['lotto88', v.sms.sender_lotto88],
         ] as const)
           .map(([site, no]) => [site, no.trim()] as const)
           .filter(([, no]) => no.length > 0)
@@ -606,11 +609,12 @@ export function SiteSettingsPage() {
           </p>
         </FieldRow>
         <FieldRow label="사이트별 발신번호" align="start">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             {([
               ['sms.sender_lotto815', '815로또'],
               ['sms.sender_infolotto', '인포로또'],
               ['sms.sender_cplotto', '일행로또'],
+              ['sms.sender_lotto88', '88로또'],
             ] as const).map(([field, label]) => (
               <div key={field}>
                 <label className="mb-1 block text-[11.5px] font-semibold text-gray-500" htmlFor={field}>

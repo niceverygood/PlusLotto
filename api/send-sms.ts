@@ -111,8 +111,10 @@ function isNullableId(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && value.trim().length > 0)
 }
 
-const MEMBER_SITES = new Set(['pluslotto', 'lotto815', 'cplotto', 'infolotto'])
-const LEGACY_SITES = new Set(['lotto815', 'cplotto', 'infolotto'])
+// src/lib/legacySites.ts · src/lib/siteScope.ts 와 같은 목록이어야 한다. Vercel 함수는 src 를
+// import 할 수 없어 부득이 복제하며, scripts/tests/legacy-site-list-sync.test.ts 가 어긋남을 잡는다.
+const MEMBER_SITES = new Set(['pluslotto', 'lotto815', 'cplotto', 'infolotto', 'lotto88'])
+const LEGACY_SITES = new Set(['lotto815', 'cplotto', 'infolotto', 'lotto88'])
 
 // 목적지 일치는 서버가 읽은 회원 번호로 판정한다. 국내/+82/0082는 같은 번호로 비교한다.
 function domesticPhone(phone: string): string | null {

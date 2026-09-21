@@ -4,11 +4,14 @@ import { assertNoLegacyImportHold, isLegacyImportHeld } from '../../src/lib/lega
 
 const held = { source_site: 'lotto815', reco_pause_reason: 'legacy_import_review', reco_paused: true }
 
-test('이관 검수 보류는 세 이관 사이트에만 적용한다', () => {
-  for (const source_site of ['lotto815', 'cplotto', 'infolotto']) {
+test('이관 검수 보류는 이관 사이트에만 적용한다', () => {
+  // 88로또는 2026-09-21 부터 포함된다. 신전산으로 옮겨온 뒤 전환일(10/5)에 발송 대상으로
+  // 활성화될 때까지, 아직 운영 시작 전인 회원에게 문자가 나가면 안 된다
+  // (docs/LOTTO88_MIGRATION_PLAN.md 4단계).
+  for (const source_site of ['lotto815', 'cplotto', 'infolotto', 'lotto88']) {
     assert.equal(isLegacyImportHeld({ ...held, source_site }), true)
   }
-  for (const source_site of ['pluslotto', 'lotto88', '', null]) {
+  for (const source_site of ['pluslotto', 'premium', '', null]) {
     assert.equal(isLegacyImportHeld({ ...held, source_site }), false)
   }
 })

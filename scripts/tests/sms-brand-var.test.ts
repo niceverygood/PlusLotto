@@ -26,6 +26,7 @@ test('회원 출처 사이트 이름이 $brand 자리에 들어간다', () => {
     [{ source_site: 'lotto815' }, '815로또'],
     [{ source_site: 'infolotto' }, '인포로또'],
     [{ source_site: 'cplotto' }, '일행로또'],
+    [{ source_site: 'lotto88' }, '88로또'],
   ]
   for (const [meta, label] of cases) {
     assert.equal(renderSms('[$brand] $name님 안녕하세요', member(meta)), `[${label}] 홍길동님 안녕하세요`)
@@ -33,7 +34,7 @@ test('회원 출처 사이트 이름이 $brand 자리에 들어간다', () => {
 })
 
 test('알 수 없는 출처·all 이라도 사이트 키가 본문에 새어나가지 않는다', () => {
-  for (const source of ['unknown-site', 'all', '   ', 'lotto88']) {
+  for (const source of ['unknown-site', 'all', '   ', 'premium']) {
     const body = renderSms('[$brand]', member({ source_site: source }))
     assert.equal(body, '[플러스로또]')
     assert.ok(!body.includes(source.trim() || 'x'))
