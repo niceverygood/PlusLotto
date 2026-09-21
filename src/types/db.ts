@@ -247,7 +247,7 @@ export interface SmsSettings {
    * 여기 없는 사이트는 api/send-sms.ts 가 **발송을 거부한다**(폴백으로 기본 발신번호를 쓰지
    * 않는다). 설정을 빠뜨린 채 보류만 풀어도 남의 번호로 나가는 일이 없게 하는 안전장치다.
    */
-  by_site?: Partial<Record<'lotto815' | 'infolotto' | 'cplotto', SiteSmsSettings>>
+  by_site?: Partial<Record<'lotto815' | 'infolotto' | 'cplotto' | 'lotto88', SiteSmsSettings>>
   smtnt_id: string // OneShot 사용자 아이디(매뉴얼 id, 예: lotto_dream_api)
   smtnt_key: string // (미사용) OneShot 은 IP 화이트리스트 인증이라 API 키 없음 — 보존용
   oneshot_enabled: boolean // 실발송 사용(OneShot 경유) §V2-6

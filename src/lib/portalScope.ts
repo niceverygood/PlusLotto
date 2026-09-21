@@ -1,8 +1,16 @@
 import type { Grade, Member, WeeklyRecoIssue } from '../types/db'
-import { memberSite, SITE_SCOPES, type SiteScope } from './siteScope'
+import { memberSite, SELECTABLE_SITE_SCOPES, SITE_SCOPES, type SiteScope } from './siteScope'
 
 export type PortalSourceSite = Exclude<SiteScope, 'all'>
-export const PORTAL_SITES = SITE_SCOPES.filter(
+
+/**
+ * 고객 홈페이지 로그인에서 고를 수 있는 사이트.
+ *
+ * 아직 회원이 들어오지 않은 사이트(PENDING_SITE_SCOPES)는 제외한다. 목록에 띄우면 고객이
+ * 자기 사이트를 골랐는데 로그인이 실패하는 상황이 된다 — 아예 안 보이는 편이 낫다.
+ * 전환일에 PENDING_SITE_SCOPES 를 비우면 여기도 함께 열린다.
+ */
+export const PORTAL_SITES = SELECTABLE_SITE_SCOPES.filter(
   (site): site is (typeof SITE_SCOPES)[number] & { key: PortalSourceSite } => site.key !== 'all',
 )
 export const DEFAULT_PORTAL_SITE: PortalSourceSite = 'pluslotto'

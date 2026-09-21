@@ -13,7 +13,7 @@ import { useNavAccess } from '@/lib/navAccess'
 import { useNavBadges } from '@/lib/navBadges'
 import { canAccessWith, ROLE_LABEL, type NavKey } from '@/lib/permissions'
 import { BRAND } from '@/lib/brand'
-import { DEFAULT_SITE_SCOPE, isSiteScope, SITE_SCOPES, type SiteScope } from '@/lib/siteScope'
+import { DEFAULT_SITE_SCOPE, isSiteScope, SELECTABLE_SITE_SCOPES, type SiteScope } from '@/lib/siteScope'
 import { useSiteScope, useSiteScopeStore } from '@/lib/siteScopeStore'
 import { cn } from '@/lib/cn'
 import { datetime } from '@/lib/format'
@@ -267,7 +267,7 @@ export function AppShell() {
               className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-ink-900 focus:border-primary-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
               title={hasSiteData ? '목록과 집계에 적용할 사이트' : '이 화면은 사이트 공통으로 관리합니다'}
             >
-              {SITE_SCOPES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
+              {SELECTABLE_SITE_SCOPES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
             </select>
           </label>
           <div className="min-w-0">
