@@ -210,6 +210,66 @@ class BuildAll(unittest.TestCase):
         self.assertEqual(mig.summarize(built['members'], 'grade'), {'vip': 1, 'free': 1})
 
 
+class WeekdayCheck(unittest.TestCase):
+    """이관 후 문자가 나가느냐를 가르는 값. 옮기기 전에 --dry-run 으로 반드시 본다."""
+
+    def build(self, srcs):
+        return mig.build(srcs, [], [], BATCH)['members']
+
+    def test_유료회원_요일_미설정을_센다(self):
+        """신전산은 발송요일 없는 유료회원을 발송 대상에서 제외한다.
+        그대로 옮기면 이관 후 영영 문자를 못 받고, 구전산이 사라지면 원인도 못 찾는다."""
+        members = self.build([
+            member(id='a', grade='vip', meta={'weekly_reco_day': 2}),
+            member(id='b', grade='vip', meta={}),
+            member(id='c', grade='royal', meta={'weekly_reco_day': None}),
+            member(id='d', grade='free', meta={}),
+        ])
+        dist, missing_paid = mig.weekday_report(members)
+        self.assertEqual(missing_paid, 2, '유료 2명이 요일 미설정이어야 한다')
+        self.assertEqual(dist['화(2)'], 1)
+        self.assertEqual(dist['미설정'], 3)
+
+    def test_전원_요일이_있으면_경고하지_않는다(self):
+        members = self.build([
+            member(id='a', grade='vip', meta={'weekly_reco_day': 2}),
+            member(id='b', grade='goldp', meta={'weekly_reco_day': 2}),
+        ])
+        _, missing_paid = mig.weekday_report(members)
+        self.assertEqual(missing_paid, 0)
+
+    def test_무료회원_미설정은_경고_대상이_아니다(self):
+        """무료는 기본 금요일로 폴백되므로 발송이 끊기지 않는다."""
+        members = self.build([member(id='f', grade='free', meta={})])
+        _, missing_paid = mig.weekday_report(members)
+        self.assertEqual(missing_paid, 0)
+
+    def test_요일값은_요일이름과_함께_보여준다(self):
+        members = self.build([member(id='a', grade='vip', meta={'weekly_reco_day': 5})])
+        dist, _ = mig.weekday_report(members)
+        self.assertIn('금(5)', dist)
+
+    def test_잘못된_요일값은_미설정으로_센다(self):
+        members = self.build([
+            member(id='a', grade='vip', meta={'weekly_reco_day': 9}),
+            member(id='b', grade='vip', meta={'weekly_reco_day': '2'}),
+        ])
+        dist, missing_paid = mig.weekday_report(members)
+        self.assertEqual(dist['미설정'], 2)
+        self.assertEqual(missing_paid, 2)
+
+    def test_미설정이_있으면_report_가_경고를_찍는다(self):
+        import io
+        from contextlib import redirect_stdout
+
+        built = mig.build([member(grade='vip', meta={})], [], [], BATCH)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            mig.report(built)
+        self.assertIn('발송요일이 없다', out.getvalue())
+        self.assertIn('임의로 채우지 말 것', out.getvalue())
+
+
 class NoPiiInOutput(unittest.TestCase):
     """출력은 건수·집계만이어야 한다. 이름·전화번호가 화면이나 로그에 찍히면 안 된다."""
 

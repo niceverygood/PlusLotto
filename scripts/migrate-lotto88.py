@@ -184,6 +184,33 @@ def summarize(rows: Iterable[dict[str, Any]], key: str) -> dict[str, int]:
     return dict(Counter(str(row.get(key)) for row in rows))
 
 
+PAID_GRADES = frozenset({'gold', 'goldp', 'vip', 'royal'})
+WEEKDAY_LABEL = ('일', '월', '화', '수', '목', '금', '토')
+
+
+def weekday_report(members: list[dict[str, Any]]) -> tuple[dict[str, int], int]:
+    """발송요일 분포와 '유료인데 요일 미설정' 인원을 센다.
+
+    ★ 이관 후 발송 여부를 가르는 값이다. 신전산 weekly-reco 는 유료회원의 발송요일이
+    없으면 그 회원을 **발송 대상에서 통째로 제외**한다(무료만 기본 금요일로 폴백).
+    88로또는 "화요일 전체 발송"이라 회원별 요일이 없을 수 있는데, 그대로 옮기면 이관 후
+    그 회원에게 영영 문자가 나가지 않는다. 구전산이 사라진 뒤에는 원인도 확인할 수 없다.
+
+    그래서 --dry-run 단계에서 반드시 0 인지 보고, 0 이 아니면 옮기기 전에 요일을 정한다.
+    """
+    dist: Counter[str] = Counter()
+    missing_paid = 0
+    for row in members:
+        day = row['meta'].get('weekly_reco_day')
+        if isinstance(day, int) and 0 <= day <= 6:
+            dist[f'{WEEKDAY_LABEL[day]}({day})'] += 1
+        else:
+            dist['미설정'] += 1
+            if row.get('grade') in PAID_GRADES:
+                missing_paid += 1
+    return dict(dist), missing_paid
+
+
 def validate_batch_id(batch_id: str | None, *, required: bool) -> str:
     if not batch_id:
         if required:
@@ -324,6 +351,18 @@ def report(built: dict[str, Any]) -> None:
         print('  등급별: ' + ' · '.join(f'{k} {v:,}' for k, v in sorted(grades.items())))
         paused = sum(1 for m in members if m['meta'].get('lotto88_reco_paused_at_import'))
         print(f'  원본에서 이미 발송정지였던 회원: {paused:,}건 (전환일 활성화에서 제외해야 함)')
+
+        dist, missing_paid = weekday_report(members)
+        print('  발송요일: ' + ' · '.join(f'{k} {v:,}' for k, v in sorted(dist.items())))
+        if missing_paid:
+            print()
+            print(f'  ‼ 유료회원 {missing_paid:,}명에게 발송요일이 없다.')
+            print('     신전산은 발송요일이 없는 유료회원을 발송 대상에서 제외한다.')
+            print('     이대로 옮기면 이 회원들은 이관 후 문자를 받지 못하고,')
+            print('     구전산이 사라진 뒤에는 원인을 확인할 수도 없다.')
+            print('     → 옮기기 전에 현장과 발송요일을 정할 것. 임의로 채우지 말 것.')
+        else:
+            print('  발송요일 미설정 유료회원: 0명 (이관 후에도 지금과 같은 요일에 나간다)')
     if built['skipped']:
         print('  건너뜀:')
         for reason, count in sorted(built['skipped'].items()):
