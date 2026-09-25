@@ -54,6 +54,7 @@ jobs:
           python3 scripts/test_815_collision_history.py
           python3 scripts/test_legacy_history_payload.py
           python3 scripts/test_make_review_sheet.py
+          python3 scripts/test_migrate_88lotto.py
 
       - name: Run TypeScript regressions
         run: node --import tsx --test scripts/tests/*.test.ts
