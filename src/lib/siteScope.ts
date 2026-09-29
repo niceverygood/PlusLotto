@@ -4,6 +4,7 @@ export const SITE_SCOPES = [
   { key: 'lotto815', label: '815로또' },
   { key: 'infolotto', label: '인포로또' },
   { key: 'cplotto', label: '일행로또' },
+  { key: 'best', label: '프리미엄로또' },
   { key: 'all', label: '전체 사이트' },
 ] as const
 

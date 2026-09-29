@@ -58,6 +58,7 @@ SITE_LABELS = {
     'lotto815': '815로또',
     'cplotto': '일행로또',
     'infolotto': '인포로또',
+    'best': '프리미엄로또',
 }
 # src/lib/recoSchedule.ts PAID_RECO_GRADES / DEFAULT_RECO_DAY 와 값을 맞춘다.
 PAID_GRADES = {'gold', 'goldp', 'vip', 'royal'}

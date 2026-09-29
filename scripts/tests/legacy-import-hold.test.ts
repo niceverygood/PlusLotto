@@ -5,7 +5,7 @@ import { assertNoLegacyImportHold, isLegacyImportHeld } from '../../src/lib/lega
 const held = { source_site: 'lotto815', reco_pause_reason: 'legacy_import_review', reco_paused: true }
 
 test('이관 검수 보류는 세 이관 사이트에만 적용한다', () => {
-  for (const source_site of ['lotto815', 'cplotto', 'infolotto']) {
+  for (const source_site of ['lotto815', 'cplotto', 'infolotto', 'best']) {
     assert.equal(isLegacyImportHeld({ ...held, source_site }), true)
   }
   for (const source_site of ['pluslotto', 'lotto88', '', null]) {
