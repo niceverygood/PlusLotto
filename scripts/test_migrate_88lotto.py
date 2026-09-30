@@ -6,8 +6,10 @@
 문자가 끊기거나, 아직 검수하지 않은 회원의 잠금이 풀려 문자가 나간다. 둘 다 화면상
 정상으로 보이고, 회원이 알려주기 전까지 드러나지 않는다.
 
-두 번째는 **번호 충돌을 INSERT 로 시도하지 않는가**이다. members INSERT 는 같은 번호가
-있으면 트리거가 거부하고 200행 묶음이 통째로 실패한다 — 이관 당일에 처음 겪으면 안 된다.
+두 번째는 **사이트별 분리 저장**이다(현장 요청 9/29, D197). 88·플러스로또 양쪽 회원인 사람은
+기록이 둘 따로 있어야 문자가 각자 자기 사이트로 나간다. 트리거도 같은 사이트 안에서만 중복을
+막는다. 반대로 88 안에서 번호가 겹치면 트리거가 거부해 200행 묶음이 통째로 실패하므로, 그것만은
+미리 골라낸다.
 """
 
 import importlib.util
@@ -114,12 +116,30 @@ class DeltaSync(unittest.TestCase):
 
 
 class PhoneCollision(unittest.TestCase):
-    def test_이미_있는_번호는_넣지_않고_충돌로_보고한다(self):
-        existing = [{'id': 'mem_old', 'phone': '010-1234-5678', 'meta': {}}]
+    def test_다른_사이트에_같은_번호가_있으면_88_회원으로_따로_넣는다(self):
+        """현장 요청: 양쪽 회원은 사이트별로 분리 저장해 문자가 각 사이트로 나가야 한다."""
+        for other in ({}, {'source_site': 'lotto815'}, {'source_site': 'best'}):
+            existing = [{'id': 'mem_other', 'phone': '010-1234-5678', 'meta': other}]
+            plan = tool.build_plan([src_member()], [], [], existing, set(), {}, {}, BATCH)
+            self.assertEqual(plan.collisions, [], other)
+            self.assertEqual(len(plan.new_members), 1, other)
+            self.assertEqual(plan.new_members[0]['meta']['source_site'], 'lotto88')
+
+    def test_88_출처로_같은_번호가_이미_있으면_충돌로_보고한다(self):
+        """같은 사이트 안의 중복은 트리거가 거부한다 — 넣지 않고 골라낸다."""
+        existing = [{'id': 'mem_88_other', 'phone': '010-1234-5678',
+                     'meta': {'source_site': 'lotto88', 'legacy_id': '88-zzz'}}]
         plan = tool.build_plan([src_member()], [], [], existing, set(), {}, {}, BATCH)
         self.assertEqual(plan.new_members, [])
         self.assertEqual(len(plan.collisions), 1)
-        self.assertEqual(plan.collisions[0]['existing_member_id'], 'mem_old')
+        self.assertEqual(plan.collisions[0]['existing_member_id'], 'mem_88_other')
+
+    def test_출처_판정은_DB_와_같다(self):
+        """public.member_operating_site 와 어긋나면 충돌 판정이 트리거와 달라진다."""
+        self.assertEqual(tool.operating_site({'meta': {}}), 'pluslotto')
+        self.assertEqual(tool.operating_site({'meta': {'source_site': '  '}}), 'pluslotto')
+        self.assertEqual(tool.operating_site({'meta': {'source_site': ' lotto88 '}}), 'lotto88')
+        self.assertEqual(tool.operating_site({'meta': None}), 'pluslotto')
 
     def test_원본_안에서_번호가_겹쳐도_한_명만_넣는다(self):
         pair = [src_member(id='88-a'), src_member(id='88-b')]
@@ -151,7 +171,8 @@ class Payments(unittest.TestCase):
 
     def test_회원이_안_들어가면_결제도_넣지_않는다(self):
         """고아 결제는 FK 로 막히거나, 막히지 않으면 매출이 엉뚱하게 잡힌다."""
-        existing = [{'id': 'mem_old', 'phone': '01012345678', 'meta': {}}]
+        existing = [{'id': 'mem_old', 'phone': '01012345678',
+                     'meta': {'source_site': 'lotto88', 'legacy_id': '88-zzz'}}]
         plan = tool.build_plan([src_member()], [self._payment()], [], existing, set(), {}, {}, BATCH)
         self.assertEqual(plan.new_payments, [])
         self.assertEqual(len(plan.skipped_payments), 1)

@@ -32,7 +32,7 @@ function storageStub(initial: Record<string, string> = {}) {
 
 test('site choice defaults to PlusLotto and excludes all-sites lookup', () => {
   assert.equal(DEFAULT_PORTAL_SITE, 'pluslotto')
-  assert.deepEqual(PORTAL_SITES.map((site) => site.key), ['pluslotto', 'lotto815', 'infolotto', 'cplotto', 'best'])
+  assert.deepEqual(PORTAL_SITES.map((site) => site.key), ['pluslotto', 'lotto815', 'infolotto', 'cplotto', 'best', 'lotto88'])
   for (const site of ['all', 'other', '', null, undefined]) assert.equal(isPortalSourceSite(site), false)
 })
 

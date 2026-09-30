@@ -6,9 +6,12 @@
 
   1. **옮기는 동안에도 88 쪽 화요일 발송이 돌아간다.** 그래서 한 번에 끝내지 않고
      이관(1차) → 변경분(2차) 두 번 돌린다. 2차는 1차 이후 바뀐 회원만 갱신한다.
-  2. **양쪽 모두의 회원인 사람이 있다.** 같은 번호의 members INSERT 는 트리거가 막는다
-     (`enforce_member_admin_ops`, service_role 도 동일 적용). 200행 묶음 하나가 통째로
-     실패하므로 **넣기 전에 골라내고 현장 판단으로 넘긴다.** 자동 병합하지 않는다.
+  2. **양쪽 모두의 회원인 사람이 있다.** 이런 사람은 **사이트별로 따로** 저장한다 — 88 회원
+     기록과 플러스로또 회원 기록이 각각 있고, 문자는 각자 자기 사이트 발신번호·이름으로
+     나간다(현장 요청 9/29, 815 충돌 이관과 같은 설계). 트리거 `enforce_member_admin_ops` 도
+     9/14 개정부터 **같은 사이트 안에서만** 중복을 막는다. 그래서 여기서 '충돌'로 거르는 것은
+     88 원본 안에서 번호가 겹치거나, 이미 플러스로또에 88 출처로 같은 번호가 있는 경우뿐이다
+     (D197 — D195 의 "사이트 무관 충돌" 판단을 정정).
   3. **담당자·팀·상품 id 가 88 쪽 값이다.** 그대로 넣으면 FK 가 깨진다. 담당자는 login_id,
      팀은 이름으로 맞추고, 못 맞춘 건 비워 두고 건수를 보고한다.
 
@@ -281,6 +284,13 @@ class Plan:
         self.unmapped_team = 0
 
 
+def operating_site(member: dict) -> str:
+    """DB public.member_operating_site 와 같은 규칙 — 출처가 비면 플러스로또."""
+    meta = member.get('meta') if isinstance(member.get('meta'), dict) else {}
+    source = meta.get('source_site')
+    return source.strip() if isinstance(source, str) and source.strip() else 'pluslotto'
+
+
 def build_plan(src_members: Iterable[dict], src_payments: Iterable[dict],
                src_products: Iterable[dict], dest_members: Iterable[dict],
                dest_payment_ids: set[str], staff_map: dict[str, str],
@@ -289,11 +299,12 @@ def build_plan(src_members: Iterable[dict], src_payments: Iterable[dict],
     plan = Plan()
 
     imported: dict[str, dict] = {}   # 88 id → 이미 이관된 대상 회원 행
-    phone_owner: dict[str, str] = {} # 번호 → 대상 회원 id
+    phone_owner: dict[str, str] = {} # 번호 → 같은 사이트(lotto88) 대상 회원 id
     for member in dest_members:
         meta = member.get('meta') if isinstance(member.get('meta'), dict) else {}
         phone = digits(member.get('phone'))
-        if phone:
+        # 트리거와 같은 기준: 다른 사이트 회원과 번호가 같아도 충돌이 아니다(사이트별 분리 저장).
+        if phone and operating_site(member) == SOURCE_SITE:
             phone_owner.setdefault(phone, member['id'])
         if meta.get('source_site') == SOURCE_SITE and meta.get('legacy_id'):
             imported[str(meta['legacy_id'])] = member
@@ -325,7 +336,7 @@ def build_plan(src_members: Iterable[dict], src_payments: Iterable[dict],
 
         owner = phone_owner.get(row['phone'])
         if owner is not None:
-            # 이미 플러스로또에 같은 번호가 있다. INSERT 는 트리거가 거부하고 묶음 전체가
+            # 같은 사이트(88)로 이미 같은 번호가 있다. 트리거가 거부하고 200행 묶음 전체가
             # 실패하므로 시도하지 않는다. 합칠지 말지는 사람이 정한다.
             plan.collisions.append({'legacy_id': legacy_id, 'existing_member_id': owner})
             continue
@@ -371,7 +382,7 @@ def print_plan(plan: Plan) -> None:
     print(f'  신규 회원      {len(plan.new_members):,}명')
     print(f'  변경분 갱신    {len(plan.updates):,}명')
     print(f'  변동 없음      {plan.unchanged:,}명')
-    print(f'  번호 충돌      {len(plan.collisions):,}명  ← 넣지 않는다. 현장 판단 필요')
+    print(f'  번호 충돌      {len(plan.collisions):,}명  ← 88 안에서 겹침. 넣지 않는다. 현장 판단')
     print(f'  제외           {len(plan.skipped):,}명')
     print(f'  상품           {len(plan.products):,}건')
     print(f'  신규 결제      {len(plan.new_payments):,}건')
@@ -485,8 +496,10 @@ def main(argv=None):
     print(f'  회원 {len(src_members):,} · 결제 {len(src_payments):,} · 상품 {len(src_products):,}')
 
     print('대상(플러스로또) 읽는 중…')
+    # 88 출처 회원만 읽으면 된다 — 다른 사이트 회원은 번호가 같아도 충돌이 아니다.
     dest_members = dest.select_all('members', 'id,phone,name,nickname,grade,status,'
-                                              'is_suspended,is_deleted,is_withdrawn,meta')
+                                              'is_suspended,is_deleted,is_withdrawn,meta',
+                                   [('meta->>source_site', f'eq.{SOURCE_SITE}')])
     dest_payments = dest.select_all('payments', 'id')
     dest_staff = dest.select_all('staff', 'id,login_id,name')
     dest_teams = dest.select_all('teams', 'id,name')

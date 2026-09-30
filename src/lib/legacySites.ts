@@ -5,15 +5,17 @@ export const LEGACY_SITES = [
   { key: 'cplotto', label: '일행로또' },
   { key: 'infolotto', label: '인포로또' },
   { key: 'best', label: '프리미엄로또' },
+  { key: 'lotto88', label: '88로또' },
 ] as const
 
 export type LegacySiteKey = (typeof LEGACY_SITES)[number]['key']
 
 /** 과거 이력 저장소까지 지원하는 출처. 사이트 선택 목록과 별도로 관리한다. */
-export type LegacyHistorySite = 'lotto815' | 'cplotto' | 'infolotto' | 'best'
+export type LegacyHistorySite = 'lotto815' | 'cplotto' | 'infolotto' | 'best' | 'lotto88'
 
 export function supportedLegacyHistorySite(site: string): LegacyHistorySite | null {
   return site === 'lotto815' || site === 'cplotto' || site === 'infolotto' || site === 'best'
+    || site === 'lotto88'
     ? site
     : null
 }
