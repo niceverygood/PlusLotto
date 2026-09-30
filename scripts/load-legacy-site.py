@@ -33,19 +33,39 @@ from typing import BinaryIO, Iterable
 ALLOWED_TABLES = frozenset({'user', 'payment'})
 MAX_SQL_BYTES = 512 * 1024 * 1024
 BATCH_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
+
+# levelNum 6 '언발란스'(CLAUDE.md §3.4 의 '인반언스' 가 이것이다). 전 사이트 공통으로
+# 999,000원 · 36개월 · 주당 20조합이라 조건이 VIP 와 같다. 5사 통틀어 프리미엄 1명뿐.
+# ⚠️ 등급 토큰 'ovr' 로 넣으면 PAID_RECO_GRADES(gold/goldp/vip/royal)에 없어서 **유료회원인데
+#    조합문자가 영영 안 나간다** — §7 이 경고한 바로 그 실패 유형이다. 그래서 vip 로 넣는다.
+#    ASSUMPTIONS.md 기록 대상. 운영 확인 후 바꾸려면 이 한 줄만 고치면 된다.
+UNBALANCE_GRADE = 'vip'
 DUMP_PREFIXES = {
     'lotto815': ('lotto815', '815korean'),
     'cplotto': ('cplotto',),
     'infolotto': ('infolotto',),
+    # 프리미엄로또(premiumlotto.co.kr)의 업체 DB명은 'best' 다 — 5사 코드대응표에서 확인(D196).
+    'best': ('best', 'premiumlotto'),
 }
+# levelNum → 플러스로또 등급. 0=간편가입 · 1=무료회원이고 유료는 2부터다(88리커버리만 80).
+# 출처: 로또5사_코드대응표_20260827.xlsx [1.등급·상품]. 사이트마다 번호가 다르니 표대로만 쓴다.
 GRADE_BY_SITE = {
-    'lotto815': {'1': 'free', '2': 'goldp', '3': 'vip', '4': 'royal'},
-    'cplotto': {'1': 'free', '2': 'goldp', '3': 'goldp', '4': 'vip', '5': 'royal'},
-    'infolotto': {'1': 'free', '2': 'goldp', '3': 'vip', '4': 'royal'},
+    'lotto815': {'0': 'simple', '1': 'free', '2': 'goldp', '3': 'vip', '4': 'royal',
+                 '6': UNBALANCE_GRADE},
+    'cplotto': {'0': 'simple', '1': 'free', '2': 'goldp', '3': 'goldp', '4': 'vip',
+                '5': 'royal', '6': UNBALANCE_GRADE},
+    'infolotto': {'0': 'simple', '1': 'free', '2': 'goldp', '3': 'vip', '4': 'royal',
+                  '5': 'goldp', '6': UNBALANCE_GRADE, '7': 'goldp'},
+    # 프리미엄로또: 2=프리미엄 플러스 · 3=VIP · 4=로얄 퍼스트 · 6=언발란스
+    'best': {'0': 'simple', '1': 'free', '2': 'goldp', '3': 'vip', '4': 'royal',
+             '6': UNBALANCE_GRADE},
 }
 STATUS_MAP = {
     'normal': 'active', 'standby': 'active', 'block': 'suspended',
     'remove': 'deleted', 'leave': 'withdrawn',
+    # '정회원 만료자'. 만료는 status 가 아니라 itemEndDateTime 으로 판정하므로 정상으로 넣는다
+    # — 종료일이 지났으면 발송 자격 계산에서 어차피 빠진다(src/lib/memberExpiry.ts).
+    'end': 'active',
 }
 CONSULT_STATUS_MAP = {
     'new': '신규', 'none': '결번', 'absence': '부재', 'chance': '가망',
@@ -95,8 +115,23 @@ PRODUCTS_BY_SITE = {
         'basic': _product('legacy_infolotto_basic', '인포로또 베이직', 431_900, 18, 'goldp'),
         'smart': _product('legacy_infolotto_smart', '인포로또 스마트', 3_800_000, 36, 'vip'),
         'signature': _product('legacy_infolotto_signature', '인포로또 시그니쳐', 0, 36, 'royal'),
+        'family': _product('legacy_infolotto_family', '인포로또 패밀리', 0, 12, 'goldp'),
+        'recovery': _product('legacy_infolotto_recovery', '인포로또 리커버리', 0, 12, 'goldp'),
+    },
+    # 프리미엄로또 — 5사 코드대응표 [1.등급·상품] 그대로. 판매가는 표시용이고 실제 결제액은
+    # payment.itemWon 을 쓴다(D170: 대응표 판매가와 실제 결제 최빈값이 크게 달랐다).
+    'best': {
+        'premium': _product('legacy_best_premium', '프리미엄로또 프리미엄 플러스', 431_900, 18, 'goldp'),
+        'vip': _product('legacy_best_vip', '프리미엄로또 VIP', 6_160_000, 36, 'vip'),
+        'royal': _product('legacy_best_royal', '프리미엄로또 로얄 퍼스트', 4_900_000, 36, 'royal'),
     },
 }
+
+# levelNum 6 '언발란스'는 다섯 사이트가 같은 itemCode·같은 조건으로 판다. 사이트별 상품표에
+# 따로 쓰지 않고 여기서 한 번만 정의해 모든 사이트에 붙인다.
+for _site, _products in PRODUCTS_BY_SITE.items():
+    _products.setdefault('unbalance', _product(
+        f'legacy_{_site}_unbalance', '언발란스', 999_000, 36, UNBALANCE_GRADE))
 
 
 def iter_rows(text: str) -> Iterable[list[str]]:

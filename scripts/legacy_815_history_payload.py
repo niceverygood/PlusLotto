@@ -31,7 +31,7 @@ POLICIES = frozenset(('body_preserved', 'credential_type_omitted',
                       'credential_pattern_omitted', 'unreviewed_type_omitted'))
 TABLES = {'userMemo': 'legacy_member_memos', 'pushSms': 'legacy_member_sms',
           'gameBettingNlotto': 'legacy_member_wins'}
-SOURCE_SITES = frozenset(('lotto815', 'cplotto', 'infolotto'))
+SOURCE_SITES = frozenset(('lotto815', 'cplotto', 'infolotto', 'best'))
 COMMON = {'idx', 'userIdx', 'insertDateTime', 'updateDateTime'}
 ALLOWED = {
     'userMemo': COMMON | set('salesIdx statCode statTmCode groupTeamOpenYN typeCode contents insertUserIdx updateUserIdx reservYN reservCheckYN reservDateTime'.split()),

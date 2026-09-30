@@ -31,9 +31,9 @@ class HistoryPayloadTests(unittest.TestCase):
     def test_same_source_key_is_independent_across_sites_and_815_default_is_unchanged(self):
         original = 'mem_' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'https://lotto-plus.co.kr/legacy/member/lotto815/1'))
         self.assertEqual(stable_member_id(1), original)
-        self.assertEqual(len({stable_member_id(1, site) for site in ('lotto815', 'cplotto', 'infolotto')}), 3)
+        self.assertEqual(len({stable_member_id(1, site) for site in ('lotto815', 'cplotto', 'infolotto', 'best')}), 4)
         for table in ('userMemo', 'pushSms', 'gameBettingNlotto'):
-            for site in ('lotto815', 'cplotto', 'infolotto'):
+            for site in ('lotto815', 'cplotto', 'infolotto', 'best'):
                 record = self.record(site, table)
                 before = copy.deepcopy(record)
                 _, row = self.convert(record)
@@ -63,7 +63,7 @@ class HistoryPayloadTests(unittest.TestCase):
                  ('admin', 'text', 'unreviewed_type_omitted'),
                  ('thankCharge', 'text', 'unreviewed_type_omitted'),
                  ('autoPick', 'password = secret', 'credential_pattern_omitted')]
-        for site in ('lotto815', 'cplotto', 'infolotto'):
+        for site in ('lotto815', 'cplotto', 'infolotto', 'best'):
             for contents_type, body, policy in cases:
                 record = self.record(site, table='pushSms')
                 record['source_sql_values'].update(contentsTypeCode=repr(contents_type), contents=repr(body))
@@ -82,6 +82,16 @@ class HistoryPayloadTests(unittest.TestCase):
             # archive; they cannot silently replace reviewed public fields.
             extra = {'userMemo': 'contentsDec', 'pushSms': 'sendCheckYN', 'gameBettingNlotto': 'userPhone'}[table]
             record['source_sql_values'][extra] = "'unreviewed'"
+            with self.assertRaisesRegex(InvalidHistory, 'source_field_allowlist'):
+                self.convert(record)
+
+    def test_best_cannot_accept_another_sites_member_or_unreviewed_source_fields(self):
+        for table in ('userMemo', 'pushSms', 'gameBettingNlotto'):
+            record = self.record('best', table)
+            for site in ('lotto815', 'cplotto', 'infolotto'):
+                with self.assertRaisesRegex(InvalidHistory, 'target_identity'):
+                    self.convert(dict(record, target_member_id=stable_member_id(1, site)))
+            record['source_sql_values']['unreviewed_field'] = "'unreviewed'"
             with self.assertRaisesRegex(InvalidHistory, 'source_field_allowlist'):
                 self.convert(record)
 

@@ -451,3 +451,18 @@ test('회원 check_only는 실제 본문이 있어도 정상 대상 검증 뒤 �
   assert.deepEqual(result.events, ['member-check'])
   assert.equal(result.solapiCalls + result.oneshotCalls, 0)
 })
+
+
+test('프리미엄 검수 보류는 해당 회원 요청만 막고 실제 문자업체에는 접근하지 않는다', async () => {
+  const result = await invoke({
+    member: { data: {
+      id: 'synthetic-best', phone: '010-0000-0001', assigned_staff_id: null, team_id: null,
+      meta: { source_site: 'best', reco_paused: true, reco_pause_reason: 'legacy_import_review' },
+    } },
+    body: { member_id: 'synthetic-best', dest_phone: '010-0000-0001', check_only: true },
+  })
+  assert.equal(result.response.statusCode, 423)
+  assert.equal(result.response.body.code, 'LEGACY_IMPORT_HOLD')
+  assert.equal(result.solapiCalls + result.oneshotCalls, 0)
+  assert.equal(result.holdRequests.length, 0, '회원별 보류는 전화번호만으로 타 사이트 계약을 막지 않는다')
+})

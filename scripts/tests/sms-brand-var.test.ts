@@ -26,6 +26,7 @@ test('회원 출처 사이트 이름이 $brand 자리에 들어간다', () => {
     [{ source_site: 'lotto815' }, '815로또'],
     [{ source_site: 'infolotto' }, '인포로또'],
     [{ source_site: 'cplotto' }, '일행로또'],
+    [{ source_site: 'best' }, '프리미엄로또'],
   ]
   for (const [meta, label] of cases) {
     assert.equal(renderSms('[$brand] $name님 안녕하세요', member(meta)), `[${label}] 홍길동님 안녕하세요`)
