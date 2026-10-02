@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
       lotto815: { sender_no: '025550815' },
       infolotto: { sender_no: '02-555-1111' }, // 하이픈이 섞여 있어도 숫자만 남겨야 한다
       cplotto: { sender_no: '025553333' },
+      best: { sender_no: '025554444' },
     },
   },
 }
@@ -123,6 +124,7 @@ test('이관 사이트 회원은 호출자가 보낸 기본 발신번호 대신 
     ['lotto815', '025550815'],
     ['infolotto', '025551111'], // 하이픈 제거 확인
     ['cplotto', '025553333'],
+    ['best', '025554444'],
   ] as const) {
     await t.test(site, async () => {
       const r = await invoke({ site })
@@ -165,4 +167,12 @@ test('설정 조회가 실패하면 열지 않고 닫는다', async () => {
   assert.equal(r.response.statusCode, 503)
   assert.equal(r.response.body.code, 'SMS_SENDER_LOOKUP')
   assert.equal(r.vendorCalls, 0, '조회 실패를 설정 없음으로 간주해 기본 번호로 보내면 안 된다')
+})
+
+
+test('프리미엄 발신번호를 설정하지 않으면 공급업체 호출 전에 차단한다', async () => {
+  const r = await invoke({ site: 'best', settings: { data: { sms: { sender_no: '0212340000' } } } })
+  assert.equal(r.response.statusCode, 409)
+  assert.equal(r.response.body.code, 'SMS_SENDER_UNSET')
+  assert.equal(r.vendorCalls, 0)
 })

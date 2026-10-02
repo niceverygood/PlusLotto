@@ -6,6 +6,10 @@
 --
 -- 값만 바꾸는 수정이라 기존 세 사이트의 동작은 그대로다.
 
+-- 운영 DDL 잠금은 짧게 제한한다. 기존 대용량 이력 제약은 NOT VALID로 넓히며
+-- 새 행은 즉시 검사된다. 기존 행의 VALIDATE는 별도 읽기 감사 뒤 수행한다.
+SET LOCAL lock_timeout = '3s';
+
 -- 1) 문자 보류 판정 — 가장 치명적. src/lib/legacyImportHold.ts 의 목록과 같아야 한다.
 DO $$
 DECLARE
@@ -77,6 +81,7 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 이미 best가 있는 목록 안쪽을 다시 치환하지 않도록 괄호까지 완전 일치시킨다.
 -- 4) 결제·매출 화면의 '이전상품' 라벨 — 빠지면 프리미엄 결제가 '기타'로 뭉뚱그려진다.
 DO $$
 DECLARE
@@ -90,11 +95,11 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND p.prokind = 'f'
-      AND pg_get_functiondef(p.oid) LIKE '%''lotto815'',''cplotto'',''infolotto''%'
+      AND pg_get_functiondef(p.oid) LIKE '%(''lotto815'',''cplotto'',''infolotto'')%'
   LOOP
     v_def := pg_get_functiondef(v_target.sig);
-    v_replaced := replace(v_def, $a$'lotto815','cplotto','infolotto'$a$,
-                                 $b$'lotto815','cplotto','infolotto','best'$b$);
+    v_replaced := replace(v_def, $a$('lotto815','cplotto','infolotto')$a$,
+                                 $b$('lotto815','cplotto','infolotto','best')$b$);
     IF v_replaced <> v_def THEN
       EXECUTE v_replaced;
       RAISE NOTICE '이전상품 라벨 갱신: %', v_target.sig;

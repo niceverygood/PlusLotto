@@ -485,7 +485,7 @@ class ExistingState:
     phones: set[str] = field(default_factory=set)  # 전 사이트 번호(815 검수 스크립트가 이 의미로 쓴다)
     # (운영 사이트, 번호). 적재 충돌 판정은 이것만 본다 — DB 트리거 enforce_member_admin_ops 가
     # 9/14 개정부터 같은 사이트 안에서만 중복을 막고, 현장 요청(9/29·10/2)대로 다른 사이트 회원과
-    # 번호가 같아도 사이트별로 따로 저장해야 각 사이트 문자가 나간다(D200).
+    # 번호가 같아도 사이트별로 따로 저장해야 각 사이트 문자가 나간다(D201).
     site_phones: set[tuple[str, str]] = field(default_factory=set)
     user_ids: set[str] = field(default_factory=set)
     legacy_payment_keys: set[tuple[str, int]] = field(default_factory=set)

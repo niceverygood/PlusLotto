@@ -5,7 +5,7 @@
  *
  * 가장 중요한 회귀는 **이관 직후 프리미엄 회원의 문자가 서버에서 막히는가**이다.
  * 화면(src/lib/legacyImportHold.ts)이 막아도 최종 차단은 서버 몫이라, 여기가 빠지면
- * 검수 전인 8,740명에게 조합문자가 그대로 나간다. 화면상으로는 정상으로 보인다.
+ * 검수 전인 프리미엄 회원에게 조합문자가 그대로 나간다. 화면상으로는 정상으로 보인다.
  */
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises'
 
 const { PGlite } = await import(process.env.PGLITE_MODULE ?? '@electric-sql/pglite')
 const db = new PGlite()
+let beforePermissions
 const read = (name) => readFile(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8')
 
 const hold = (site) => ({ source_site: site, reco_pause_reason: 'legacy_import_review', reco_paused: true })
@@ -27,7 +28,10 @@ async function insert(id, phone, meta) {
 before(async () => {
   await db.exec(`
     CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
-    CREATE TABLE public.members(id text PRIMARY KEY, phone text NOT NULL, meta jsonb);
+    CREATE TABLE public.members(id text PRIMARY KEY, phone text NOT NULL, meta jsonb,
+      name text DEFAULT 'synthetic member', grade text DEFAULT 'goldp',
+      is_deleted boolean DEFAULT false, is_withdrawn boolean DEFAULT false,
+      registered_at timestamptz DEFAULT now());
     CREATE INDEX members_phone_digits_idx ON public.members ((regexp_replace(phone, '\\D', '', 'g')));
     GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
     GRANT SELECT ON public.members TO authenticated, service_role;
@@ -45,6 +49,24 @@ before(async () => {
       CHECK (source_site IN ('lotto815','cplotto','infolotto')) NOT VALID;
   `)
   await db.exec(await read('20260910000100_legacy_sms_import_hold.sql'))
+  const siteSql = await read('20260909001521_admin_site_scope.sql')
+  await db.exec(siteSql.slice(siteSql.indexOf('CREATE OR REPLACE FUNCTION public.admin_validate_source_site'),
+    siteSql.indexOf('CREATE INDEX IF NOT EXISTS members_operating_site')))
+  await db.exec(await read('20260914032620_scoped_legacy_portal.sql'))
+  await db.exec(`CREATE FUNCTION public.test_legacy_product_label(site text, item_name text)
+    RETURNS text LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $fn$
+      SELECT CASE WHEN site IN ('lotto815','cplotto','infolotto')
+        THEN item_name || ' (이전상품)' ELSE '기타' END
+    $fn$;
+    REVOKE EXECUTE ON FUNCTION public.test_legacy_product_label(text,text) FROM PUBLIC,anon;
+    GRANT EXECUTE ON FUNCTION public.test_legacy_product_label(text,text) TO authenticated,service_role;`)
+  beforePermissions = (await db.query(`SELECT proname,proacl,prosecdef,proconfig FROM pg_proc
+    WHERE pronamespace='public'::regnamespace AND proname IN
+    ('admin_validate_source_site','member_operating_site','portal_member_recos_for_site',
+     'portal_member_recos','sms_is_legacy_import_held','test_legacy_product_label') ORDER BY proname`)).rows
+  await assert.rejects(db.query("SELECT public.admin_validate_source_site('best')"), { code: '22023' })
+  assert.equal((await db.query("SELECT public.portal_member_recos_for_site('01011110001','0001','best') AS value")).rows[0].value, null)
+
 
   // 마이그레이션 적용 전에는 프리미엄이 막히지 않는 것이 정상이다 — 이 테스트가 무엇을
   // 증명하는지 분명히 해두기 위해 먼저 확인한다.
@@ -100,8 +122,37 @@ test('회원 이력 테이블이 프리미엄 출처를 받는다', async () => 
   }
 })
 
-test('두 번 적용해도 결과가 같다', async () => {
+test('두 번 적용해도 모든 함수 정의와 ACL이 같고 best 목록이 중복되지 않는다', async () => {
+  const definitions = async () => (await db.query(`SELECT proname, pg_get_functiondef(oid) AS definition,
+    proacl,prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace
+    AND prokind='f' ORDER BY proname`)).rows
+  const before = await definitions()
   await db.exec(await read('20260929020000_best_legacy_site.sql'))
+  assert.deepEqual(await definitions(), before)
+  const label = await db.query("SELECT public.test_legacy_product_label('best','premium') AS value")
+  assert.equal(label.rows[0].value, 'premium (이전상품)')
   await insert('best-again', '01077770001', hold('best'))
   assert.equal(await held('01077770001'), true)
+})
+
+
+test('best 사이트 검증·포털이 실제 기존 함수에서 동작하고 기존 권한은 보존한다', async () => {
+  assert.equal((await db.query("SELECT public.admin_validate_source_site('best') AS site")).rows[0].site, 'best')
+  await assert.rejects(db.query("SELECT public.admin_validate_source_site('unknown')"), { code: '22023' })
+  const permissions = (await db.query(`SELECT proname,proacl,prosecdef,proconfig FROM pg_proc
+    WHERE pronamespace='public'::regnamespace AND proname IN
+    ('admin_validate_source_site','member_operating_site','portal_member_recos_for_site',
+     'portal_member_recos','sms_is_legacy_import_held','test_legacy_product_label') ORDER BY proname`)).rows
+  assert.deepEqual(permissions, beforePermissions)
+  await insert('best-portal', '01099998888', { source_site: 'best', homepage_pw: 'best-password',
+    weekly_recos: [{ round_no: 1234, source: 'best' }] })
+  await insert('plus-portal', '01099998888', { source_site: 'pluslotto', homepage_pw: 'plus-password',
+    weekly_recos: [{ round_no: 1234, source: 'plus' }] })
+  const page = async (password, site) => (await db.query(
+    'SELECT public.portal_member_recos_for_site($1,$2,$3) AS value',
+    ['01099998888', password, site])).rows[0].value
+  assert.equal((await page('best-password', 'best')).recos[0].source, 'best')
+  assert.equal((await page('plus-password', 'pluslotto')).recos[0].source, 'plus')
+  assert.equal(await page('plus-password', 'best'), null)
+  assert.equal(await page('best-password', 'pluslotto'), null)
 })

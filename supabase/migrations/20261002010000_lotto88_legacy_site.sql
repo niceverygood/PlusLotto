@@ -7,6 +7,11 @@
 -- 20260929020000_best_legacy_site.sql 과 같은 목록을 같은 방식으로 한 칸 더 늘린다.
 -- 적용 순서상 best 가 먼저 들어가 있어야 한다(아래 앵커가 best 를 포함한다).
 
+-- 운영 DDL 잠금은 짧게 제한한다(best 마이그레이션과 같은 방식). 이력 제약은 NOT VALID 로 넓히고
+-- 기존 행 검증은 별도 파일(20261002010100_validate_lotto88_history_source_sites.sql)에서 한다 —
+-- 같은 트랜잭션에서 VALIDATE 하면 ADD 가 잡은 배타 잠금을 쥔 채 수백만 행을 훑게 된다.
+SET LOCAL lock_timeout = '3s';
+
 -- 1) 문자 보류 판정 — src/lib/legacyImportHold.ts 의 목록과 같아야 한다.
 DO $$
 DECLARE
@@ -78,6 +83,8 @@ BEGIN
 END $$;
 
 -- 4) 결제·매출 화면의 '이전상품' 라벨
+--    괄호까지 완전 일치시킨다 — 괄호 없이 치환하면 이미 lotto88 이 붙은 목록에도 다시 걸려
+--    재적용할 때마다 'lotto88' 이 하나씩 더 붙는다(best 마이그레이션에서 잡힌 문제).
 DO $$
 DECLARE
   v_target record;
@@ -90,11 +97,11 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND p.prokind = 'f'
-      AND pg_get_functiondef(p.oid) LIKE '%''lotto815'',''cplotto'',''infolotto'',''best''%'
+      AND pg_get_functiondef(p.oid) LIKE '%(''lotto815'',''cplotto'',''infolotto'',''best'')%'
   LOOP
     v_def := pg_get_functiondef(v_target.sig);
-    v_replaced := replace(v_def, $a$'lotto815','cplotto','infolotto','best'$a$,
-                                 $b$'lotto815','cplotto','infolotto','best','lotto88'$b$);
+    v_replaced := replace(v_def, $a$('lotto815','cplotto','infolotto','best')$a$,
+                                 $b$('lotto815','cplotto','infolotto','best','lotto88')$b$);
     IF v_replaced <> v_def THEN
       EXECUTE v_replaced;
       RAISE NOTICE '이전상품 라벨 갱신: %', v_target.sig;

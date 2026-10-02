@@ -35,11 +35,14 @@ before(async () => {
   `)
   await db.exec(await read('20260910000100_legacy_sms_import_hold.sql'))
   await db.exec(await read('20260929020000_best_legacy_site.sql'))
+  // 운영 순서 그대로: 프리미엄 이력 제약 검증(main, 9/30)까지 끝난 뒤에 88 이 올라간다.
+  await db.exec(await read('20260930075715_validate_best_history_source_sites.sql'))
 
   await insert('before', '01011110001', hold('lotto88'))
   assert.equal(await held('01011110001'), false, '적용 전에는 lotto88 이 보류되지 않아야 한다')
 
-  await db.exec(await read('20260930010000_lotto88_legacy_site.sql'))
+  await db.exec(await read('20261002010000_lotto88_legacy_site.sql'))
+  await db.exec(await read('20261002010100_validate_lotto88_history_source_sites.sql'))
 })
 
 after(async () => { await db.close() })
@@ -72,8 +75,26 @@ test('회원 이력 테이블이 88 출처를 받고 모르는 출처는 거부�
   }
 })
 
+test('88 등록 후에도 이력 제약이 검증 완료 상태로 남는다', async () => {
+  const rows = (await db.query(`SELECT conname, convalidated FROM pg_constraint
+    WHERE conname LIKE 'legacy_member_%_source_site_check' ORDER BY conname`)).rows
+  assert.equal(rows.length, 3)
+  for (const row of rows) assert.equal(row.convalidated, true, row.conname)
+})
+
 test('두 번 적용해도 결과가 같다', async () => {
-  await db.exec(await read('20260930010000_lotto88_legacy_site.sql'))
+  await db.exec(await read('20261002010000_lotto88_legacy_site.sql'))
   await insert('88-again', '01077770001', hold('lotto88'))
   assert.equal(await held('01077770001'), true)
+})
+
+test('재적용해도 이전상품 라벨 목록에 lotto88 이 중복으로 붙지 않는다', async () => {
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION public.legacy_label_probe(s text) RETURNS boolean LANGUAGE sql AS
+    $f$ SELECT s in ('lotto815','cplotto','infolotto','best') $f$;
+  `)
+  for (let i = 0; i < 3; i += 1) await db.exec(await read('20261002010000_lotto88_legacy_site.sql'))
+  const def = (await db.query(
+    "SELECT pg_get_functiondef('public.legacy_label_probe(text)'::regprocedure) AS d")).rows[0].d
+  assert.equal(def.split("'lotto88'").length - 1, 1, def)
 })
