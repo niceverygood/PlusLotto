@@ -39,6 +39,19 @@ dist-ssr
 /*.zip
 /legacy-schema/
 /data/
+# 파일만 막으면 ZIP 을 **폴더째 풀었을 때** 샌다(9/30 발견 — 프리미엄 덤프를 저장소 폴더 안에
+# 풀어 둔 상태였고 이 규칙이 없어 `premiumlotto_paid_all/user.sql` 이 커밋 대상이었다). D198.
+/premiumlotto*/
+/815korean*/
+/ilhanglotto*/
+/infolotto*/
+/cplotto*/
+/*_paid_all*/
+/자료/
+# 검수 대조표 출력 — 성명·연락처가 들어간다. scripts/make-review-sheet.py 의 기본·예시 출력 폴더.
+/검수대조표*/
+/표본/
+/*.csv
 
 # python 바이트코드 캐시 — scripts/ 의 적재 도구·테스트를 돌리면 생긴다
 __pycache__/

@@ -482,7 +482,11 @@ def build_payment(
 class ExistingState:
     legacy_member_ids: dict[tuple[str, int], str] = field(default_factory=dict)
     member_ids: set[str] = field(default_factory=set)
-    phones: set[str] = field(default_factory=set)
+    phones: set[str] = field(default_factory=set)  # 전 사이트 번호(815 검수 스크립트가 이 의미로 쓴다)
+    # (운영 사이트, 번호). 적재 충돌 판정은 이것만 본다 — DB 트리거 enforce_member_admin_ops 가
+    # 9/14 개정부터 같은 사이트 안에서만 중복을 막고, 현장 요청(9/29·10/2)대로 다른 사이트 회원과
+    # 번호가 같아도 사이트별로 따로 저장해야 각 사이트 문자가 나간다(D201).
+    site_phones: set[tuple[str, str]] = field(default_factory=set)
     user_ids: set[str] = field(default_factory=set)
     legacy_payment_keys: set[tuple[str, int]] = field(default_factory=set)
     payment_ids: set[str] = field(default_factory=set)
@@ -540,7 +544,8 @@ def build_import_plan(
         candidates = candidates[:limit]
 
     todo_members, idx_to_member = [], {}
-    occupied_phones, occupied_user_ids = set(existing.phones), set(existing.user_ids)
+    occupied_phones = {phone for owner, phone in existing.site_phones if owner == site}
+    occupied_user_ids = set(existing.user_ids)
     for member in candidates:
         legacy_idx = int(member['meta']['legacy_idx'])
         known_id = existing.legacy_member_ids.get((site, legacy_idx))
@@ -549,7 +554,7 @@ def build_import_plan(
             member_conflicts['이미 적재된 레거시 회원'] += 1
             continue
         if member['phone'] in occupied_phones:
-            member_conflicts['기존 전화번호 충돌(건너뜀)'] += 1
+            member_conflicts['같은 사이트 기존 전화번호 충돌(건너뜀)'] += 1
             continue
         if member['user_id'] in occupied_user_ids:
             member['meta']['legacy_login_id'] = member['user_id']
@@ -682,6 +687,12 @@ class Supa:
         )
 
 
+def operating_site(meta) -> str:
+    """DB public.member_operating_site 와 같은 규칙 — 출처가 비면 플러스로또."""
+    source = meta.get('source_site') if isinstance(meta, dict) else None
+    return source.strip() if isinstance(source, str) and source.strip() else 'pluslotto'
+
+
 def read_existing_state(client: Supa) -> ExistingState:
     state = ExistingState()
     for member in client.select_all('members', 'id,user_id,phone,meta'):
@@ -689,6 +700,7 @@ def read_existing_state(client: Supa) -> ExistingState:
         state.phones.add(digits(member.get('phone')))
         state.user_ids.add(member.get('user_id') or '')
         meta = member.get('meta') or {}
+        state.site_phones.add((operating_site(meta), digits(member.get('phone'))))
         legacy_idx = num(meta.get('legacy_idx'))
         if meta.get('source_site') and legacy_idx is not None:
             state.legacy_member_ids[(meta['source_site'], legacy_idx)] = member['id']

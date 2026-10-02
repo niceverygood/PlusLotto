@@ -29,7 +29,7 @@ test('알 수 없는 출처를 플러스로또로 섞지 않고 전체에서만 
 
 test('허용된 사이트만 선택할 수 있고 전체는 하위호환 RPC null을 사용한다', () => {
   for (const site of SITE_SCOPES) assert.equal(isSiteScope(site.key), true)
-  for (const value of ['lotto88', 'premium', '"),true', '', null, 1]) assert.equal(isSiteScope(value), false)
+  for (const value of ['lotto999', 'premium', '"),true', '', null, 1]) assert.equal(isSiteScope(value), false)
   assert.equal(rpcSourceSite('all'), null)
   assert.equal(rpcSourceSite('lotto815'), 'lotto815')
   assert.equal(rpcSourceSite('pluslotto'), 'pluslotto')
