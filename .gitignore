@@ -39,6 +39,9 @@ dist-ssr
 /*.zip
 /legacy-schema/
 /data/
+/자료/
+/premiumlotto_paid_all/
+/검수대조표*/
 
 # python 바이트코드 캐시 — scripts/ 의 적재 도구·테스트를 돌리면 생긴다
 __pycache__/

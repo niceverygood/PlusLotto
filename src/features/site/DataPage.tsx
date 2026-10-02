@@ -11,7 +11,7 @@
 //   TS strict / any 금지 / Tailwind·브랜드 토큰만 / UI 한국어 / 모바일 반응형.
 // ─────────────────────────────────────────────────────────────────────────
 import { useMemo, type ReactNode } from 'react'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND } from '@/lib/customerSiteContext'
 import { BarChart3, CalendarDays, Hash, Trophy } from 'lucide-react'
 import { EmptyState, LottoBalls, SkeletonRows } from '@/design-system/components'
 import { krw, date } from '@/lib/format'

@@ -15,7 +15,8 @@
 // 라우트 등록(/signup)은 Phase3 가 담당.
 // ─────────────────────────────────────────────────────────────────────────
 import { useMemo, useState, type FormEvent } from 'react'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { CustomerJoinPage } from './CustomerHomePage'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Loader2, Phone, ShieldCheck, User } from 'lucide-react'
 import { useMemberAuth } from './auth'
@@ -34,6 +35,10 @@ const POINTS: { title: string; desc: string }[] = [
 ]
 
 export function SignupPage() {
+  return CUSTOMER_SITE ? <CustomerJoinPage site={CUSTOMER_SITE} /> : <DefaultSignupPage />
+}
+
+function DefaultSignupPage() {
   const { signup } = useMemberAuth()
 
   const [name, setName] = useState('')

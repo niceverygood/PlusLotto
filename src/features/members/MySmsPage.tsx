@@ -44,12 +44,12 @@ export function MySmsPage() {
     const member = recipRows[0]
     if (!member) return activeTpl.body
     if (activeTpl.key === 'terms') {
-      const link = membershipTermsUrl(member.grade)
+      const link = membershipTermsUrl(member.grade, member.meta)
       return renderSms(activeTpl.body, member, { link, contents: link })
     }
     // 조합문자는 실발송과 같은 렌더러(현장 8/4 템플릿화)로 예시 조합을 넣어 미리 보여준다.
     if (activeTpl.key === 'recommend') {
-      return recoSmsBody(member.name, 1234, [[3, 8, 14, 22, 31, 42], [5, 11, 19, 27, 33, 45]], activeTpl.body)
+      return recoSmsBody(member.name, 1234, [[3, 8, 14, 22, 31, 42], [5, 11, 19, 27, 33, 45]], activeTpl.body, member.meta)
     }
     return renderSms(activeTpl.body, member)
   }, [activeTpl, recipRows])

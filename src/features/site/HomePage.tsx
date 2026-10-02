@@ -10,7 +10,8 @@
 //   - useRecentRounds(1): 최근 회차 1건 미리보기. 로딩/빈/에러는 모두 graceful 처리.
 // ─────────────────────────────────────────────────────────────────────────
 import { useEffect, useState, type ReactNode } from 'react'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { CustomerHomePage } from './CustomerHomePage'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -164,6 +165,10 @@ function usePrimaryCta(): { to: string; label: string } {
 
 // ── 페이지 ─────────────────────────────────────────────────────────────────
 export function HomePage() {
+  return CUSTOMER_SITE ? <CustomerHomePage site={CUSTOMER_SITE} /> : <DefaultHomePage />
+}
+
+function DefaultHomePage() {
   const { member } = useMemberAuth()
   const cta = usePrimaryCta()
   const roundsQuery = useRecentRounds(1)

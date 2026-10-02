@@ -1,14 +1,18 @@
 // 고객 공개 등급별 약관 페이지 (/terms/:grade). 전산의 멤버십 등급 약관을 그대로 노출한다.
 import { ArrowLeft, FileText } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/design-system/components'
-import { isTierGrade } from '@/lib/membership'
+import { isTierGrade, membershipTermsSourceSite } from '@/lib/membership'
+import { CUSTOMER_LOGIN_SITE } from '@/lib/customerSiteContext'
+import { siteScopeLabel } from '@/lib/siteScope'
 import { useMembershipTiers } from './api'
 
 export function TermsPage() {
   const { grade = '' } = useParams<{ grade: string }>()
-  const { data: tiers, isLoading } = useMembershipTiers()
-  const tier = isTierGrade(grade) ? tiers?.find((item) => item.grade === grade) : undefined
+  const [searchParams] = useSearchParams()
+  const sourceSite = membershipTermsSourceSite(CUSTOMER_LOGIN_SITE, searchParams.get('site'))
+  const { data: tiers, isLoading } = useMembershipTiers(sourceSite)
+  const tier = sourceSite && isTierGrade(grade) ? tiers?.find((item) => item.grade === grade) : undefined
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-4 py-10 sm:px-6 sm:py-14">
@@ -24,7 +28,7 @@ export function TermsPage() {
         <header className="border-b border-gray-200 bg-gray-50 px-5 py-5 sm:px-7">
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary-600" />
-            <h1 className="text-[22px] font-extrabold text-ink-900">등급별 이용약관</h1>
+            <h1 className="text-[22px] font-extrabold text-ink-900">{sourceSite && sourceSite !== 'pluslotto' ? `${siteScopeLabel(sourceSite)} ` : ''}등급별 이용약관</h1>
           </div>
           {tier && (
             <div className="mt-3 flex items-center gap-2">

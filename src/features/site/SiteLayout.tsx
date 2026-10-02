@@ -11,8 +11,9 @@
 //
 //   ※ <MemberAuthProvider> 는 상위(app/providers)에서 1회 래핑되어 있어야 한다(useMemberAuth 사용).
 // ─────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
-import { BRAND } from '@/lib/brand'
+import { useEffect, useState } from 'react'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { BRAND as DEPLOYMENT_BRAND } from '@/lib/brand'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LogIn, LogOut, Menu, User, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -27,7 +28,7 @@ export interface SiteNavItem {
 /** 데스크탑/모바일 공통 네비 정의. */
 export const SITE_NAV: SiteNavItem[] = [
   { to: '/', label: '홈' },
-  { to: '/system', label: `${BRAND.short}시스템` },
+  ...(!CUSTOMER_SITE ? [{ to: '/system', label: `${BRAND.short}시스템` }] : []),
   { to: '/data', label: `${BRAND.name}자료` },
   { to: '/membership', label: `${BRAND.short}멤버십` },
   { to: '/mypage', label: '마이페이지' },
@@ -59,6 +60,10 @@ export function SiteLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { data: publicInfo } = usePublicSiteInfo()
   const business = publicInfo?.business
+  useEffect(() => {
+    document.title = `${BRAND.name} 회원 서비스`
+    return () => { document.title = `${DEPLOYMENT_BRAND.name} 운영 콘솔` }
+  }, [])
 
   function handleLogout() {
     logout()
@@ -120,7 +125,7 @@ export function SiteLayout() {
                   to="/signup"
                   className="rounded-md bg-primary-600 px-4 py-2 text-[14px] font-bold text-white transition-colors hover:bg-primary-700"
                 >
-                  회원가입
+                  {CUSTOMER_SITE ? '가입 문의' : '회원가입'}
                 </Link>
               </>
             )}
@@ -185,7 +190,7 @@ export function SiteLayout() {
                     onClick={() => setMenuOpen(false)}
                     className="rounded-md bg-primary-600 py-2.5 text-center text-[15px] font-bold text-white hover:bg-primary-700"
                   >
-                    회원가입
+                    {CUSTOMER_SITE ? '가입 문의' : '회원가입'}
                   </Link>
                 </div>
               )}
@@ -216,9 +221,11 @@ export function SiteLayout() {
             <div className="text-[12.5px] leading-relaxed text-gray-400">
               {/* 전산(설정 > 사이트 설정 > 사업자 정보)에서 편집 → RPC portal_site_public 로 연동(현장 7/20) */}
               <p>상호: {business?.name || BRAND.name}</p>
+              {CUSTOMER_SITE && <p>대표자: {CUSTOMER_SITE.representative}</p>}
               {business?.reg_no && <p>사업자등록번호: {business.reg_no}</p>}
               {business?.address && <p>주소: {business.address}</p>}
               {business?.support_phone && <p>고객센터: {business.support_phone}</p>}
+              {CUSTOMER_SITE && <p>이메일: <a href={`mailto:${CUSTOMER_SITE.email}`}>{CUSTOMER_SITE.email}</a></p>}
             </div>
           </div>
           <div className="mt-8 border-t border-gray-100 pt-5">
