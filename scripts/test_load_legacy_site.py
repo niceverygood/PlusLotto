@@ -175,16 +175,33 @@ class LegacyLoaderTest(unittest.TestCase):
         self.assertEqual(plan.skipped_payments['이미 적재된 레거시 결제'], 1)
 
     def test_phone_skip_and_login_collision_use_count_only_and_replacement(self):
-        state = loader.ExistingState(phones={'01012345678'}, user_ids={'taken'})
+        state = loader.ExistingState(site_phones={('lotto815', '01012345678')}, user_ids={'taken'})
         plan = loader.build_import_plan(
             [user('101', phone='01012345678'), user('102', phone='01099998888', login='taken')],
             [payment('501', '101'), payment('502', '102')], 'lotto815', state,
         )
         self.assertEqual(len(plan.members), 1)
         self.assertTrue(plan.members[0]['user_id'].startswith('legacy_lotto815_102'))
-        self.assertEqual(plan.member_conflicts['기존 전화번호 충돌(건너뜀)'], 1)
+        self.assertEqual(plan.member_conflicts['같은 사이트 기존 전화번호 충돌(건너뜀)'], 1)
         self.assertEqual(plan.member_conflicts['로그인 아이디 충돌(대체 ID)'], 1)
         self.assertEqual(len(plan.payments), 1)
+
+    def test_other_site_same_phone_is_stored_separately(self):
+        """현장 요청(9/29·10/2): 사이트별 중복 회원은 따로 저장해야 각 사이트 문자가 나간다."""
+        for other in ('pluslotto', 'lotto815', 'cplotto', 'lotto88'):
+            state = loader.ExistingState(site_phones={(other, '01012345678')},
+                                         phones={'01012345678'})
+            plan = loader.build_import_plan(
+                [user('101', phone='01012345678')], [payment('501', '101', item='premium')], 'best', state)
+            self.assertEqual(len(plan.members), 1, other)
+            self.assertEqual(plan.members[0]['meta']['source_site'], 'best', other)
+            self.assertEqual(len(plan.payments), 1, other)
+
+    def test_operating_site_matches_database_rule(self):
+        self.assertEqual(loader.operating_site({}), 'pluslotto')
+        self.assertEqual(loader.operating_site({'source_site': '  '}), 'pluslotto')
+        self.assertEqual(loader.operating_site({'source_site': ' best '}), 'best')
+        self.assertEqual(loader.operating_site(None), 'pluslotto')
 
     def test_archive_reads_known_nested_files_and_ignores_other_payloads(self):
         user_sql = "-- 컬럼: idx,name\nINSERT INTO `user` VALUES\n('1','홍길동');\n"
