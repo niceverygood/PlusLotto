@@ -1415,9 +1415,9 @@ export function useSendSms() {
             freshIssues[m.id] = issue
           }
           // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
-          body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body)
+          body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body, m.meta)
         } else if (isTerms) {
-          const link = membershipTermsUrl(m.grade)
+          const link = membershipTermsUrl(m.grade, m.meta)
           body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
         } else {
           body = tpl ? renderSms(tpl.body, m) : ''
@@ -1569,7 +1569,7 @@ export function useManualIssueReco() {
       // 문자 발송(옵션) — 직접 발송과 동일한 실발송 게이트.
       // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
       const recoTplBody = cur.sms_templates.find((t) => t.key === 'recommend')?.body
-      const recoBody = recoSmsBody(member.name, targetRound, res.sets, recoTplBody)
+      const recoBody = recoSmsBody(member.name, targetRound, res.sets, recoTplBody, member.meta)
       const sms = cur.site_settings.sms
       const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
       let smsStatus: string | null = null

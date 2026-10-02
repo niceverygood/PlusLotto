@@ -32,7 +32,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_LOGIN_SITE } from '@/lib/customerSiteContext'
 import { dataSource, supabase } from '@/lib/supabase'
 import { loginPortal } from '@/lib/portalLogin'
 import {
@@ -68,7 +68,7 @@ const digits = (s: string): string => s.replace(/\D/g, '')
 // ── 세션 영속화(localStorage) ────────────────────────────────────────────
 function loadSession(): SiteMember | null {
   try {
-    return loadPortalSession(localStorage)
+    return loadPortalSession(localStorage, CUSTOMER_LOGIN_SITE)
   } catch {
     return null
   }
@@ -149,10 +149,13 @@ export function MemberAuthProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }, [])
 
-  const login = useCallback(async (phone: string, pw: string, sourceSite: PortalSourceSite = DEFAULT_PORTAL_SITE): Promise<AuthResult> => {
+  const login = useCallback(async (phone: string, pw: string, sourceSite: PortalSourceSite = CUSTOMER_LOGIN_SITE ?? DEFAULT_PORTAL_SITE): Promise<AuthResult> => {
     // 다른 사이트의 로그인 실패 후 이전 계약 데이터가 계속 표시되지 않게 비운다.
     setMember(null)
     saveSession(null)
+    if (CUSTOMER_LOGIN_SITE && sourceSite !== CUSTOMER_LOGIN_SITE) {
+      return { ok: false, error: '이 홈페이지에 가입한 서비스로 로그인해주세요.' }
+    }
     try {
       const m = await loginPortal(phone, pw, sourceSite)
       if (!m) return { ok: false, error: '선택한 서비스의 회원 정보와 일치하지 않습니다. 서비스와 전화번호, 비밀번호를 확인해주세요.' }

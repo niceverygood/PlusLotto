@@ -969,9 +969,9 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
         await sb().from('members').update({ meta }).eq('id', m.id)
       }
       // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
-      body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body)
+      body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body, m.meta)
     } else if (isTerms) {
-      const link = membershipTermsUrl(m.grade)
+      const link = membershipTermsUrl(m.grade, m.meta)
       // 기존 라이브 템플릿의 $contents도 링크로 치환해 템플릿 저장 전후 모두 전문이 발송되지 않게 한다.
       body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
     } else {
@@ -1076,7 +1076,7 @@ export async function manualIssueReco(
   if (v.alsoSms) {
     // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
     const { data: tplData } = await sb().from('sms_templates').select('body').eq('key', 'recommend').maybeSingle()
-    const body = recoSmsBody(member.name, targetRound, res.sets, (tplData as { body: string } | null)?.body)
+    const body = recoSmsBody(member.name, targetRound, res.sets, (tplData as { body: string } | null)?.body, member.meta)
     const { realSend, sender_no } = await fetchSmsConfig()
     let status = '미발송'
     if (realSend) {

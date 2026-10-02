@@ -820,20 +820,40 @@ const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
  * 템플릿이 비었으면 기존 하드코딩 포맷(plus No. 한 줄, 현장 7/30)으로 폴백.
  */
 const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
+const LEGACY_PLUS_DEFAULT_TEMPLATE = 'plus No. $round\n$num'
 
-function formatComboSms(
+const RECO_SITE_BRANDS = new Map([
+  ['pluslotto', '플러스로또'], ['lotto815', '815로또'], ['infolotto', '인포로또'],
+  ['cplotto', '일행로또'], ['best', '프리미엄로또'],
+])
+
+export function formatComboSms(
   name: string,
   roundNo: number,
   sets: number[][],
   templateBody?: string | null,
+  meta?: Record<string, unknown> | null,
 ): string {
   const round = String(Math.max(0, Math.trunc(roundNo)))
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
-  const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
+  const source = typeof meta?.source_site === 'string' ? meta.source_site.trim() : 'pluslotto'
+  const siteBrand = RECO_SITE_BRANDS.get(source)
+  const brand = siteBrand ?? '플러스로또'
+  // 레거시 사이트도 같은 템플릿을 쓰므로 $brand를 회원 계약 기준으로 치환한다.
+  // 템플릿 미설정 때만 사이트별 폴백을 사용하고 기존 플러스 문구는 보존한다.
+  const fallback = source !== 'pluslotto' && siteBrand
+    ? '$brand No. $round\n$name님\n$num'
+    : RECO_TEMPLATE_FALLBACK
+  // 2026-10-02 운영에 남아 있는 정확한 구 기본 템플릿만 이관 계약의 브랜드로 바꾼다.
+  // DB 템플릿과 사용자 지정 문구는 유지하고, 출처 없는 기존 플러스 경로는 그대로 둔다.
+  const body = source !== 'pluslotto' && siteBrand && templateBody === LEGACY_PLUS_DEFAULT_TEMPLATE
+    ? '$brand No. $round\n$num'
+    : templateBody?.trim() ? templateBody : fallback
   return body
     .replace(/\$round/g, round)
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
+    .replace(/\$brand/g, brand)
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */
@@ -1149,7 +1169,7 @@ async function scanMembers(sb: any, page: number): Promise<MemberScanRow[]> {
 
 /** 이번 회차 조합문자 발송 기록(성공/실패) 회원 id 집합. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanRecoSms(sb: any, sinceIso: string, page: number): Promise<{ ok: Set<string>; fail: Set<string> }> {
+export async function scanRecoSms(sb: any, sinceIso: string, page: number): Promise<{ ok: Set<string>; fail: Set<string> }> {
   const ok = new Set<string>()
   const fail = new Set<string>()
   let cursor: string | null = null
@@ -1168,7 +1188,7 @@ async function scanRecoSms(sb: any, sinceIso: string, page: number): Promise<{ o
     for (const row of got) {
       if (!row.member_id) continue
       // 같은 회원에 성공·실패가 섞이면(재발송) 성공을 우선한다 — 받은 사람은 누락이 아니다.
-      if (row.status === '발송완료') {
+      if (row.status === '발송완료' || row.status === '발송완료(재발송)') {
         ok.add(row.member_id)
         fail.delete(row.member_id)
       } else if (!ok.has(row.member_id)) {
@@ -1461,7 +1481,7 @@ export default async function handler(req: any, res: any) {
 
       // 유료회원(골드/골드+/VIP/로얄) 지정요일 조합 SMS 자동발송 — 신규 발급분만(멱등).
       if (paidSmsOn && PAID_GRADES.has(r.grade) && r.phone) {
-        const smsBody = formatComboSms(r.name ?? '', targetRound, sets, recoTplBody)
+        const smsBody = formatComboSms(r.name ?? '', targetRound, sets, recoTplBody, r.meta)
         const sres = await sendComboSms(selfBase, r.id, r.phone, smsBody, sender)
         await sb.from('sms_sends').insert({
           // 병렬 동시삽입 PK 충돌 방지: 시간+난수+회원 꼬리.

@@ -11,6 +11,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { KeyRound, Loader2, LogIn, Phone, ShieldCheck } from 'lucide-react'
 import { useMemberAuth } from './auth'
 import { DEFAULT_PORTAL_SITE, isPortalSourceSite, PORTAL_SITES, type PortalSourceSite } from '@/lib/portalScope'
+import { CUSTOMER_BRAND, CUSTOMER_LOGIN_SITE } from '@/lib/customerSiteContext'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
@@ -21,7 +22,7 @@ export function LoginPage() {
   const { login } = useMemberAuth()
   const navigate = useNavigate()
 
-  const [sourceSite, setSourceSite] = useState<PortalSourceSite>(DEFAULT_PORTAL_SITE)
+  const [sourceSite, setSourceSite] = useState<PortalSourceSite>(CUSTOMER_LOGIN_SITE ?? DEFAULT_PORTAL_SITE)
   const [phone, setPhone] = useState('')
   const [pw, setPw] = useState('')
   const [busy, setBusy] = useState(false)
@@ -68,7 +69,7 @@ export function LoginPage() {
             회원 전용 서비스
           </span>
           <h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink-900 sm:text-[28px]">
-            로그인
+            {CUSTOMER_LOGIN_SITE ? `${CUSTOMER_BRAND.name} 로그인` : '로그인'}
           </h1>
           <p className="mt-2 text-[14px] leading-relaxed text-gray-500">
             로그인하고 내 등급과 발급된 추천번호를 확인하세요.
@@ -87,7 +88,7 @@ export function LoginPage() {
           )}
 
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
-            <label className="block">
+            {!CUSTOMER_LOGIN_SITE && <label className="block">
               <span className="mb-1.5 block text-[13px] font-semibold text-gray-700">가입 서비스</span>
               <select
                 className="h-12 w-full rounded-md border border-gray-300 bg-white px-3.5 text-[15px] text-gray-800 outline-none focus:border-primary-500"
@@ -102,7 +103,7 @@ export function LoginPage() {
                 {PORTAL_SITES.map((site) => <option key={site.key} value={site.key}>{site.label}</option>)}
               </select>
               <span className="mt-1.5 block text-[12px] text-gray-500">가입한 서비스를 선택하면 해당 서비스의 발급 내역을 확인할 수 있습니다.</span>
-            </label>
+            </label>}
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-semibold text-gray-700">
                 전화번호
@@ -179,7 +180,7 @@ export function LoginPage() {
             to="/signup"
             className="font-bold text-primary-600 underline-offset-2 hover:text-primary-700 hover:underline"
           >
-            회원가입
+            {CUSTOMER_LOGIN_SITE ? '가입 문의' : '회원가입'}
           </Link>
         </div>
 

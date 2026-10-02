@@ -9,7 +9,8 @@
 // ※ 이 파일은 <SiteLayout/> 의 <Outlet/> 안에 렌더되므로 "본문 콘텐츠"만 반환한다.
 // ─────────────────────────────────────────────────────────────────────────
 import { useMemo } from 'react'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { CustomerMembership } from './CustomerHomePage'
 import { Link } from 'react-router-dom'
 import { Banknote, Check, Crown, FileText, Headphones, Minus, Sparkles } from 'lucide-react'
 import type { Grade, MembershipTier } from '@/types/db'
@@ -145,6 +146,10 @@ function TierCard({ tier, isCurrent }: { tier: MembershipTier; isCurrent: boolea
 }
 
 export function MembershipPage() {
+  return CUSTOMER_SITE ? <CustomerMembership site={CUSTOMER_SITE} /> : <DefaultMembershipPage />
+}
+
+function DefaultMembershipPage() {
   const { member } = useMemberAuth()
   const currentGrade = member?.grade ?? null
   const { data } = useMembershipTiers()

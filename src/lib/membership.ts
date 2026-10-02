@@ -3,6 +3,8 @@
 // 고객 멤버십 페이지가 RPC(portal_membership_tiers)로 연동. 미편집 시 이 기본값으로 폴백.
 // feature 간 직접 import 금지(§2)라 customer(site)·admin(settings) 양쪽이 lib 경유로 공유.
 import type { Grade, MembershipTier } from '@/types/db'
+import { isPortalSourceSite, type PortalSourceSite } from './portalScope'
+import { memberSite } from './siteScope'
 
 /** 고객 노출 등급 순서 (simple/ovr/toss 는 내부 분류라 미노출). */
 export const TIER_GRADES = ['free', 'gold', 'goldp', 'vip', 'royal'] as const
@@ -13,13 +15,23 @@ export function isTierGrade(g: string): g is TierGrade {
 }
 
 /** 고객 공개 등급 약관 주소. 관리자와 고객 사이트가 같은 origin을 쓰므로 문자에도 그대로 사용한다. */
-export function membershipTermsPath(grade: Grade): string {
-  return `/terms/${grade}`
+export function membershipTermsPath(grade: Grade, meta?: Record<string, unknown> | null): string {
+  const sourceSite = memberSite(meta)
+  // Unknown nonempty sites also stay explicit so the reader rejects them instead of borrowing Plus terms.
+  const scope = sourceSite !== 'pluslotto' ? `?site=${encodeURIComponent(sourceSite)}` : ''
+  return `/terms/${grade}${scope}`
 }
 
-export function membershipTermsUrl(grade: Grade): string {
-  const path = membershipTermsPath(grade)
+export function membershipTermsUrl(grade: Grade, meta?: Record<string, unknown> | null): string {
+  const path = membershipTermsPath(grade, meta)
   return typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
+}
+
+/** Dedicated domains stay fixed; shared links must explicitly identify an imported contract. */
+export function membershipTermsSourceSite(hostSite: PortalSourceSite | null, requestedSite: string | null): PortalSourceSite | null {
+  if (hostSite) return hostSite
+  const sourceSite = requestedSite ?? 'pluslotto'
+  return isPortalSourceSite(sourceSite) ? sourceSite : null
 }
 
 // 코드 기본값 = 종전 하드코딩 카드 내용(라벨은 GRADE_LABEL 기본값과 동일). 운영자가 저장 전까지 그대로 노출.

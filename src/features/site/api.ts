@@ -24,6 +24,9 @@ import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
 import { siteKeys } from '@/lib/queryKeys'
 import { normalizeWinnerStats } from '@/lib/winnerStats'
+import { CUSTOMER_BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { CUSTOMER_SITES, customerSiteTiers } from '@/lib/customerSites'
+import type { PortalSourceSite } from '@/lib/portalScope'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
@@ -42,8 +45,12 @@ const EMPTY_BUSINESS: BusinessInfo = { name: '', reg_no: '', address: '', suppor
 // RPC portal_site_public() 이 bank/business/winner_stats 3개 컬럼만 반환(0013 마이그레이션).
 export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
   return useQuery({
-    queryKey: siteKeys.publicInfo(),
+    queryKey: [...siteKeys.publicInfo(), CUSTOMER_SITE?.key ?? 'pluslotto'],
     queryFn: async (): Promise<PublicSiteInfo> => {
+      if (CUSTOMER_SITE) return {
+        bank: CUSTOMER_SITE.bank, business: CUSTOMER_SITE.business,
+        winner_stats: normalizeWinnerStats(null), promo_slides: [],
+      }
       if (dataSource === 'supabase' && supabase) {
         const { data, error } = await supabase.rpc('portal_site_public')
         const d = (!error && data ? data : {}) as Partial<PublicSiteInfo> // RPC 미생성/차단 → 빈 값 폴백
@@ -69,10 +76,12 @@ export function usePublicSiteInfo(): UseQueryResult<PublicSiteInfo> {
 // ── 멤버십 등급(전산 편집 → 고객 연동) ─────────────────────────────────────
 // site_settings 에는 PG api_key 비밀이 같이 있어 anon 직접 읽기 금지 → security-definer
 // RPC portal_membership_tiers() 가 membership_tiers 컬럼만 반환(0008 마이그레이션). 항상 5개로 정규화.
-export function useMembershipTiers(): UseQueryResult<MembershipTier[]> {
+export function useMembershipTiers(sourceSite: PortalSourceSite | null = CUSTOMER_SITE?.key ?? null): UseQueryResult<MembershipTier[]> {
+  const customerSite = CUSTOMER_SITES.find((site) => site.key === sourceSite)
   return useQuery({
-    queryKey: siteKeys.tiers(),
+    queryKey: [...siteKeys.tiers(), sourceSite ?? 'pluslotto'],
     queryFn: async (): Promise<MembershipTier[]> => {
+      if (customerSite) return customerSiteTiers(customerSite)
       if (dataSource === 'supabase' && supabase) {
         const { data, error } = await supabase.rpc('portal_membership_tiers')
         if (error || !data) return resolveTiers(null) // RPC 미생성/차단 → 코드 기본값
@@ -117,8 +126,10 @@ function sortNotices(rows: Notice[]): Notice[] {
 
 export function useNotices(): UseQueryResult<Notice[]> {
   return useQuery({
-    queryKey: siteKeys.notices(),
+    queryKey: [...siteKeys.notices(), CUSTOMER_SITE?.key ?? 'pluslotto'],
     queryFn: async (): Promise<Notice[]> => {
+      // Notices currently have no source-site field. Do not publish another site's content.
+      if (CUSTOMER_SITE) return []
       if (dataSource === 'supabase' && supabase) {
         const { data, error } = await supabase
           .from('notices')
@@ -140,8 +151,9 @@ function sortFaqs(rows: Faq[]): Faq[] {
 
 export function useFaqs(): UseQueryResult<Faq[]> {
   return useQuery({
-    queryKey: siteKeys.faqs(),
+    queryKey: [...siteKeys.faqs(), CUSTOMER_SITE?.key ?? 'pluslotto'],
     queryFn: async (): Promise<Faq[]> => {
+      if (CUSTOMER_SITE) return []
       if (dataSource === 'supabase' && supabase) {
         const { data, error } = await supabase
           .from('faqs')
@@ -186,7 +198,8 @@ export function useSubmitInquiry() {
       if (!body) return { ok: false, error: '문의 내용을 입력해주세요.' }
 
       const phone = input.phone ? digits(input.phone) : ''
-      const fullBody = phone ? `${body}\n\n연락처: ${phone}` : body
+      const contactBody = phone ? `${body}\n\n연락처: ${phone}` : body
+      const fullBody = CUSTOMER_SITE ? `${contactBody}\n\n가입 서비스: ${CUSTOMER_BRAND.name}` : contactBody
 
       if (dataSource === 'supabase' && supabase) {
         try {

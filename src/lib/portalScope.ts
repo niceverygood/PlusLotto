@@ -68,11 +68,14 @@ function parseSession(raw: string | null): PortalMemberSession | null {
 }
 
 /** 이전 캐시는 어느 계약의 데이터인지 검증할 수 없으므로 새 세션으로 승격하지 않는다. */
-export function loadPortalSession(storage: SessionStorage): PortalMemberSession | null {
+export function loadPortalSession(storage: SessionStorage, expectedSite?: PortalSourceSite | null): PortalMemberSession | null {
   try {
     storage.removeItem(UNSCOPED_SESSION_KEY)
     const session = parseSession(storage.getItem(PORTAL_SESSION_KEY))
-    if (!session) storage.removeItem(PORTAL_SESSION_KEY)
+    if (!session || (expectedSite && session.sourceSite !== expectedSite)) {
+      storage.removeItem(PORTAL_SESSION_KEY)
+      return null
+    }
     return session
   } catch {
     return null

@@ -15,7 +15,8 @@
 // 브랜드 토큰만 사용(임의 hex/px 금지). UI 한국어, 모바일 반응형.
 // ─────────────────────────────────────────────────────────────────────────
 import { Link } from 'react-router-dom'
-import { BRAND } from '@/lib/brand'
+import { CUSTOMER_BRAND as BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
+import { CustomerHomePage } from './CustomerHomePage'
 import {
   AlertTriangle,
   ArrowRight,
@@ -95,6 +96,10 @@ const FLOW_STEPS: FlowStep[] = [
 const SECTION = 'mx-auto w-full max-w-[1120px] px-4 sm:px-6'
 
 export function SystemPage() {
+  return CUSTOMER_SITE ? <CustomerHomePage site={CUSTOMER_SITE} /> : <DefaultSystemPage />
+}
+
+function DefaultSystemPage() {
   const { member } = useMemberAuth()
 
   return (

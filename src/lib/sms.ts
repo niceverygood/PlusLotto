@@ -54,19 +54,27 @@ export function roundText(roundNo: number): string {
  * api/weekly-reco.ts 자동발송 크론도 동일 규칙(자급자족 구현, src import 불가)을 따른다.
  */
 export const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
+const LEGACY_PLUS_DEFAULT_TEMPLATE = 'plus No. $round\n$num'
 
 export function recoSmsBody(
   name: string,
   roundNo: number,
   sets: number[][],
   templateBody?: string | null,
+  meta?: Member['meta'] | null,
 ): string {
   const lines = sets.map((s, i) => `[${i + 1}] ${s.join(',')}`).join('\n')
-  const body = templateBody?.trim() ? templateBody : RECO_TEMPLATE_FALLBACK
+  const brand = memberSiteLabel(meta)
+  const fallback = brand !== '플러스로또' ? '$brand No. $round\n$name님\n$num' : RECO_TEMPLATE_FALLBACK
+  // 정확한 구 기본 템플릿에만 호환 처리한다. 저장된 템플릿/사용자 지정 문구는 변경하지 않는다.
+  const body = brand !== '플러스로또' && templateBody === LEGACY_PLUS_DEFAULT_TEMPLATE
+    ? '$brand No. $round\n$num'
+    : templateBody?.trim() ? templateBody : fallback
   return body
     .replace(/\$round/g, roundText(roundNo))
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
+    .replace(/\$brand/g, brand)
 }
 
 /** 템플릿 key → 발송유형(가입·추천·당첨·약관·마케팅). 미지정 템플릿은 마케팅으로 분류. */

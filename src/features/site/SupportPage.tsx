@@ -23,6 +23,7 @@ import { Button, EmptyState, Skeleton } from '@/design-system/components'
 import { datetime } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import type { Faq, Notice } from '@/types/db'
+import { CUSTOMER_SITE } from '@/lib/customerSiteContext'
 import { useFaqs, useNotices, usePublicSiteInfo, useSubmitInquiry, type InquiryInput } from './api'
 
 // 전산(설정 > 사이트 설정 > 사업자 정보)에 값이 없을 때만 쓰는 안내용 기본값(현장 피드백: 1660-0681).
@@ -50,7 +51,7 @@ const INQUIRY_CATEGORIES = ['결제/입금', '추천번호', '계정/등급', '�
 export function SupportPage() {
   const [tab, setTab] = useState<SupportTab>('notices')
   const { data: publicInfo } = usePublicSiteInfo()
-  const supportPhone = publicInfo?.business?.support_phone || FALLBACK_SUPPORT_PHONE
+  const supportPhone = publicInfo?.business?.support_phone || CUSTOMER_SITE?.business.support_phone || FALLBACK_SUPPORT_PHONE
 
   return (
     <div className="mx-auto max-w-[1120px] px-4 py-10 sm:px-6 sm:py-12">
@@ -73,7 +74,7 @@ export function SupportPage() {
           <div>
             <p className="text-[14px] font-bold text-ink-900">전화 상담</p>
             <p className="text-[13px] text-gray-600">
-              평일 09:00 ~ 18:00 (주말·공휴일 휴무)
+              {CUSTOMER_SITE ? `${CUSTOMER_SITE.name} 고객센터` : '평일 09:00 ~ 18:00 (주말·공휴일 휴무)'}
             </p>
           </div>
         </div>

@@ -199,7 +199,7 @@ function NoRecos({ grade }: { grade: Grade }) {
 // ── 페이지 본체 ─────────────────────────────────────────────────────────────
 export function MyPage() {
   const { member, loading } = useMemberAuth()
-  const { data: tiers } = useMembershipTiers()
+  const { data: tiers } = useMembershipTiers(member?.sourceSite)
   // 등급 명칭은 전산 편집값(멤버십 등급)을 우선 사용. 미편집/미노출 등급은 코드 기본 라벨.
   const gradeLabel = (g: Grade): string =>
     tiers?.find((t) => t.grade === g)?.label ?? GRADE_LABEL[g]
