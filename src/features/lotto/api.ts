@@ -2,19 +2,55 @@
 // 회차/베팅은 전역 데이터(역할 스코프 없음). '당첨 확정'은 회차 베팅의 등수/당첨금을 산정하고
 // 1~3등 당첨자의 win_history 를 갱신(§8 당첨자 세그먼트) → lotto/bets/members 쿼리 무효화.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import type { Bet, Grade, GenerationRecord, LogEntry, LottoRound, SiteSettings, WeeklyRecoIssue } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
-import { dataSource } from '@/lib/supabase'
+import { dataSource, supabase } from '@/lib/supabase'
 import { fetchSiteSettings, fetchTables, patchSiteSettings } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
 import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
 import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
 import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
-import { markWinSmsSent, readWinSms, shouldSendWinSms, winSmsBody, winSmsSentRounds } from '@/lib/winSms'
 import { generateRecommendation } from '@/lib/lottoGenerator'
 import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import * as supa from './supa'
+import { lottoHealthSchema, type LottoHealth } from './health'
+
+/** Read-only admin/manager health. RPC checks the staff role again; cached results are scoped to the session. */
+export function useLottoHealth() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  const allowed = user?.role === 'admin' || user?.role === 'manager'
+  const query = useQuery({
+    queryKey: [...lottoKeys.all, 'health', user?.id, user?.role],
+    enabled: allowed && dataSource === 'supabase',
+    queryFn: async (): Promise<LottoHealth> => {
+      if (!supabase) throw new Error('운영 연결을 확인할 수 없습니다.')
+      const { data, error } = await supabase.rpc('lotto_sync_health')
+      if (error) throw new Error('자동 집계 상태 조회에 실패했습니다.')
+      const result = lottoHealthSchema.safeParse(data as unknown)
+      if (!result.success) throw new Error('자동 집계 점검 결과를 확인할 수 없습니다.')
+      return result.data
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: 'always',
+    retry: 1,
+  })
+  // A background job may finish while this page stays open. Refresh dependent views only when completion changes.
+  const completed = query.data ? `${query.data.max_confirmed_round}:${query.data.jobs.map((job) => `${job.round_no}:${job.completed_at ?? ''}`).sort().join('|')}` : null
+  const previous = useRef<string | null>(null)
+  useEffect(() => {
+    if (completed && previous.current && completed !== previous.current) {
+      void qc.invalidateQueries({ queryKey: [...lottoKeys.all, 'rounds'] })
+      void qc.invalidateQueries({ queryKey: memberKeys.all })
+      void qc.invalidateQueries({ queryKey: betKeys.all })
+    }
+    previous.current = completed
+  }, [completed, qc])
+  return query
+}
 
 export const WEEKLY_FREE_RECO_DEFAULT: import('@/types/db').WeeklyFreeRecoSettings = {
   enabled: true,
@@ -172,14 +208,10 @@ export function useConfirmRound() {
         let prizeSum = 0
         // 회원별 당첨내역 누적(§ 회원상세 "당첨이력") — bet/reco 각각의 새 WinRecord 를 모아 한 번에 upsert.
         const freshByMember = new Map<string, WinRecord[]>()
-        // 회원별 최고 등수 — 당첨 안내문자 자동발송(현장 7/28) 대상 판정용.
-        const bestRankByMember = new Map<string, number>()
         const addFresh = (memberId: string, w: WinRecord) => {
           const arr = freshByMember.get(memberId) ?? []
           arr.push(w)
           freshByMember.set(memberId, arr)
-          const prev = bestRankByMember.get(memberId)
-          if (prev == null || w.rank < prev) bestRankByMember.set(memberId, w.rank)
         }
         // 베팅 내 조합순번(몇 번째 조합) — 같은 회원·회차 베팅을 등록 순서대로 세어 부여.
         const betIndexByMember = new Map<string, number>()
@@ -243,32 +275,7 @@ export function useConfirmRound() {
           m.meta = { ...m.meta, win_records: upsertWinRecords(readWinRecords(m.meta), fresh) }
         }
 
-        // 당첨 안내문자 자동발송(현장 7/28) — 설정에서 체크한 등수 × 회원분류만, 회차당 1회.
-        // mock 은 실발송 없이 발송내역(sms_sends)만 기록한다(supabase 경로는 features/lotto/supa.ts).
-        const winCfg = readWinSms(db.site_settings)
-        if (winCfg.enabled) {
-          const ts = nowIso()
-          for (const [memberId, rank] of bestRankByMember) {
-            const m = db.members.find((x) => x.id === memberId)
-            if (!m || !m.phone) continue
-            if (m.is_deleted || m.is_withdrawn || m.is_suspended) continue
-            if (!shouldSendWinSms(winCfg, rank, m.grade)) continue
-            if (winSmsSentRounds(m.meta).includes(v.roundNo)) continue // 재확정 중복발송 방지
-            const body = winSmsBody(db.site_settings.win_messages ?? [], rank, m, m.win_history ?? undefined)
-            if (!body) continue
-            m.meta = { ...m.meta, win_sms_rounds: markWinSmsSent(m.meta, v.roundNo) }
-            db.sms_sends.push({
-              id: genId('sms'),
-              member_id: m.id,
-              template_key: 'win',
-              phone: m.phone,
-              body,
-              type: 'win',
-              status: '미발송',
-              sent_at: ts,
-            })
-          }
-        }
+        // 수동 집계는 운영·mock 모두 문자 발송과 분리한다.
 
         round.confirmed_at = nowIso()
         db.logs.push(lottoLog(user?.id ?? null, 'lotto.confirm', v.roundNo, { winners, prizeSum }))

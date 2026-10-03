@@ -19,6 +19,7 @@ import { cn } from '@/lib/cn'
 import { datetime } from '@/lib/format'
 import { MemberDrawer } from '@/features/members/MemberDrawer'
 import { PaymentDrawer } from '@/features/payments/PaymentDrawer'
+import { LottoHealthPanel } from '@/features/lotto/LottoHealthPanel'
 
 interface NavItem {
   key: NavKey
@@ -367,6 +368,7 @@ export function AppShell() {
         </header>
 
         <main className="relative min-h-0 flex-1 overflow-auto bg-gray-50 p-4">
+          {location.pathname !== '/admin/lotto/results' && <LottoHealthPanel compact />}
           <Outlet key={siteScope} />
         </main>
       </div>

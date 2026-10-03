@@ -8,6 +8,8 @@ import type { RoundRow } from './api'
 
 export interface LottoColumnsCtx {
   onConfirm: (roundNo: number) => void
+  canConfirm?: boolean
+  pendingRounds?: Set<number>
 }
 
 export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
@@ -112,7 +114,7 @@ export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
     },
     {
       id: 'rankCounts',
-      header: '등수별 당첨(1~5등)',
+      header: '베팅 등수별 당첨(1~5등)',
       enableSorting: false,
       meta: { align: 'right' },
       cell: (info) => {
@@ -135,6 +137,7 @@ export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
       enableSorting: false,
       cell: (info) => {
         const r = info.row.original
+        if (ctx.pendingRounds?.has(r.round_no)) return <span className="rounded-full bg-info-bg px-2 py-1 text-xs font-bold text-info">집계 대기·진행 중</span>
         if (r.confirmed_at) {
           // 확정된 회차도 '재집계'로 다시 돌릴 수 있어야 한다(현장 8/10 — "이미 상태가 확정인데
           // 어떤 부분을 누르라는 말씀이실까요?"). confirmRound 는 원래 멱등 재산정을 지원하는데
@@ -151,21 +154,21 @@ export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
                 <span className="h-1.5 w-1.5 rounded-full bg-success" />
                 확정
               </span>
-              <Button
+              {ctx.canConfirm && <Button
                 variant="sec"
                 size="sm"
-                title="당첨자를 다시 집계합니다(회원 당첨이력 재생성). 여러 번 눌러도 안전합니다."
+                title="안내문자 발송 없이 당첨 집계 작업을 요청합니다."
                 onClick={(e) => {
                   e.stopPropagation()
                   ctx.onConfirm(r.round_no)
                 }}
               >
                 재집계
-              </Button>
+              </Button>}
             </div>
           )
         }
-        return (
+        return ctx.canConfirm ? (
           <Button
             variant="pri"
             size="sm"
@@ -174,9 +177,9 @@ export function lottoColumns(ctx: LottoColumnsCtx): ColumnDef<RoundRow>[] {
               ctx.onConfirm(r.round_no)
             }}
           >
-            당첨 확정
+            집계 요청
           </Button>
-        )
+        ) : <span className="text-xs text-gray-500">집계 미완료</span>
       },
     },
   ]

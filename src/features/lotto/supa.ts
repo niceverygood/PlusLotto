@@ -3,17 +3,12 @@
 //   당첨 확정 → 회차 베팅 등수/당첨금 (재)산정 + 1~3등 회원 win_history 갱신 + confirmed_at + 로그
 //   회차 등록 → 중복 검사 후 미확정 회차 추가 + 로그
 // 회차/베팅은 전역 데이터(RLS 스코프 없음). 읽기(useRounds)는 fetchTables 스냅샷으로 재사용.
-// TODO(live-verify): 회차 베팅 채점은 행 단위 update — 대량 회차는 RPC(set-based)로 이관 권장.
-import type { Bet, Grade, LottoRound, Member, SiteSettings, WeeklyRecoIssue } from '@/types/db'
-import { genId, nowIso } from '@/lib/db/store'
+// 수동 재집계는 내구성 있는 작업으로 접수하고, 처리 진행과 완료는 health RPC로 확인한다.
+import type { Grade, LottoRound, SiteSettings, WeeklyRecoIssue } from '@/types/db'
+import { nowIso } from '@/lib/db/store'
 import { insertLog, fetchSiteSettings, patchSiteSettings, sb, selectAll } from '@/lib/db/remote'
-import { gradeRank, lottoSum, oddEven, prizeForRank } from '@/lib/lotto'
+import { lottoSum, oddEven } from '@/lib/lotto'
 import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
-import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
-import { mapPool } from '@/lib/async'
-import { sendOneShot } from '@/lib/oneshot'
-import { memberSite } from '@/lib/siteScope'
-import { markWinSmsSent, readWinSms, shouldSendWinSms, winSmsBody, winSmsSentRounds } from '@/lib/winSms'
 import { generateRecommendation } from '@/lib/lottoGenerator'
 import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import {
@@ -24,192 +19,13 @@ import {
   type WeeklyIssueResult,
 } from './api'
 
-// 당첨문자 자동발송 동시성 — members/supa.ts 의 단체발송(SMS_SEND_CONC)과 같은 값.
-const SMS_SEND_CONC = 6
-
-/** 당첨 확정: 회차 베팅 등수/당첨금 (재)산정 + 1~3등 회원 win_history/win_records 갱신. 멱등. */
-export async function confirmRound(roundNo: number, actor: string | null): Promise<void> {
-  const { data: rData, error: re } = await sb()
-    .from('lotto_rounds')
-    .select('*')
-    .eq('round_no', roundNo)
-    .maybeSingle()
-  if (re) throw re
-  const round = rData as LottoRound | null
-  if (!round) return
-
-  const { data: bData, error: be } = await sb().from('bets').select('*').eq('round_no', roundNo)
-  if (be) throw be
-  const bets = (bData ?? []) as Bet[]
-
-  // 회원별 당첨내역 누적(§ 회원상세 "당첨이력") — bet/reco 각각의 새 WinRecord 를 모아 회원당 한 번에 반영.
-  const freshByMember = new Map<string, WinRecord[]>()
-  const winHistoryByMember = new Map<string, string>()
-  // 회원별 최고 등수 — 당첨 안내문자 자동발송(현장 7/28) 대상 판정에 쓴다.
-  const bestRankByMember = new Map<string, number>()
-  const addFresh = (memberId: string, w: WinRecord) => {
-    const arr = freshByMember.get(memberId) ?? []
-    arr.push(w)
-    freshByMember.set(memberId, arr)
-    const prev = bestRankByMember.get(memberId)
-    if (prev == null || w.rank < prev) bestRankByMember.set(memberId, w.rank)
+/** 수동 확정/재집계는 DB 작업으로 접수한다. 실제 집계는 서버가 이어서 처리하며 문자는 보내지 않는다. */
+export async function confirmRound(roundNo: number, _actor: string | null): Promise<void> {
+  const { data, error } = await sb().rpc('lotto_sync_request_recount', { p_round_no: roundNo })
+  if (error) throw new Error(`재집계 접수에 실패했습니다: ${error.message}`)
+  if (!data || typeof data !== 'object' || data.ok !== true) {
+    throw new Error('재집계 접수 결과를 확인하지 못했습니다. 새로고침 후 처리 상태를 확인해 주세요.')
   }
-
-  let winners = 0
-  let prizeSum = 0
-  const betIndexByMember = new Map<string, number>()
-  for (const bet of bets) {
-    const rank = gradeRank(bet.numbers, round.numbers, round.bonus)
-    const prize = prizeForRank(round, rank)
-    const { error } = await sb().from('bets').update({ rank, prize }).eq('id', bet.id)
-    if (error) throw error
-    if (rank != null) {
-      winners += 1
-      prizeSum += prize ?? 0
-    }
-    if (bet.member_ref) {
-      const idx = (betIndexByMember.get(bet.member_ref) ?? 0) + 1
-      betIndexByMember.set(bet.member_ref, idx)
-      if (rank != null && rank <= 3) {
-        winHistoryByMember.set(bet.member_ref, `${roundNo}회 ${rank}등`)
-        addFresh(bet.member_ref, {
-          round_no: roundNo,
-          draw_date: round.draw_date,
-          rank,
-          prize: prize ?? 0,
-          combo_index: idx,
-          source: 'bet',
-        })
-      }
-    }
-  }
-
-  // 추천조합(weekly_recos) 당첨 집계 — 회원이 받은 추천번호를 당첨번호와 대조해 win_history 갱신(현장 6/29).
-  // 실제 서비스는 베팅이 아니라 추천조합 발급이라, 이 집계가 '당첨자' 세그먼트의 실질 기준이다.
-  const members = await selectAll<Member>('members')
-  for (const m of members) {
-    const meta = m.meta ?? {}
-    const recos = Array.isArray(meta.weekly_recos) ? (meta.weekly_recos as WeeklyRecoIssue[]) : []
-    const issue = recos.find((x) => x.round_no === roundNo)
-    if (!issue) continue
-    let best: number | null = null
-    let wins = 0
-    issue.sets.forEach((set, i) => {
-      const rk = gradeRank(set, round.numbers, round.bonus)
-      if (rk == null) return
-      wins += 1
-      if (best === null || rk < best) best = rk
-      addFresh(m.id, {
-        round_no: roundNo,
-        draw_date: round.draw_date,
-        rank: rk,
-        prize: prizeForRank(round, rk) ?? 0,
-        combo_index: i + 1,
-        source: 'reco',
-      })
-    })
-    if (best != null) {
-      winners += 1
-      winHistoryByMember.set(m.id, `${roundNo}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`)
-    }
-  }
-
-  const memberById = new Map(members.map((m) => [m.id, m]))
-
-  // 당첨 안내문자 자동발송 대상 선별(현장 7/28) — 설정에서 체크한 등수 × 회원분류만, 회차당 1회.
-  // 회원 update 를 두 번 하지 않도록 아래 갱신 루프에서 meta.win_sms_rounds 까지 같이 기록한다.
-  const { data: sData } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
-  const settings = sData as SiteSettings | null
-  const winSmsCfg = readWinSms(settings)
-  const winSmsTargets: { member: Member; rank: number }[] = []
-  if (settings && winSmsCfg.enabled) {
-    for (const [id, rank] of bestRankByMember) {
-      const m = memberById.get(id)
-      if (!m || !m.phone) continue
-      if (m.is_deleted || m.is_withdrawn || m.is_suspended) continue
-      if (!shouldSendWinSms(winSmsCfg, rank, m.grade)) continue
-      if (winSmsSentRounds(m.meta).includes(roundNo)) continue // 재확정 시 중복발송 방지
-      winSmsTargets.push({ member: m, rank })
-    }
-  }
-  const winSmsTargetIds = new Set(winSmsTargets.map((t) => t.member.id))
-
-  const touchedIds = new Set([...freshByMember.keys(), ...winHistoryByMember.keys()])
-  for (const id of touchedIds) {
-    const m = memberById.get(id)
-    if (!m) continue
-    const fresh = freshByMember.get(id) ?? []
-    const meta: Record<string, unknown> = {
-      ...(m.meta ?? {}),
-      win_records: upsertWinRecords(readWinRecords(m.meta), fresh),
-    }
-    if (winSmsTargetIds.has(id)) meta.win_sms_rounds = markWinSmsSent(m.meta, roundNo)
-    const patch: Record<string, unknown> = { meta }
-    const wh = winHistoryByMember.get(id)
-    if (wh) patch.win_history = wh
-    const { error: me } = await sb().from('members').update(patch).eq('id', id)
-    if (me) throw me
-  }
-
-  // 실제 발송 — 발송내역(sms_sends)까지 기록. 실발송 게이트(oneshot_enabled+발신번호)는 수동발송과 동일.
-  if (settings && winSmsTargets.length > 0) {
-    const realSend = !!settings.sms?.oneshot_enabled && !!settings.sms?.sender_no
-    const ts = nowIso()
-    const rows = (
-      await mapPool(winSmsTargets, SMS_SEND_CONC, async ({ member, rank }) => {
-        const body = winSmsBody(settings.win_messages ?? [], rank, member, winHistoryByMember.get(member.id))
-        if (!body) return null
-        let status = '미발송'
-        if (realSend) {
-          const r = await sendOneShot({
-            member_id: member.id,
-            source_site: memberSite(member.meta),
-            dest_phone: member.phone,
-            msg_body: body,
-            send_phone: settings.sms.sender_no,
-          })
-          status = r.ok ? '발송완료' : `실패(${r.code ?? '?'})`
-        }
-        return {
-          id: genId('sms'),
-          member_id: member.id,
-          template_key: 'win',
-          phone: member.phone,
-          body,
-          type: 'win' as const,
-          status,
-          sent_at: ts,
-        }
-      })
-    ).filter((r): r is NonNullable<typeof r> => r != null)
-    if (rows.length > 0) {
-      // 기록 실패는 throw 하지 않음(D68 #7) — 실발송이 이미 나간 뒤라 '확정 실패'로 되돌리면 안 된다.
-      const { error: se2 } = await sb().from('sms_sends').insert(rows)
-      if (se2) console.warn('[win-sms] sms_sends insert 실패(발송내역 미기록):', se2.message)
-      await insertLog({
-        kind: 'sms',
-        actor,
-        action: 'sms.win_auto',
-        target_type: 'lotto_round',
-        target_id: String(roundNo),
-        meta: { count: rows.length, ranks: winSmsCfg.ranks, paid: winSmsCfg.paid, free: winSmsCfg.free, real: realSend },
-      })
-    }
-  }
-
-  const { error: ue } = await sb()
-    .from('lotto_rounds')
-    .update({ confirmed_at: nowIso() })
-    .eq('round_no', roundNo)
-  if (ue) throw ue
-  await insertLog({
-    kind: 'admin',
-    actor,
-    action: 'lotto.confirm',
-    target_type: 'lotto_round',
-    target_id: String(roundNo),
-    meta: { winners, prizeSum },
-  })
 }
 
 /** 회차 등록(당첨번호 입력). 중복 회차는 거부. 미확정 상태로 추가. */
