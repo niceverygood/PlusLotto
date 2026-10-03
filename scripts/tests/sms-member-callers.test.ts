@@ -54,7 +54,6 @@ test('회원 화면·결제·당첨의 모든 OneShot 호출은 목적지와 같
     }
   }
   assert.deepEqual(Object.fromEntries([...byFile].sort()), {
-    'src/features/lotto/supa.ts': 1,
     'src/features/members/api.ts': 3,
     'src/features/members/supa.ts': 3,
     'src/features/payments/api.ts': 1,
@@ -65,9 +64,9 @@ test('회원 화면·결제·당첨의 모든 OneShot 호출은 목적지와 같
 
 test('자동발급·당첨·실패 재발송은 원래 회원 ID를 내부 발송 요청으로 전달한다', () => {
   const senders = [
-    { file: 'api/weekly-reco.ts', name: 'sendComboSms', member: 'r.id' },
-    { file: 'api/weekly-lotto-sync.ts', name: 'sendWinSms', member: 'm.id' },
-    { file: 'api/resend-failed-sms.ts', name: 'sendOne', member: 'r.member_id' },
+    { file: 'api/weekly-reco.ts', name: 'sendComboSms', member: 'r.id', requestMember: 'memberId' },
+    { file: 'api/weekly-lotto-sync.ts', name: 'sendWinSms', member: 'claim', requestMember: 'claim.member_id' },
+    { file: 'api/resend-failed-sms.ts', name: 'sendOne', member: 'r.member_id', requestMember: 'memberId' },
   ]
   for (const sender of senders) {
     const source = parse(join(root, sender.file))
@@ -85,6 +84,6 @@ test('자동발급·당첨·실패 재발송은 원래 회원 ID를 내부 발�
       ts.forEachChild(node, visit)
     }
     visit(fn.body)
-    assert.equal(requestMember, fn.parameters[1].name.getText(source), sender.file)
+    assert.equal(requestMember, sender.requestMember, sender.file)
   }
 })
