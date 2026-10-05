@@ -4,22 +4,21 @@
 import { type SupabaseClient } from '@supabase/supabase-js'
 import type { Database as LegacyDatabase } from '@/types/legacy815.generated'
 import { parseLegacyHistoryPage, type LegacyHistoryCursor, type LegacyHistoryKind } from './legacyHistory'
-import type { Assignment, CallAiAnalysis, CallRecording, LottoRound, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate, WeeklyRecoIssue } from '@/types/db'
+import type { Assignment, CallAiAnalysis, CallRecording, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { genId, nowIso } from '@/lib/db/store'
-import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
+import { renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
-import { fetchSiteSettings, ID_IN_CHUNK, insertWithOptionalColumns, paginateAll, selectAll, selectByIds, updateByIds } from '@/lib/db/remote'
+import { fetchSiteSettings, ID_IN_CHUNK, insertWithOptionalColumns, paginateAll, selectByIds, updateByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 
 // 단체문자 동시 발송 한도(브라우저). 너무 높이면 Fixie 동시연결·OneShot 레이트리밋 위험 → 보수적 6
 // (크론 weekly-reco 는 server-side CONC=12). 1000건 기준 순차 대비 체감 ~6배 단축.
 const SMS_SEND_CONC = 6
-import { resolveExcludeForGrade } from '@/lib/lotto'
+import { requestRecommendation } from '@/lib/recoRequest'
 import { membershipTermsUrl } from '@/lib/membership'
-import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { normalizeInflowType } from '@/lib/inflow'
 import { safeStorageName } from '@/lib/storageKey'
 import type { AutoAssignResult, BulkImportResult, DeleteRecoInput, DeleteRecoResult, ManualIssueInput, MemberCreateInput, MemberCreateResult, MemberPatch, MySmsRow } from './api'
@@ -934,43 +933,28 @@ export async function sendSms(ids: string[], templateKey: string, actor: string 
   const ts = nowIso()
   const type = smsTypeForTemplate(templateKey)
 
-  // 추천번호 템플릿 발송: 회원정보창 조합발송과 '동일 본문'(실제 발급조합)으로 통일(현장 피드백 6/22).
-  // 회원에게 대상 회차 발급분이 없으면 즉석 발급 후 meta 적재(홈페이지 조회분과 일치).
-  const isReco = templateKey === 'recommend'
-  // 약관 템플릿: 약관 전문 대신 회원 등급의 공개 약관 페이지 링크를 발송(현장 피드백 7/22).
-  const isTerms = templateKey === 'terms'
-  let recoRounds: LottoRound[] = []
-  let recoSettings: SiteSettings | null = null
-  let recoTarget = 0
-  if (isReco) {
-    recoRounds = await selectAll<LottoRound>('lotto_rounds')
-    const { data: sData } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
-    recoSettings = sData as SiteSettings
-    recoTarget = recoRounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
+  // 추천번호는 자동 크론과 동일한 영속 선점을 사용한다. 기존 회차를 다시 발송하지 않는다.
+  if (templateKey === 'recommend') {
+    if (!ids.length || new Set(ids).size !== ids.length || members.length !== ids.length) {
+      throw new Error('선택한 회원의 현재 상태 또는 접근 권한이 변경됐습니다. 새로고침 후 대상 명단을 확인해 주세요.')
+    }
+    const token = (await sb().auth.getSession()).data.session?.access_token ?? ''
+    const results = await mapPool(members, SMS_SEND_CONC, async (member) => {
+      try {
+        await requestRecommendation({ memberId: member.id, alsoSms: true }, token)
+        return true
+      } catch {
+        return false
+      }
+    })
+    const unresolved = results.filter((done) => !done).length
+    if (unresolved > 0) throw new Error(`${members.length}명 중 ${unresolved}명은 발급 또는 문자 접수 확인이 필요합니다. 전체 재발송하지 말고 발급 내역과 문자업체 전송내역을 확인해 주세요.`)
+    return
   }
-
-  // 제한 동시성(SMS_SEND_CONC)으로 발송 — 순차 1건씩이면 1000건에 수십분 걸려 탭 끊김 위험.
+  const isTerms = templateKey === 'terms'
   const rows: SmsSend[] = await mapPool(members, SMS_SEND_CONC, async (m) => {
     let body: string
-    if (isReco && recoSettings) {
-      const recos = Array.isArray(m.meta.weekly_recos) ? (m.meta.weekly_recos as WeeklyRecoIssue[]) : []
-      let issue = recos.find((r) => r.round_no === recoTarget) ?? null
-      if (!issue) {
-        const exclude = resolveExcludeForGrade(recoSettings, m.grade)
-        const ratio = recoSettings.weekly_free_reco?.logic_ratio ?? 100
-        const cnt =
-          typeof m.meta.weekly_reco_count === 'number' && (m.meta.weekly_reco_count as number) > 0
-            ? (m.meta.weekly_reco_count as number)
-            : (recoSettings.weekly_free_reco?.set_count ?? 30)
-        // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직(현장 피드백 7/23).
-        const sets = generateIssueSetsForGrade(recoRounds, m.grade, exclude, Math.max(1, cnt), ratio)
-        issue = { round_no: recoTarget, issued_at: ts, sets }
-        const meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
-        await sb().from('members').update({ meta }).eq('id', m.id)
-      }
-      // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
-      body = recoSmsBody(m.name, issue.round_no, issue.sets, tpl?.body, m.meta)
-    } else if (isTerms) {
+    if (isTerms) {
       const link = membershipTermsUrl(m.grade, m.meta)
       // 기존 라이브 템플릿의 $contents도 링크로 치환해 템플릿 저장 전후 모두 전문이 발송되지 않게 한다.
       body = tpl ? renderSms(tpl.body, m, { link, contents: link }) : link
@@ -1054,53 +1038,10 @@ export async function manualIssueReco(
   v: ManualIssueInput,
   actor: string | null,
 ): Promise<{ round_no: number; sets: number[][] }> {
-  const { data: mData } = await sb().from('members').select('id, name, grade, phone, meta').eq('id', v.memberId).maybeSingle()
-  const member = mData as { id: string; name: string; grade: Member['grade']; phone: string; meta: Record<string, unknown> | null } | null
-  if (!member) throw new Error('회원을 찾을 수 없습니다.')
-  assertNoLegacyImportHold([member])
-  const { data: sData, error: se } = await sb().from('site_settings').select('*').eq('id', 1).maybeSingle()
-  if (se) throw se
-  const settings = sData as SiteSettings
-  const rounds = await selectAll<LottoRound>('lotto_rounds') // 1000행 캡 회피(페이지네이션)
-  const exclude = resolveExcludeForGrade(settings, member.grade)
-  const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
-  const ratio = settings.weekly_free_reco?.logic_ratio ?? 100
-  const res = { sets: generateIssueSetsForGrade(rounds, member.grade, exclude, Math.max(1, v.setCount), ratio) }
-  const ts = nowIso()
-  const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets: res.sets }
-  const recos = Array.isArray(member.meta?.weekly_recos) ? (member.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-  const meta = { ...(member.meta ?? {}), weekly_recos: [issue, ...recos].slice(0, 8) }
-  const { error: ue } = await sb().from('members').update({ meta }).eq('id', v.memberId)
-  if (ue) throw ue
-
-  if (v.alsoSms) {
-    // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
-    const { data: tplData } = await sb().from('sms_templates').select('body').eq('key', 'recommend').maybeSingle()
-    const body = recoSmsBody(member.name, targetRound, res.sets, (tplData as { body: string } | null)?.body, member.meta)
-    const { realSend, sender_no } = await fetchSmsConfig()
-    let status = '미발송'
-    if (realSend) {
-      const r = await sendOneShot({ member_id: member.id, source_site: memberSite(member.meta), dest_phone: member.phone, msg_body: body, send_phone: sender_no })
-      status = r.ok ? '발송완료' : '실패'
-    }
-    const { error } = await sb().from('sms_sends').insert({
-      id: genId('sms'),
-      member_id: v.memberId,
-      template_key: 'recommend',
-      phone: member.phone,
-      body,
-      type: 'recommend',
-      status,
-      sent_at: ts,
-    })
-    // 기록 실패 best-effort(D68 #7) — 실발송 후라 throw 시 발급 자체가 롤백/오류로 보임.
-    if (error) {
-      console.warn('[sms] 수동조합 sms_sends insert 실패(미기록):', error.message)
-      await pushLog({ kind: 'sms', actor, action: 'sms.record_failed', target_type: 'member', target_id: v.memberId, meta: { kind: 'reco', error: error.message } })
-    }
-  }
-  await pushLog({ kind: 'admin', actor, action: 'reco.manual_issue', target_type: 'member', target_id: v.memberId, meta: { round_no: targetRound, set_count: res.sets.length, sms: v.alsoSms } })
-  return { round_no: targetRound, sets: res.sets }
+  // actor는 API의 검증된 세션에서 결정한다. 브라우저가 회원 meta나 SMS 기록을 직접 쓰지 않는다.
+  void actor
+  const token = (await sb().auth.getSession()).data.session?.access_token ?? ''
+  return requestRecommendation(v, token)
 }
 
 /** 잘못 발급·발송한 추천조합 1건을 원자적으로 삭제하고 당첨 집계 대상에서 제외한다. */

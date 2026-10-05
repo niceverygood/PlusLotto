@@ -197,14 +197,14 @@ test('발송 루프와 누락 대조가 판정 함수를 공유한다', async ()
   for (const expr of [
     'recoSafetyBlockReason(meta, ctx.todayKst)', // 일시정지·종료일
     'meta.weekly_reco_count === 0', // 발송갯수 0
-    'recos[0]?.round_no === ctx.targetRound', // 이미 발급됨
+    'recos.some(issue => issue?.round_no === ctx.targetRound)', // 모든 발급 이력에서 확인
     '? DEFAULT_DAY', // 무료 기본 발송요일
   ]) {
     assert.equal(count(expr), 1, `판정 조건이 여러 곳에 적혀 있다: ${expr}`)
   }
 
   // 발송 루프와 대조는 모두 공용 게이트를 호출해야 한다.
-  assert.equal(count('recoSkipReason(r, gateCtx)'), 1, '발송 루프가 공용 게이트를 써야 한다')
+  assert.equal(count("recoSkipReason(options.mode === 'manual' ? { ...r, meta: manualMeta } : r, gateCtx)"), 1, '발송 루프가 공용 게이트를 써야 한다')
   assert.equal(count('recoSkipReason(r, ctx)'), 1, '대조가 공용 게이트를 써야 한다')
 })
 
