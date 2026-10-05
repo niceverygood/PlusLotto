@@ -8,7 +8,7 @@ function member(id: string, site = 'lotto815'): Row {
   return { id, grade: 'gold', name: 'synthetic', phone: '01000000001', registered_at: '2020-01-01T00:00:00Z', assigned_staff_id: 'test-staff', status: 'active', is_deleted: false, is_withdrawn: false, is_suspended: false,
     meta: { source_site: site, weekly_reco_day: 2, weekly_reco_count: 1, reco_paused: false, reco_pause_reason: null, end_date: '2027-12-31', weekly_recos: [] } }
 }
-interface Options { rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean }
+interface Options { nullMeta?: boolean; rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean }
 async function fixture(options: Options, work: (s: {
   rows: Row[]; ledger: Map<string, Ledger>; sends: Record<string, unknown>[]; writes: string[]; requests: string[]; logs: Record<string, unknown>[];
   invoke: (body?: Record<string, unknown>, query?: Record<string, unknown>, auth?: string) => Promise<{ status: number; body: Record<string, unknown> }>
@@ -51,7 +51,7 @@ async function fixture(options: Options, work: (s: {
       const idFilter = url.searchParams.get('id'), ids = idFilter?.startsWith('in.(') ? idFilter.slice(4,-1).split(',').map(id => id.replaceAll('"','')) : undefined
       const snap = structuredClone(rows.filter(r => r.status === 'active' && !r.is_deleted && !r.is_withdrawn && !r.is_suspended && (!ids || ids.includes(r.id))))
       scans++; if (options.concurrent && scans <= 2) { if (scans === 2) release?.(); await barrier }
-      return json(snap)
+      return json(options.nullMeta ? snap.map(r => ({ ...r, meta: null })) : snap)
     }
     if (table === 'reco_issue_ledger') return json([...ledger.values()].map(x => ({ id: x.id, member_id: x.member.id, status: x.status })))
     if (table === 'rpc/reco_issue_claim') {
@@ -67,7 +67,7 @@ async function fixture(options: Options, work: (s: {
       const entry: Ledger = { id: 'claim-' + row.id, token: 'token-' + row.id, member: row, status: 'claimed', issue, shouldSend: p.p_also_sms === true }
       ledger.set(row.id, entry); row.meta = { ...row.meta, weekly_recos: [issue] }
       if (options.loseClaim) throw new Error('synthetic claim response lost after commit')
-      return json({ ok: true, claimed: true, status: 'claimed', claim_id: entry.id, claim_token: entry.token, member: structuredClone(row), issue, should_send: entry.shouldSend })
+      return json({ ok: true, claimed: true, status: 'claimed', claim_id: entry.id, claim_token: entry.token, member: { ...structuredClone(row), ...(options.nullMeta ? { meta: null } : {}) }, issue, should_send: entry.shouldSend })
     }
     if (table === 'rpc/reco_issue_finish') {
       writes.push('finish')
@@ -260,5 +260,14 @@ test('historical hold reason with false flag remains allowed without deleting so
     assert.equal((await s.invoke({ memberIds: ['test-a'] })).body.smsSent, 1)
     assert.equal(s.rows[0].meta.reco_pause_reason, 'legacy_import_review')
     assert.equal(s.rows[0].meta.reco_paused, false)
+  })
+})
+
+test('manual issuance accepts a SQL NULL metadata snapshot and nullable claim response', async () => {
+  await fixture({ nullMeta: true, rows: [{ ...member('test-a'), meta: {} }] }, async s => {
+    const r = await s.invoke({ memberIds: ['test-a'], mode: 'manual', setCount: 1, alsoSms: true }, {}, 'Bearer staff-token')
+    assert.equal(r.body.issued, 1); assert.equal(r.body.smsSent, 1); assert.equal(r.body.reviewRequired, 0)
+    assert.equal(s.ledger.size, 1); assert.equal(s.sends.length, 1)
+    assert.equal((r.body.results as Record<string,unknown>[])[0].status, 'issued')
   })
 })

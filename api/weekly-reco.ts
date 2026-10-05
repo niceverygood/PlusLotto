@@ -1669,7 +1669,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
           code: typeof claim.reason === 'string' ? claim.reason : 'NOT_CLAIMED', round_no: targetRound })
         return
       }
-      const claimedMember = claim.member
+      const claimedMember = object(claim.member) && claim.member.meta === null ? { ...claim.member, meta: {} } : claim.member
       const claimedIssue = claim.issue
       if (claim.claimed !== true || (typeof claim.claim_id !== 'string' && typeof claim.claim_id !== 'number')
         || typeof claim.claim_token !== 'string' || !claim.claim_token || typeof claim.should_send !== 'boolean'
