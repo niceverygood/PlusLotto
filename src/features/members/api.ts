@@ -1460,10 +1460,10 @@ export function useSendSms() {
       })
       return v.ids
     },
-    onSuccess: (ids) => {
+    onSettled: (_result, _error, v) => {
       qc.invalidateQueries({ queryKey: memberKeys.all })
       qc.invalidateQueries({ queryKey: ['my-sms'] }) // 나의고객 문자내역(§8)
-      for (const id of ids) qc.invalidateQueries({ queryKey: memberKeys.sms(id) })
+      for (const id of v.ids) qc.invalidateQueries({ queryKey: memberKeys.sms(id) })
     },
   })
 }
@@ -1612,10 +1612,12 @@ export function useManualIssueReco() {
       })
       return { round_no: targetRound, sets: res.sets }
     },
-    onSuccess: (_r, v) => {
+    onSettled: (_r, _error, v) => {
       qc.invalidateQueries({ queryKey: memberKeys.detail(v.memberId) })
       qc.invalidateQueries({ queryKey: memberKeys.sms(v.memberId) })
       qc.invalidateQueries({ queryKey: ['weekly-free-reco-status'] })
+      qc.invalidateQueries({ queryKey: ['my-sms'] })
+      qc.invalidateQueries({ queryKey: memberKeys.all })
     },
   })
 }

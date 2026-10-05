@@ -55,7 +55,8 @@ test('회원 화면·결제·당첨의 모든 OneShot 호출은 목적지와 같
   }
   assert.deepEqual(Object.fromEntries([...byFile].sort()), {
     'src/features/members/api.ts': 3,
-    'src/features/members/supa.ts': 3,
+    // 수동/선택 추천은 recoRequest를 통해 서버의 영속 선점을 사용한다.
+    'src/features/members/supa.ts': 2,
     'src/features/payments/api.ts': 1,
     'src/features/payments/supa.ts': 1,
   })
