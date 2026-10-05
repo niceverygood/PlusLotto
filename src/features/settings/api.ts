@@ -347,7 +347,7 @@ export function useUploadAppDownload() {
 
 // ── 실패 문자 재발송 (현장 9/7 정의현 차장) ─────────────────────────────────
 // 조합 자동발송 크론은 회차 기준 멱등이라 재실행해도 '발급은 됐고 문자만 실패한' 회원을 건너뛴다.
-// 그 구멍을 메우는 유일한 경로라, 반드시 supabase 모드에서만 동작한다(mock 은 실발송 자체가 없다).
+// 실패 현황은 supabase 모드에서 조회한다. 업체 접수 대조 전 일괄 재발송은 차단한다(D207).
 
 /** 지정 날짜(한국 기준)의 실패 문자 현황. 종류를 주면 그것만(조합문자 = 'recommend'). */
 export function useFailedSms(day: string, type: SmsSend['type'] | 'all', enabled = true) {
@@ -359,7 +359,7 @@ export function useFailedSms(day: string, type: SmsSend['type'] | 'all', enabled
   })
 }
 
-/** 실패 문자 재발송 — 같은 번호로 같은 본문을 그대로 다시 보낸다. */
+/** 이전 호출자를 위한 보류 응답. 재발송/상태 변경은 실행하지 않는다(D207). */
 export function useResendFailedSms() {
   const user = useCurrentUser()
   const qc = useQueryClient()
@@ -377,7 +377,7 @@ export function useResendFailedSms() {
         onProgress: v.onProgress,
       })
     },
-    // 발송 상태가 바뀌므로 실패 목록·회원 문자내역·문자로그를 함께 새로 읽는다(§8).
+    // 보류 응답 후 현재 현황을 다시 읽는다. 발송 상태는 변경되지 않는다.
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all })
       qc.invalidateQueries({ queryKey: memberKeys.all })

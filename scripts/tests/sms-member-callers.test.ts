@@ -49,7 +49,7 @@ test('회원 화면·결제·당첨의 모든 OneShot 호출은 목적지와 같
       assert.ok(input && ts.isObjectLiteralExpression(input), `${file}: 발송 대상이 명시돼야 한다`)
       const dest = property(input, 'dest_phone')
       assert.ok(dest && ts.isPropertyAccessExpression(dest), `${file}: 회원 전화번호가 필요하다`)
-      const memberKey = relative(root, file) === 'src/features/settings/smsResend.ts' ? 'member_id' : 'id'
+      const memberKey = 'id'
       assert.equal(property(input, 'member_id')?.getText(source), `${dest.expression.getText(source)}.${memberKey}`, file)
     }
   }
@@ -58,15 +58,13 @@ test('회원 화면·결제·당첨의 모든 OneShot 호출은 목적지와 같
     'src/features/members/supa.ts': 3,
     'src/features/payments/api.ts': 1,
     'src/features/payments/supa.ts': 1,
-    'src/features/settings/smsResend.ts': 1,
   })
 })
 
-test('자동발급·당첨·실패 재발송은 원래 회원 ID를 내부 발송 요청으로 전달한다', () => {
+test('자동발급·당첨은 원래 회원 ID를 내부 발송 요청으로 전달한다', () => {
   const senders = [
     { file: 'api/weekly-reco.ts', name: 'sendComboSms', member: 'r.id', requestMember: 'memberId' },
     { file: 'api/weekly-lotto-sync.ts', name: 'sendWinSms', member: 'claim', requestMember: 'claim.member_id' },
-    { file: 'api/resend-failed-sms.ts', name: 'sendOne', member: 'r.member_id', requestMember: 'memberId' },
   ]
   for (const sender of senders) {
     const source = parse(join(root, sender.file))

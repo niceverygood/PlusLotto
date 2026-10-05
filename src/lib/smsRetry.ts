@@ -6,8 +6,8 @@
 // 건너뛴다. 즉 발송만 실패한 회원은 크론 재실행으로는 절대 복구되지 않는다 — 그래서 sms_sends 에
 // 남은 실패 기록을 근거로 '그 문자 그대로' 다시 보내는 별도 경로가 필요하다.
 //
-// 또한 원샷(OneShot) API 모드는 충전 후 밀린 건을 자동으로 이어 보내주지 않는다(9/7 통화에서
-// 벤더 확인). 우리 쪽에서 재발송하지 않으면 그 회차 문자는 영영 안 나간다.
+// 원샷 API의 충전 후 자동 회수 부재는 별도 운영 대조가 필요하다. 10/5부터는 실패 기록만으로
+// 자동·일괄 재발송하지 않는다. 업체 미접수 확인 후 개별 1회 처리한다(D207).
 
 /** 재발송 대상으로 볼 실패 상태 문자열인지. 크론·수동발송 모두 '실패(코드)' 형태로 기록한다. */
 export function isFailedSmsStatus(status: string | null | undefined): boolean {
@@ -21,26 +21,16 @@ export function failureCodeOf(status: string | null | undefined): string | null 
   return code && code !== '?' ? code : null
 }
 
-// 재발송해도 같은 결과가 뻔한 '영구 실패' 코드 — 번호 자체가 잘못됐거나 내용이 규격을 넘은 건들.
-// 이런 건까지 다시 밀어넣으면 충전금만 깎이고 현장에는 같은 실패가 다시 쌓인다.
-const PERMANENT_CODES = new Set([
-  '100', // 허용되지 않은 형식
-  '200', // 필수 요청 값 누락
-  '301', // 잘못된 메시지 타입
-  '305', // 잘못된 휴대전화번호
-  '402', // 내용 길이 초과
-  '7', // 결번
-  '316', // 발신번호 미등록
-  '317', // 발신번호 변작 등록
-])
-
-/** 재발송을 시도할 가치가 있는 실패인지(일시적 사유). 코드를 모르면 시도한다. */
-export function isRetriableFailure(status: string | null | undefined): boolean {
-  if (!isFailedSmsStatus(status)) return false
-  const code = failureCodeOf(status)
-  if (!code) return true // 코드 미상(NET/EXCEPTION 등) — 네트워크성으로 보고 재시도
-  return !PERMANENT_CODES.has(code)
+/** 실패 상태만으로 업체 미접수가 확인되지 않으므로 자동 재시도는 모두 보류한다.
+ * D179/906 잔액 부족도 이전 요청의 접수 여부까지 증명하지 않는다(D207).
+ * 접수 대조·원자 claim이 구현되기 전에는 어떤 상태도 자동 허용하지 않는다. */
+export function isRetriableFailure(_status: string | null | undefined): boolean {
+  return false
 }
+
+export const SMS_RETRY_RECEIPT_REQUIRED = 'RECEIPT_CONFIRMATION_REQUIRED'
+export const SMS_RETRY_REVIEW_MESSAGE =
+  '업체 접수 여부 확인 전 자동·일괄 재발송을 중지했습니다. 충전 후에도 자동 재발송하지 않습니다. 미접수 확인 후 해당 회원에게 개별 1회 처리해 주세요.'
 
 /** 재발송 성공 시 기록할 상태값. 원래 발송분과 구분되게 남긴다. */
 export const RESENT_STATUS = '발송완료(재발송)'
