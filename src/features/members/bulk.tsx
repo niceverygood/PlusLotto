@@ -138,7 +138,7 @@ export function MemberBulkActions({
           <BulkButton onClick={() => setModal('reset')}>
             <RefreshCw className="h-3.5 w-3.5" /> 담당리셋
           </BulkButton>
-          <BulkButton onClick={() => setModal('resetdb')}>
+          <BulkButton onClick={() => { resetDb.reset(); setModal('resetdb') }}>
             <Eraser className="h-3.5 w-3.5" /> DB초기화
           </BulkButton>
         </>
@@ -597,7 +597,16 @@ export function MemberBulkActions({
         onClose={close}
         onConfirm={() => resetDb.mutate({ ids: selectedIds }, { onSuccess: done })}
         title="DB 초기화 (재사용)"
-        description={`${n}건을 입력 시점(신규 리드) 상태로 초기화합니다. 상담상태는 '신규'로 바뀌며 등급·상태·담당·아웃콜·성향·당첨내역·화면의 발급번호가 초기화되고 가입일시는 초기화 시점으로 갱신됩니다. 콜메모는 소프트삭제되어 최고관리자만 열람합니다. 결제·문자 접수 이력은 보존하며, 초기화한 회차의 중복 발급은 계속 차단합니다. 이미 요청된 문자 발송을 취소하는 기능은 아닙니다. 되돌릴 수 없습니다.`}
+        description={
+          <>
+            <p>{`${n}건을 입력 시점(신규 리드) 상태로 초기화합니다. 상담상태는 '신규'로 바뀌며 등급·상태·담당·아웃콜·성향·당첨내역·화면의 발급번호가 초기화되고 가입일시는 초기화 시점으로 갱신됩니다. 콜메모는 소프트삭제되어 최고관리자만 열람합니다. 결제·문자 접수 이력은 보존하며, 초기화한 회차의 중복 발급은 계속 차단합니다. 이미 요청된 문자 발송을 취소하는 기능은 아닙니다. 되돌릴 수 없습니다.`}</p>
+            {resetDb.isError && (
+              <p role="alert" className="mt-3 text-danger">
+                {resetDb.error instanceof Error ? resetDb.error.message : '초기화 결과를 확인하지 못했습니다. 같은 대상을 유지하고 다시 확인해 주세요.'}
+              </p>
+            )}
+          </>
+        }
         confirmText="초기화"
         tone="danger"
         loading={busy}
