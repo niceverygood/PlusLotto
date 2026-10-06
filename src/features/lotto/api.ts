@@ -1,3 +1,4 @@
+import { hasResetRecoRound } from '@/lib/memberReset'
 // 로또기록 모듈 데이터 훅 (CLAUDE §1·§8, BUILD_PROMPTS Phase 6 — 스샷 있음, 원본 구조 재현).
 // 회차/베팅은 전역 데이터(역할 스코프 없음). '당첨 확정'은 회차 베팅의 등수/당첨금을 산정하고
 // 1~3등 당첨자의 win_history 를 갱신(§8 당첨자 세그먼트) → lotto/bets/members 쿼리 무효화.
@@ -404,7 +405,7 @@ export function useIssueGradeReco() {
         for (const m of db.members) {
           if (m.grade !== v.grade || m.is_deleted || m.is_withdrawn) continue
           const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-          if (recos[0]?.round_no === targetRound) {
+          if (recos.some(issue => issue.round_no === targetRound) || hasResetRecoRound(db.member_reco_reset_archive, m.id, targetRound)) {
             skipped++
             continue
           }

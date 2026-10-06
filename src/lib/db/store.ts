@@ -1,3 +1,4 @@
+import type { ResetRecoArchive, MemberResetReceipt } from '../memberReset'
 // 로컬 mock 데이터 계층 (DECISIONS D1) — Supabase 스키마와 동일한 형태를
 // localStorage 에 영속한다. api.ts 훅 뒤에서만 사용하고 컴포넌트는 직접 접근 금지.
 // TODO(live-verify): 실 Supabase 전환 시 이 계층은 우회되고 supabase 클라이언트가 대신한다.
@@ -23,6 +24,8 @@ import type {
 import { buildSeed } from './seed'
 
 export interface DbShape {
+  member_reco_reset_archive?: ResetRecoArchive[]
+  member_reset_receipts?: MemberResetReceipt[]
   staff: Staff[]
   teams: Team[]
   products: Product[]

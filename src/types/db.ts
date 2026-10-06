@@ -1,4 +1,7 @@
 import type { Database as PaymentMethodDatabase } from './paymentMethod.generated'
+import type { Database as MemberResetDatabase } from './memberReset.generated'
+
+export type AdminResetMembersArgs = MemberResetDatabase['public']['Functions']['admin_reset_members']['Args']
 // 플러스로또 도메인 타입 — 라이브 Supabase 확정 전 수기 작성한 인터림 모델.
 // TODO(live-verify): 실 DB 연결 시 `supabase gen types typescript` 결과로 대체/정합. (DECISIONS D1)
 
