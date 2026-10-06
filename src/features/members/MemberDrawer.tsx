@@ -28,6 +28,8 @@ import { endDateForGrade } from '@/lib/membershipTerm'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import { PAYMENT_ROUNDS, roundForGrade, type PaymentRound } from '@/lib/paymentRound'
 import { homepageId, homepagePw } from '@/lib/homepage'
+import { dataSource } from '@/lib/supabase'
+import { manualRecoCount, manualRecoSuccessMessage } from '@/lib/manualRecoFeedback'
 import { memberSite } from '@/lib/siteScope'
 import { supportedLegacyHistorySite } from '@/lib/legacySites'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
@@ -150,6 +152,10 @@ export function MemberDrawer({
   const sendSms = useSendSms()
   const sendCustomSms = useSendCustomSms()
   const manualIssue = useManualIssueReco()
+  const issueMemberRef = useRef(memberId)
+  issueMemberRef.current = memberId
+  const [issueFeedback, setIssueFeedback] = useState<{ memberId: string; error: boolean; message: string } | null>(null)
+  useEffect(() => { setIssueFeedback(null) }, [memberId])
   const deleteRecoIssue = useDeleteRecoIssue()
   const requestPayment = useRequestPayment()
   const updatePaymentStaff = useUpdatePaymentStaff()
@@ -1174,12 +1180,14 @@ export function MemberDrawer({
               <input
                 className={selectCls + ' w-[120px]'}
                 inputMode="numeric"
+                aria-label="발급할 조합 수"
+                disabled={manualIssue.isPending}
                 placeholder={`세트 수(기본 ${metaNum(member.meta, 'weekly_reco_count') ?? 30})`}
                 value={issueCount}
-                onChange={(e) => setIssueCount(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setIssueCount(e.target.value)}
               />
               <label className="flex items-center gap-1.5 text-[12px] text-gray-600">
-                <input type="checkbox" checked={issueSms} onChange={(e) => setIssueSms(e.target.checked)} />
+                <input type="checkbox" checked={issueSms} disabled={manualIssue.isPending} onChange={(e) => setIssueSms(e.target.checked)} />
                 문자로도 발송
               </label>
               <Button
@@ -1187,21 +1195,44 @@ export function MemberDrawer({
                 variant="pri"
                 className="ml-auto"
                 disabled={manualIssue.isPending}
-                onClick={() =>
-                  manualIssue.mutate({
-                    memberId: id,
-                    setCount: Number(issueCount) || metaNum(member.meta, 'weekly_reco_count') || 30,
-                    alsoSms: issueSms,
+                onClick={() => {
+                  setIssueFeedback(null)
+                  let setCount: number
+                  try {
+                    setCount = manualRecoCount(issueCount, metaNum(member.meta, 'weekly_reco_count'))
+                  } catch (error) {
+                    setIssueFeedback({ memberId: id, error: true, message: error instanceof Error ? error.message : '조합 수를 확인해 주세요.' })
+                    return
+                  }
+                  manualIssue.mutate({ memberId: id, setCount, alsoSms: issueSms }, {
+                    onSuccess: (result, variables) => {
+                      if (issueMemberRef.current !== variables.memberId) return
+                      setIssueFeedback({ memberId: variables.memberId, error: false,
+                        message: manualRecoSuccessMessage(result, variables.alsoSms, dataSource === 'supabase') })
+                    },
+                    onError: (error, variables) => {
+                      if (issueMemberRef.current !== variables.memberId) return
+                      setIssueFeedback({ memberId: variables.memberId, error: true,
+                        message: error instanceof Error ? error.message : '발급 또는 문자 접수 여부를 확인해야 합니다. 다시 실행하지 말고 발급 내역과 문자업체 전송내역을 확인해 주세요.' })
+                    },
                   })
-                }
+                }}
               >
-                지금 발급
+                {manualIssue.isPending ? '처리 중…' : '지금 발급'}
               </Button>
             </div>
             <p className="mt-1.5 text-[11px] text-gray-500">
               회원 등급의 고정/제외 규칙(없으면 공통)으로 즉시 생성됩니다. 발급 즉시 아래 목록·홈페이지에 반영
-              {issueSms ? ' + 문자 발송' : ''}됩니다.
+              {issueSms ? ' + 문자 발송' : ''}됩니다. 이미 처리한 회차는 수량을 바꾸어도 다시 발급·발송하지 않습니다.
             </p>
+            {issueFeedback?.memberId === id && (
+              <p
+                role={issueFeedback.error ? 'alert' : 'status'}
+                className={`mt-2 rounded-md border p-2 text-xs ${issueFeedback.error ? 'border-danger/20 bg-danger/10 text-danger' : 'border-success/20 bg-success/10 text-success'}`}
+              >
+                {issueFeedback.message}
+              </p>
+            )}
           </div>
           {(() => {
             const issues = readWeeklyRecos(member.meta)
