@@ -4,13 +4,14 @@
 import { type SupabaseClient } from '@supabase/supabase-js'
 import type { Database as LegacyDatabase } from '@/types/legacy815.generated'
 import { parseLegacyHistoryPage, type LegacyHistoryCursor, type LegacyHistoryKind } from './legacyHistory'
-import type { Assignment, CallAiAnalysis, CallRecording, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate } from '@/types/db'
+import type { AdminResetMembersArgs, Assignment, CallAiAnalysis, CallRecording, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { genId, nowIso } from '@/lib/db/store'
 import { renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
+import { resetMemberIds, parseMemberResetResult, memberResetError } from '@/lib/memberReset'
 import { fetchSiteSettings, ID_IN_CHUNK, insertWithOptionalColumns, paginateAll, selectByIds, updateByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 
@@ -857,70 +858,13 @@ export async function resetAssign(ids: string[], actor: string | null): Promise<
   await pushLog({ kind: 'admin', actor, action: 'member.reset_assign', meta: { count: ids.length } })
 }
 
-/** DB 초기화(§V2-4) — mock useResetMembers 의 supabase 미러. 콜메모 소프트삭제(meta.reset_memos) 보존. */
-export async function resetMembers(ids: string[], actor: string | null): Promise<string[]> {
-  const ts = nowIso()
-  const rows = await selectByIds<{ id: string; memo: string | null; meta: Record<string, unknown> | null }>(
-    'members',
-    'id, memo, meta',
-    ids,
-  )
-  for (const r of rows) {
-    const archive = (((r.meta?.reset_memos as unknown[] | undefined) ?? []) as unknown[]).slice()
-    // 리스트형 콜메모 전체 보존 후 비움. 없으면 단건 메모 폴백.
-    const memos = Array.isArray(r.meta?.memos)
-      ? (r.meta!.memos as { body: string; author?: string | null; consult_status?: string | null }[])
-      : []
-    if (memos.length > 0) {
-      for (const e of memos) {
-        archive.push({
-          body: e.body,
-          archived_at: ts,
-          reset_by: actor,
-          author: e.author,
-          consult_status: e.consult_status,
-        })
-      }
-    } else if (r.memo && r.memo.trim()) {
-      archive.push({ body: r.memo, archived_at: ts, reset_by: actor })
-    }
-    const meta = { ...(r.meta ?? {}), memos: [], reset_memos: archive, win_records: [], last_reset_at: ts }
-    const { error } = await sb()
-      .from('members')
-      .update({
-        memo: null,
-        grade: 'free',
-        status: 'active',
-        assigned_staff_id: null,
-        team_id: null,
-        outcall_done: false,
-        tendency: null,
-        consult_status: '신규',
-        last_active_at: null,
-        registered_at: ts, // 현장 피드백: 초기화 시점을 새 가입일시로
-        is_suspended: false,
-        is_deleted: false,
-        is_withdrawn: false,
-        win_history: null, // DB초기화 시 당첨내역도 함께 초기화(현장 피드백 7/28)
-        meta,
-      })
-      .eq('id', r.id)
-    if (error) throw error
-  }
-  const asg = ids.map((id) => ({
-    id: genId('as'),
-    member_id: id,
-    staff_id: null,
-    assigned_by: actor,
-    type: 'manual' as const,
-    created_at: ts,
-  }))
-  if (asg.length) {
-    const { error } = await sb().from('assignments').insert(asg)
-    if (error) throw error
-  }
-  await pushLog({ kind: 'admin', actor, action: 'member.reset_db', target_type: 'member', target_id: null, meta: { count: ids.length } })
-  return ids
+/** One admin-authorized transaction; never fall back to browser-side partial updates. */
+export async function resetMembers(ids: string[], operationId: string): Promise<string[]> {
+  const scope = resetMemberIds(ids)
+  const args: AdminResetMembersArgs = { p_member_ids: scope, p_operation_id: operationId }
+  const { data, error } = await sb().rpc('admin_reset_members', args)
+  if (error) throw memberResetError(error)
+  return parseMemberResetResult(data as unknown, scope)
 }
 
 export async function sendSms(ids: string[], templateKey: string, actor: string | null): Promise<void> {

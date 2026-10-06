@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 // 이용자 모듈 데이터 훅 (CLAUDE §1·§8). 전부 TanStack Query 경유 —
 // 컴포넌트 직접 fetch 금지. 뮤테이션은 mock DB 를 변경하고 §8 흐름대로
 // 로그/배정/문자 부수효과를 만든 뒤 관련 쿼리를 무효화한다.
@@ -16,6 +17,7 @@ import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys 
 import { recoSmsBody, renderSms, roundText, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
+import { resetMemberIds, planMemberReset, assertNoResetRecoRound } from '@/lib/memberReset'
 import { resolveExcludeForGrade } from '@/lib/lotto'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { membershipTermsUrl } from '@/lib/membership'
@@ -1309,58 +1311,53 @@ export interface ResetMemo {
 export function useResetMembers() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()
+  const qc = useQueryClient()
+  // Retain an operation across an uncertain response; a repeat cannot erase newer edits.
+  const pending = useRef<{ scope: string; operationId: string } | null>(null)
   return useMutation({
+    retry: false,
     mutationFn: async (v: { ids: string[] }) => {
-      if (dataSource === 'supabase') return supa.resetMembers(v.ids, user?.id ?? null)
+      const ids = resetMemberIds(v.ids)
+      if (user?.role !== 'admin') throw new Error('최고관리자만 DB 초기화를 할 수 있습니다.')
+      const scope = JSON.stringify(ids)
+      if (pending.current?.scope !== scope) pending.current = { scope, operationId: crypto.randomUUID() }
+      const operationId = pending.current.operationId
+      if (dataSource === 'supabase') return supa.resetMembers(ids, operationId)
       mutateDb((db) => {
-        const ts = nowIso()
-        for (const m of db.members) {
-          if (!v.ids.includes(m.id)) continue
-          const archive = ((m.meta?.reset_memos as ResetMemo[] | undefined) ?? []).slice()
-          // 리스트형 콜메모 전체를 보존 후 비운다. 리스트가 없으면 단건 메모로 폴백.
-          const memos = Array.isArray(m.meta?.memos) ? (m.meta!.memos as MemoEntry[]) : []
-          if (memos.length > 0) {
-            for (const e of memos) {
-              archive.push({
-                body: e.body,
-                archived_at: ts,
-                reset_by: user?.id ?? null,
-                author: e.author,
-                consult_status: e.consult_status,
-              })
-            }
-          } else if (m.memo && m.memo.trim()) {
-            archive.push({ body: m.memo, archived_at: ts, reset_by: user?.id ?? null })
-          }
-          m.memo = null
-          m.grade = 'free'
-          m.status = 'active'
-          m.assigned_staff_id = null
-          m.team_id = null
-          m.outcall_done = false
-          m.tendency = null
-          m.consult_status = '신규'
-          m.last_active_at = null
-          m.registered_at = ts // 현장 피드백: 초기화 시점을 새 가입일시로 표시(재사용 신규 리드)
-          m.is_suspended = false
-          m.is_deleted = false
-          m.is_withdrawn = false
-          m.win_history = null // DB초기화 시 당첨내역도 함께 초기화(현장 피드백 7/28)
-          m.meta = { ...m.meta, memos: [], reset_memos: archive, win_records: [], last_reset_at: ts }
-          db.assignments.push({
-            id: genId('as'),
-            member_id: m.id,
-            staff_id: null,
-            assigned_by: user?.id ?? null,
-            type: 'manual',
-            created_at: ts,
-          })
+        if (!db.staff.some(s => s.id === user.id && s.role === 'admin' && s.is_active)) {
+          throw new Error('활성 최고관리자만 DB 초기화를 할 수 있습니다.')
         }
-        db.logs.push(adminLog(user?.id ?? null, 'member.reset_db', null, { count: v.ids.length }))
+        const previous = db.member_reset_receipts?.find(r => r.operation_id === operationId)
+        if (previous) {
+          if (previous.actor_id !== user.id || JSON.stringify(previous.member_ids) !== scope) throw new Error('초기화 요청 범위가 변경되었습니다.')
+          return
+        }
+        const members = ids.map(id => db.members.find(m => m.id === id))
+        if (members.some(m => !m)) throw new Error('일부 회원을 찾을 수 없습니다. 새로고침 후 확인해 주세요.')
+        if (db.sms_sends.some(s => ids.includes(s.member_id) && /접수확인필요|발송중/.test(s.status))) {
+          throw new Error('문자 접수 결과 확인 후 초기화해 주세요.')
+        }
+        const ts = nowIso()
+        const plans = members.map(m => planMemberReset(m!, user.id, operationId, ts))
+        for (const plan of plans) {
+          db.members[db.members.findIndex(m => m.id === plan.member.id)] = plan.member
+          ;(db.member_reco_reset_archive ??= []).push(plan.archive)
+          db.assignments.push({ id: genId('as'), member_id: plan.member.id, staff_id: null,
+            assigned_by: user.id, type: 'manual', created_at: ts })
+        }
+        ;(db.member_reset_receipts ??= []).push({ operation_id: operationId, member_ids: ids, actor_id: user.id })
+        db.logs.push(adminLog(user.id, 'member.reset_db', null, { count: ids.length, operation_id: operationId }))
       })
-      return v.ids
+      return ids
     },
-    onSuccess: (ids) => invalidate(ids),
+    onSuccess: (ids) => {
+      pending.current = null
+      invalidate(ids)
+      void qc.invalidateQueries({ queryKey: ['weekly-reco-status'] })
+      void qc.invalidateQueries({ queryKey: ['weekly-free-reco-status'] })
+      void qc.invalidateQueries({ queryKey: revenueKeys.all })
+      void qc.invalidateQueries({ queryKey: ['logs'] })
+    },
   })
 }
 
@@ -1388,6 +1385,7 @@ export function useSendSms() {
       // 추천번호 템플릿: 조합발송과 동일 본문(실 발급조합). 발급분 없으면 즉석 발급 후 meta 적재(현장 피드백 6/22).
       const isReco = v.templateKey === 'recommend'
       const recoTarget = isReco ? cur.lotto_rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1 : 0
+      if (isReco) assertNoResetRecoRound(cur.member_reco_reset_archive, targets.map(m => m.id), recoTarget)
       const freshIssues: Record<string, WeeklyRecoIssue> = {}
 
       // 약관 템플릿: 약관 전문 대신 회원 등급의 공개 약관 페이지 링크를 발송(현장 피드백 7/22).
@@ -1559,6 +1557,7 @@ export function useManualIssueReco() {
       const rounds = cur.lotto_rounds
       const exclude = resolveExcludeForGrade(cur.site_settings, member.grade)
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
+      assertNoResetRecoRound(cur.member_reco_reset_archive, [member.id], targetRound)
       const setCount = Math.max(1, v.setCount)
       const ratio = cur.site_settings.weekly_free_reco?.logic_ratio ?? 100
       const sets = generateIssueSetsForGrade(rounds, member.grade, exclude, setCount, ratio)

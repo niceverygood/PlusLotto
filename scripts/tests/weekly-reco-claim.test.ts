@@ -8,7 +8,7 @@ function member(id: string, site = 'lotto815'): Row {
   return { id, grade: 'gold', name: 'synthetic', phone: '01000000001', registered_at: '2020-01-01T00:00:00Z', assigned_staff_id: 'test-staff', status: 'active', is_deleted: false, is_withdrawn: false, is_suspended: false,
     meta: { source_site: site, weekly_reco_day: 2, weekly_reco_count: 1, reco_paused: false, reco_pause_reason: null, end_date: '2027-12-31', weekly_recos: [] } }
 }
-interface Options { nullMeta?: boolean; rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean }
+interface Options { resetArchived?: boolean; resetArchiveUnavailable?: boolean; nullMeta?: boolean; rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean }
 async function fixture(options: Options, work: (s: {
   rows: Row[]; ledger: Map<string, Ledger>; sends: Record<string, unknown>[]; writes: string[]; requests: string[]; logs: Record<string, unknown>[];
   invoke: (body?: Record<string, unknown>, query?: Record<string, unknown>, auth?: string) => Promise<{ status: number; body: Record<string, unknown> }>
@@ -53,6 +53,7 @@ async function fixture(options: Options, work: (s: {
       scans++; if (options.concurrent && scans <= 2) { if (scans === 2) release?.(); await barrier }
       return json(options.nullMeta ? snap.map(r => ({ ...r, meta: null })) : snap)
     }
+    if (table === 'member_reco_reset_archive') return options.resetArchiveUnavailable ? json({message:'unavailable'},503) : json(options.resetArchived ? [{operation_id:'synthetic-operation',member_id:rows[0].id,issues:[{round_no:1245}]}] : [])
     if (table === 'reco_issue_ledger') return json([...ledger.values()].map(x => ({ id: x.id, member_id: x.member.id, status: x.status })))
     if (table === 'rpc/reco_issue_claim') {
       writes.push('claim')
@@ -269,5 +270,21 @@ test('manual issuance accepts a SQL NULL metadata snapshot and nullable claim re
     assert.equal(r.body.issued, 1); assert.equal(r.body.smsSent, 1); assert.equal(r.body.reviewRequired, 0)
     assert.equal(s.ledger.size, 1); assert.equal(s.sends.length, 1)
     assert.equal((r.body.results as Record<string,unknown>[])[0].status, 'issued')
+  })
+})
+
+
+test('dry-run excludes reset legacy issuance and fails closed on unavailable archive', async () => {
+  await fixture({ resetArchived: true }, async s => {
+    const result = await s.invoke({ dryRun: true, memberIds: [s.rows[0].id] })
+    assert.equal(result.status, 200)
+    assert.equal(result.body.wouldIssue, 0); assert.equal(result.body.wouldSend, 0)
+    assert.equal((result.body.results as Record<string, unknown>[])[0].code, 'ALREADY_ISSUED_BEFORE_RESET')
+    assert.equal(s.writes.length, 0); assert.equal(s.sends.length, 0)
+  })
+  await fixture({ resetArchiveUnavailable: true }, async s => {
+    const result = await s.invoke({ dryRun: true, memberIds: [s.rows[0].id] })
+    assert.equal(result.status, 503); assert.equal(result.body.code, 'RESET_ARCHIVE_LOOKUP_UNAVAILABLE')
+    assert.equal(s.writes.length, 0); assert.equal(s.sends.length, 0)
   })
 })

@@ -1618,14 +1618,35 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
         if (typeof nextCursor !== 'string' || nextCursor === claimCursor) return res.status(503).json({ ok: false, dryRun: true, code: 'RECEIPT_SCAN_INVALID', issued: 0, smsSent: 0 })
         claimCursor = nextCursor
       }
+      // Reset legacy issues have no provider claim; their private archive is also a tombstone.
+      // Query only current candidates, in bounded pages, and fail closed when the archive is unavailable.
+      const resetIssued = new Set<string>()
+      for (let start = 0; start < eligible.length; start += 200) {
+        const ids = eligible.slice(start, start + 200).map(({ r }) => r.id)
+        for (let offset = 0; ; offset += 1000) {
+          const archived = await sb.from('member_reco_reset_archive').select('operation_id,member_id,issues')
+            .in('member_id', ids).order('operation_id').order('member_id').range(offset, offset + 999)
+          if (archived.error) return res.status(503).json({ ok: false, dryRun: true, code: 'RESET_ARCHIVE_LOOKUP_UNAVAILABLE', issued: 0, smsSent: 0 })
+          const rows = archived.data ?? []
+          for (const row of rows) {
+            if (typeof row.member_id !== 'string' || !Array.isArray(row.issues)) {
+              return res.status(503).json({ ok: false, dryRun: true, code: 'RESET_ARCHIVE_INVALID', issued: 0, smsSent: 0 })
+            }
+            if (row.issues.some((issue: unknown) => issue && typeof issue === 'object' &&
+              'round_no' in issue && String(issue.round_no) === String(targetRound))) resetIssued.add(row.member_id)
+          }
+          if (rows.length < 1000) break
+        }
+      }
       const preview = eligible.map(({ r, count, sender: registeredSender }) => {
         const site = typeof r.meta?.source_site === 'string' && r.meta.source_site.trim() ? r.meta.source_site.trim() : 'pluslotto'
         const wantsSms = options.mode === 'manual' ? manualSmsOn : expectsComboSms(r, { paidSmsOn })
         const senderMissing = wantsSms && !registeredSender?.replace(/\D/g, '')
         const prior = priorClaims.get(r.id)
-        return { member_id: r.id, source_site: site, status: prior ? 'review_required' : senderMissing ? 'skipped' : 'dry_run',
-          code: prior ? 'EXISTING_CLAIM' : senderMissing ? 'SMS_SENDER_UNSET' : 'READY_TO_CLAIM', round_no: targetRound, set_count: count,
-          would_request_sms: wantsSms && !senderMissing && !prior, approval_verified: false }
+        const reset = resetIssued.has(r.id)
+        return { member_id: r.id, source_site: site, status: prior ? 'review_required' : reset || senderMissing ? 'skipped' : 'dry_run',
+          code: prior ? 'EXISTING_CLAIM' : reset ? 'ALREADY_ISSUED_BEFORE_RESET' : senderMissing ? 'SMS_SENDER_UNSET' : 'READY_TO_CLAIM', round_no: targetRound, set_count: count,
+          would_request_sms: wantsSms && !senderMissing && !prior && !reset, approval_verified: false }
       })
       return res.status(200).json({ ok: true, dryRun: true, round_no: targetRound, issued: 0, smsSent: 0, smsFail: 0,
         wouldIssue: preview.filter(r => r.status === 'dry_run').length, wouldSend: preview.filter(r => r.would_request_sms).length,
