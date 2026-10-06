@@ -995,8 +995,14 @@ export function recoSkipReason(
   // 발송갯수 명시적 0 → 발급·문자 제외(현장 6/26).
   if (meta.weekly_reco_count === 0) return 'count-zero'
   const recos = Array.isArray(meta.weekly_recos) ? (meta.weekly_recos as WeeklyRecoIssue[]) : []
-  if (recos.some(issue => issue?.round_no === ctx.targetRound)) return 'already'
+  if (recos.some(issue => issue?.round_no === ctx.targetRound && !isAdditionalManualIssue(issue))) return 'already'
   return null
+}
+
+/** This hint only separates new manual issues in eligibility; the DB also verifies the exact ledger issue. */
+function isAdditionalManualIssue(issue: unknown): boolean {
+  return object(issue) && typeof issue.manual_request_id === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(issue.manual_request_id)
 }
 
 /** 조합 SMS 가 나가야 하는 회원인지 — 유료 SMS 가동 + 유료등급 + 번호 보유. */
@@ -1197,6 +1203,7 @@ interface RecoOptions {
   alsoSms: boolean
   setCount?: number
   expectedRound?: number
+  operationId?: string
 }
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -1240,7 +1247,7 @@ export function parseRecoRequest(req: RecoRequest): RecoOptions {
   }
   if (Object.keys(query).length) throw new Error('POST 실행 옵션은 본문에만 전달해 주세요.')
   const body: unknown = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
-  if (!object(body) || Object.keys(body).some(k => !['memberIds', 'mode', 'dryRun', 'alsoSms', 'setCount', 'expectedRound'].includes(k)))
+  if (!object(body) || Object.keys(body).some(k => !['memberIds', 'mode', 'dryRun', 'alsoSms', 'setCount', 'expectedRound', 'operationId'].includes(k)))
     throw new Error('잘못된 실행 요청입니다.')
   const ids = body.memberIds
   if (!Array.isArray(ids) || !ids.length || ids.length > 50 || ids.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(id)) || new Set(ids).size !== ids.length)
@@ -1252,9 +1259,13 @@ export function parseRecoRequest(req: RecoRequest): RecoOptions {
   if (body.setCount !== undefined && (mode !== 'manual' || !Number.isInteger(body.setCount) || Number(body.setCount) < 1 || Number(body.setCount) > 100))
     throw new Error('수동 조합 수는 1~100의 정수여야 합니다.')
   if (body.expectedRound !== undefined && (!Number.isInteger(body.expectedRound) || Number(body.expectedRound) < 1)) throw new Error('회차는 양의 정수여야 합니다.')
+  if (body.operationId !== undefined && (mode !== 'manual' || typeof body.operationId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.operationId)
+    || body.setCount === undefined || typeof body.alsoSms !== 'boolean'))
+    throw new Error('추가 수동 발급은 요청 UUID와 명시적 조합 수·문자 옵션이 필요합니다.')
   if (mode === 'scheduled' && body.alsoSms === false) throw new Error('예정 발급에서는 문자 옵션을 임의로 끌 수 없습니다.')
   return { memberIds: ids as string[], mode, dryRun: body.dryRun === true, auditOnly: false, chain: 0,
-    alsoSms: body.alsoSms !== false, setCount: body.setCount as number | undefined, expectedRound: body.expectedRound as number | undefined }
+    alsoSms: body.alsoSms !== false, setCount: body.setCount as number | undefined, expectedRound: body.expectedRound as number | undefined, operationId: typeof body.operationId === 'string' ? body.operationId.toLowerCase() : undefined }
 }
 
 type RecoCaller = { kind: 'cron'; actor: null } | { kind: 'staff'; actor: string; role: string }
@@ -1284,7 +1295,7 @@ export async function scanRecoSms(sb: any, sinceIso: string, page: number): Prom
   for (;;) {
     let q = sb
       .from('sms_sends')
-      .select('id, member_id, status')
+      .select('id, member_id, status, meta')
       .eq('type', 'recommend')
       .gte('sent_at', sinceIso)
       .order('id')
@@ -1292,9 +1303,9 @@ export async function scanRecoSms(sb: any, sinceIso: string, page: number): Prom
     if (cursor !== null) q = q.gt('id', cursor)
     const { data, error } = await q
     if (error) throw error
-    const got = (data ?? []) as { id: string; member_id: string | null; status: string | null }[]
+    const got = (data ?? []) as { id: string; member_id: string | null; status: string | null; meta?: unknown }[]
     for (const row of got) {
-      if (!row.member_id) continue
+      if (!row.member_id || isAdditionalManualIssue(row.meta)) continue
       // 같은 회원에 성공·실패가 섞이면(재발송) 성공을 우선한다 — 받은 사람은 누락이 아니다.
       if (row.status === '발송완료' || row.status === '발송완료(재발송)') {
         ok.add(row.member_id)
@@ -1325,6 +1336,8 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
   }
   const caller = await authorizeReco(req, url, key, secret, !!options.memberIds)
   if (!caller) return res.status(401).json({ ok: false, code: 'AUTH' })
+  if (options.operationId && caller.kind !== 'staff')
+    return res.status(403).json({ ok: false, code: 'MANUAL_STAFF_REQUIRED' })
   const force = options.mode === 'manual'
   // 발송은 하지 않고 누락 대조만 수행(현장 9/12 요청). 발송 경로와 상호 배타 — 대조 실행이
   // 또 다른 대조를 부르지 않도록 아래 자동 트리거보다 먼저 분기한다.
@@ -1334,7 +1347,47 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
   const startedAt = Date.now()
   const sb = createClient(url, key, { auth: { persistSession: false } })
 
+  // A request UUID belongs to one exact member, actor, quantity and SMS intent.
+  // Status is read-only: not_found is never proof that a delayed original request cannot arrive.
+  const readOperation = async (): Promise<Record<string, unknown>> => {
+    if (!options.operationId || caller.kind !== 'staff') throw new Error('MANUAL_STAFF_REQUIRED')
+    const member = await sb.from('members').select('id,assigned_staff_id').eq('id', options.memberIds![0]).maybeSingle()
+    if (member.error || !member.data || (caller.role === 'rep' && member.data.assigned_staff_id !== caller.actor))
+      throw new Error('TARGET_FORBIDDEN')
+    const lookup = await sb.from('reco_manual_operations').select('id,member_id,actor_id,round_no,set_count,also_sms,status,reason')
+      .eq('id', options.operationId).maybeSingle()
+    if (lookup.error) throw new Error('OPERATION_LOOKUP_UNAVAILABLE')
+    const op: unknown = lookup.data
+    if (!op) return { id: options.operationId, status: 'not_found', set_count: options.setCount, also_sms: options.alsoSms, canStartNew: false }
+    if (!object(op) || op.member_id !== options.memberIds![0] || op.actor_id !== caller.actor
+      || op.set_count !== options.setCount || op.also_sms !== options.alsoSms
+      || (options.expectedRound !== undefined && op.round_no !== options.expectedRound)) throw new Error('OPERATION_CONFLICT')
+    const blocked = await sb.from('reco_issue_ledger').select('id').eq('member_id', op.member_id)
+      .eq('round_no', op.round_no).in('status', ['claimed', 'unknown', 'rejected']).limit(1)
+    if (blocked.error) throw new Error('OPERATION_RECEIPT_UNAVAILABLE')
+    if (op.status === 'blocked') return { id: op.id, status: 'blocked', code: op.reason,
+      round_no: op.round_no, set_count: op.set_count, also_sms: op.also_sms,
+      canStartNew: !blocked.data?.length, confirmedNotIssued: true }
+    const receipt = await sb.from('reco_issue_ledger').select('status,issue,should_send')
+      .eq('manual_request_id', options.operationId).maybeSingle()
+    if (receipt.error || !receipt.data) throw new Error('OPERATION_RECEIPT_UNAVAILABLE')
+    const status: unknown = receipt.data.status
+    if (typeof status !== 'string' || !['claimed','accepted','rejected','unknown','not_requested'].includes(status))
+      throw new Error('OPERATION_RECEIPT_UNAVAILABLE')
+    return { id: op.id, status, round_no: op.round_no, set_count: op.set_count, also_sms: op.also_sms,
+      canStartNew: ['accepted','not_requested'].includes(status) && !blocked.data?.length }
+  }
   try {
+    if (options.operationId) {
+      let operation: Record<string, unknown>
+      try { operation = await readOperation() } catch (error) {
+        const code = error instanceof Error ? error.message : 'OPERATION_LOOKUP_UNAVAILABLE'
+        return res.status(code === 'TARGET_FORBIDDEN' ? 403 : code === 'OPERATION_CONFLICT' ? 409 : 503).json({ ok: false, code })
+      }
+      if (options.dryRun || operation.status !== 'not_found') return res.status(200).json({ ok: true,
+        dryRun: options.dryRun, operation, operationId: options.operationId,
+        confirmedNotIssued: operation.confirmedNotIssued === true, issued: 0, smsSent: 0, results: [] })
+    }
     const nowMs = Date.now()
     const kst = new Date(nowMs + 9 * 3600_000)
     const todayKst = kstDay(nowMs)
@@ -1551,7 +1604,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     for (const r of uniqueRows) {
       const meta = r.meta ?? {}
       const contextProblem = object(meta) ? recoContextProblem(meta) : 'INVALID_META'
-      if (contextProblem) {
+      if (contextProblem && !options.operationId) {
         if (contextProblem === 'HELD') skippedPaused++
         else errCount++
         if (options.memberIds) results.push({ member_id: r.id, status: 'skipped', code: contextProblem, round_no: targetRound })
@@ -1562,7 +1615,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       // one-off count may override count-zero without changing the member setting.
       const manualMeta = { ...meta, weekly_reco_day: today,
         ...(options.setCount !== undefined ? { weekly_reco_count: options.setCount } : {}) }
-      const skip = recoSkipReason(options.mode === 'manual' ? { ...r, meta: manualMeta } : r, gateCtx)
+      const skip = options.operationId ? null : recoSkipReason(options.mode === 'manual' ? { ...r, meta: manualMeta } : r, gateCtx)
       if (skip && options.memberIds) results.push({ member_id: r.id, status: 'skipped', code: skip.toUpperCase(), round_no: targetRound })
       if (skip === 'day' || skip === 'count-zero') {
         skippedDay++
@@ -1593,7 +1646,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       const sourceSite = typeof meta.source_site === 'string' && meta.source_site.trim() ? meta.source_site.trim() : 'pluslotto'
       const wantsSms = options.mode === 'manual' ? manualSmsOn : expectsComboSms(r, { paidSmsOn })
       const memberSender = senderFor(sourceSite)
-      if (wantsSms && !memberSender) {
+      if (wantsSms && !memberSender && !options.operationId) {
         errCount++
         if (options.memberIds) results.push({ member_id: r.id, status: 'error', code: 'SMS_SENDER_UNSET', round_no: targetRound })
         continue
@@ -1606,13 +1659,14 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       const priorClaims = new Map<string, string>()
       let claimCursor: string | null = null
       for (;;) {
-        let query = sb.from('reco_issue_ledger').select('id,member_id,status').eq('round_no', targetRound).order('id').limit(1000)
+        let query = sb.from('reco_issue_ledger').select('id,member_id,status,manual_request_id').eq('round_no', targetRound).order('id').limit(1000)
         if (options.memberIds) query = query.in('member_id', options.memberIds)
         if (claimCursor) query = query.gt('id', claimCursor)
         const receiptState = await query
         if (receiptState.error) return res.status(503).json({ ok: false, dryRun: true, code: 'RECEIPT_LOOKUP_UNAVAILABLE', issued: 0, smsSent: 0 })
         const claimRows = receiptState.data ?? []
-        for (const row of claimRows) if (typeof row.member_id === 'string' && typeof row.status === 'string') priorClaims.set(row.member_id, row.status)
+        for (const row of claimRows) if (typeof row.member_id === 'string' && typeof row.status === 'string'
+          && (!row.manual_request_id || ['claimed','unknown','rejected'].includes(row.status))) priorClaims.set(row.member_id, row.status)
         if (claimRows.length < 1000 || options.memberIds) break
         const nextCursor: unknown = claimRows[claimRows.length - 1]?.id
         if (typeof nextCursor !== 'string' || nextCursor === claimCursor) return res.status(503).json({ ok: false, dryRun: true, code: 'RECEIPT_SCAN_INVALID', issued: 0, smsSent: 0 })
@@ -1633,7 +1687,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
               return res.status(503).json({ ok: false, dryRun: true, code: 'RESET_ARCHIVE_INVALID', issued: 0, smsSent: 0 })
             }
             if (row.issues.some((issue: unknown) => issue && typeof issue === 'object' &&
-              'round_no' in issue && String(issue.round_no) === String(targetRound))) resetIssued.add(row.member_id)
+              'round_no' in issue && String(issue.round_no) === String(targetRound) && !isAdditionalManualIssue(issue))) resetIssued.add(row.member_id)
           }
           if (rows.length < 1000) break
         }
@@ -1672,10 +1726,11 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets }
       const wantsSms = options.mode === 'manual' ? manualSmsOn : expectsComboSms(r, { paidSmsOn })
       const sourceSite = typeof meta.source_site === 'string' && meta.source_site.trim() ? meta.source_site.trim() : 'pluslotto'
-      const claimed = await sb.rpc('reco_issue_claim', {
+      const claimed = await sb.rpc(options.operationId ? 'reco_issue_manual_claim' : 'reco_issue_claim', {
+        ...(options.operationId ? { p_operation_id: options.operationId } : {}),
         p_member_id: r.id, p_round_no: targetRound, p_expected_meta: meta, p_issue: issue,
         p_expected_site: sourceSite, p_today: todayKst, p_weekday: today, p_mode: options.mode,
-        p_also_sms: wantsSms, p_actor: caller.actor, p_set_count: options.setCount ?? null,
+        p_also_sms: options.operationId ? options.alsoSms : wantsSms, p_actor: caller.actor, p_set_count: options.setCount ?? null,
         p_expected_grade: r.grade, p_expected_phone: r.phone,
       })
       const claim: unknown = claimed.data
@@ -1699,6 +1754,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
         || (claim.should_send && typeof claimedMember.phone !== 'string')
         || (typeof claimedMember.meta.source_site === 'string' && claimedMember.meta.source_site.trim() ? claimedMember.meta.source_site.trim() : 'pluslotto') !== sourceSite
         || !object(claimedIssue) || claimedIssue.round_no !== targetRound
+        || (options.operationId !== undefined && claimedIssue.manual_request_id !== options.operationId)
         || JSON.stringify(claimedIssue.sets) !== JSON.stringify(sets)) {
         errCount++; reviewRequired++
         if (options.memberIds) results.push({ member_id: r.id, status: 'review_required', code: 'CLAIM_CONTRACT_INVALID', round_no: targetRound })
@@ -1878,7 +1934,14 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       }
     }
 
+    let operation: Record<string, unknown> | undefined
+    if (options.operationId) {
+      try { operation = await readOperation() } catch {
+        errCount++; reviewRequired++
+      }
+    }
     return res.status(200).json({ ok: errCount === 0 && reviewRequired === 0,
+      ...(operation ? { operation, operationId: options.operationId, confirmedNotIssued: operation.confirmedNotIssued === true } : {}),
       code: reviewRequired > 0 ? 'RECEIPT_CONFIRMATION_REQUIRED' : 'COMPLETE', dryRun: false,
       round_no: targetRound, issued, skippedRound, skippedDay, skippedPaused, skippedExpired, errors: errCount,
       reviewRequired, staleRound, smsSent, smsFail, remaining, chain, results })

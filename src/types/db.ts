@@ -1,5 +1,10 @@
+import type { Database as ManualRecoDatabase } from './manualReco.generated'
 import type { Database as PaymentMethodDatabase } from './paymentMethod.generated'
 import type { Database as MemberResetDatabase } from './memberReset.generated'
+
+export type ManualRecoClaimArgs = ManualRecoDatabase['public']['Functions']['reco_issue_manual_claim']['Args']
+export type ManualRecoOperation = ManualRecoDatabase['public']['Tables']['reco_manual_operations']['Row']
+export type AdminDeleteMemberRecoArgs = ManualRecoDatabase['public']['Functions']['admin_delete_member_reco']['Args']
 
 export type AdminResetMembersArgs = MemberResetDatabase['public']['Functions']['admin_reset_members']['Args']
 // 플러스로또 도메인 타입 — 라이브 Supabase 확정 전 수기 작성한 인터림 모델.

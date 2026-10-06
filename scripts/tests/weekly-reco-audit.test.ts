@@ -197,7 +197,7 @@ test('발송 루프와 누락 대조가 판정 함수를 공유한다', async ()
   for (const expr of [
     'recoSafetyBlockReason(meta, ctx.todayKst)', // 일시정지·종료일
     'meta.weekly_reco_count === 0', // 발송갯수 0
-    'recos.some(issue => issue?.round_no === ctx.targetRound)', // 모든 발급 이력에서 확인
+    'recos.some(issue => issue?.round_no === ctx.targetRound && !isAdditionalManualIssue(issue))', // 모든 발급 이력에서 확인
     '? DEFAULT_DAY', // 무료 기본 발송요일
   ]) {
     assert.equal(count(expr), 1, `판정 조건이 여러 곳에 적혀 있다: ${expr}`)
@@ -224,4 +224,11 @@ test('대조 실행(audit=1)은 발송을 하지 않고 또 다른 대조를 부
   // 그리고 발송 경로보다 먼저 빠져나가야 한다.
   assert.ok(body.includes('return res.status(200).json('), '대조 분기는 자체 응답으로 끝나야 한다')
   assert.ok(branch < src.indexOf('const eligible:'), '대조 분기가 발송 루프보다 앞에 있어야 한다')
+})
+
+
+test('new identified manual issue does not count as an automatic issue in missing-send audit', () => {
+  const meta = { ...issued(), weekly_recos: [{ round_no: ROUND, manual_request_id: '10000000-0000-4000-8000-000000000001' }] }
+  const result = recoAuditMisses([row('manual-only', { meta })], auditCtx())
+  assert.equal(result.misses[0]?.reason, 'not_issued')
 })

@@ -18,7 +18,7 @@ import {
 import { GRADE_LABEL, PAYMENT_METHOD_LABEL, SMS_TYPE_LABEL } from '@/design-system/labels'
 import { date, datetime, krw } from '@/lib/format'
 import { useStaff, useTeams } from '@/lib/staff'
-import { useRole } from '@/lib/auth'
+import { useCurrentUser, useRole } from '@/lib/auth'
 import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
 import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 import { isEndDatePast } from '@/lib/memberExpiry'
@@ -30,6 +30,8 @@ import { PAYMENT_ROUNDS, roundForGrade, type PaymentRound } from '@/lib/paymentR
 import { homepageId, homepagePw } from '@/lib/homepage'
 import { dataSource } from '@/lib/supabase'
 import { manualRecoCount, manualRecoSuccessMessage } from '@/lib/manualRecoFeedback'
+import { clearManualRecoIntent, MANUAL_INTENT_CHANGED, PENDING_MANUAL_MESSAGE, readManualRecoIntent, reserveManualRecoIntent, type ManualRecoIntent } from '@/lib/manualRecoIntent'
+import { manualRecoOperationMessage, RecommendationRequestError } from '@/lib/recoRequest'
 import { memberSite } from '@/lib/siteScope'
 import { supportedLegacyHistorySite } from '@/lib/legacySites'
 import { readWinRecords, summarizeWinRecords, type WinRecord } from '@/lib/winHistory'
@@ -48,6 +50,7 @@ import {
   useDeleteRecoIssue,
   useDeleteMemo,
   useManualIssueReco,
+  useManualRecoOperation,
   useMember,
   useMemberAssignments,
   useMemberPayments,
@@ -143,6 +146,7 @@ export function MemberDrawer({
   const { data: templates = [] } = useSmsTemplates()
 
   const role = useRole()
+  const currentUser = useCurrentUser()
   const updateMember = useUpdateMember()
   const addMemo = useAddMemo()
   const deleteMemo = useDeleteMemo()
@@ -152,6 +156,33 @@ export function MemberDrawer({
   const sendSms = useSendSms()
   const sendCustomSms = useSendCustomSms()
   const manualIssue = useManualIssueReco()
+  const manualOperation = useManualRecoOperation()
+  const [pendingIssue, setPendingIssue] = useState<ManualRecoIntent | null>(null)
+  const [issueStorageError, setIssueStorageError] = useState<string | null>(null)
+  const [issueConfirming, setIssueConfirming] = useState(false)
+  const issueSubmitRef = useRef(false)
+  const [confirmIssue, setConfirmIssue] = useState<{ memberId: string; setCount: number; alsoSms: boolean } | null>(null)
+  const issueActorRef = useRef(currentUser?.id)
+  issueActorRef.current = currentUser?.id
+  useEffect(() => {
+    setConfirmIssue(null)
+    const refresh = () => {
+      if (!currentUser?.id || !memberId) { setPendingIssue(null); setIssueStorageError(null); return }
+      try {
+        setPendingIssue(readManualRecoIntent(currentUser.id, memberId))
+        setIssueStorageError(null)
+      } catch (error) {
+        setIssueStorageError(error instanceof Error ? error.message : '이전 발급 요청 기록을 확인할 수 없습니다. 새로 발급하지 말고 관리자에게 확인해 주세요.')
+      }
+    }
+    refresh()
+    window.addEventListener('storage', refresh)
+    window.addEventListener(MANUAL_INTENT_CHANGED, refresh)
+    return () => {
+      window.removeEventListener('storage', refresh)
+      window.removeEventListener(MANUAL_INTENT_CHANGED, refresh)
+    }
+  }, [currentUser?.id, memberId])
   const issueMemberRef = useRef(memberId)
   issueMemberRef.current = memberId
   const [issueFeedback, setIssueFeedback] = useState<{ memberId: string; error: boolean; message: string } | null>(null)
@@ -300,6 +331,68 @@ export function MemberDrawer({
     )
   }
   const id = member.id
+  const unresolvedIssue = pendingIssue?.memberId === id ? pendingIssue : null
+  const issueBusy = manualIssue.isPending || issueConfirming
+  const issueBlocked = issueBusy || !!unresolvedIssue || !!issueStorageError
+
+  const confirmManualIssue = async () => {
+    const draft = confirmIssue
+    const actorId = currentUser?.id
+    if (!draft || draft.memberId !== id || !actorId || issueSubmitRef.current || manualIssue.isPending) return
+    issueSubmitRef.current = true
+    setIssueConfirming(true)
+    setIssueFeedback(null)
+    let intent: ManualRecoIntent | null = null
+    try {
+      intent = await reserveManualRecoIntent({ ...draft, actorId })
+      // 확인 중 회원/로그인이 바뀌었다면 서버에는 보내지 않고 로컬 예약만 철회한다.
+      if (issueMemberRef.current !== draft.memberId || issueActorRef.current !== actorId) {
+        clearManualRecoIntent(intent)
+        return
+      }
+      setPendingIssue(intent)
+      const result = await manualIssue.mutateAsync(intent)
+      if (result.operation?.canStartNew === true) clearManualRecoIntent(intent)
+      if (issueMemberRef.current === draft.memberId && issueActorRef.current === actorId) {
+        setIssueFeedback({ memberId: draft.memberId, error: !result.operation,
+          message: result.operation
+            ? manualRecoSuccessMessage(result, draft.alsoSms, dataSource === 'supabase') + (result.operation.canStartNew ? '' : ' 다른 미확인 요청이 있어 추가 발급은 보류합니다.')
+            : '처리 결과의 요청 번호를 확인하지 못했습니다. 새로 발급하지 말고 처리 결과를 확인해 주세요.' })
+      }
+    } catch (error) {
+      // 전송 전의 로컬 검증 실패 또는 서버가 확정 미발급을 증명한 경우에만 새 확인을 허용한다.
+      if (intent && error instanceof RecommendationRequestError && error.confirmedNotIssued && error.canStartNew) {
+        try { clearManualRecoIntent(intent) } catch { /* 저장소 확인 실패 시 기존 잠금을 유지한다. */ }
+      }
+      if (issueMemberRef.current === draft.memberId && issueActorRef.current === actorId) setIssueFeedback({ memberId: draft.memberId, error: true,
+        message: error instanceof Error ? error.message : PENDING_MANUAL_MESSAGE })
+    } finally {
+      issueSubmitRef.current = false
+      setIssueConfirming(false)
+      setConfirmIssue(null)
+    }
+  }
+
+  const checkManualIssue = () => {
+    if (!unresolvedIssue || manualOperation.isPending || issueBusy) return
+    const intent = unresolvedIssue
+    manualOperation.mutate(intent, {
+      onSuccess: (operation) => {
+        try {
+          if (operation.canStartNew) clearManualRecoIntent(intent)
+          if (issueMemberRef.current === intent.memberId && issueActorRef.current === intent.actorId) setIssueFeedback({ memberId: intent.memberId,
+            error: operation.status !== 'accepted' && operation.status !== 'not_requested', message: manualRecoOperationMessage(operation) })
+        } catch (error) {
+          if (issueMemberRef.current === intent.memberId && issueActorRef.current === intent.actorId) setIssueFeedback({ memberId: intent.memberId, error: true,
+            message: error instanceof Error ? error.message : PENDING_MANUAL_MESSAGE })
+        }
+      },
+      onError: (error) => {
+        if (issueMemberRef.current === intent.memberId && issueActorRef.current === intent.actorId) setIssueFeedback({ memberId: intent.memberId, error: true,
+          message: error instanceof Error ? error.message : PENDING_MANUAL_MESSAGE })
+      },
+    })
+  }
   const historySite = supportedLegacyHistorySite(memberSite(member.meta))
   // 발급조합 삭제(§8) — 실장까지 확장(현장 피드백 7/24, 정의현 차장).
   const canDeleteReco = role === 'admin' || role === 'manager' || role === 'leader'
@@ -1181,20 +1274,20 @@ export function MemberDrawer({
                 className={selectCls + ' w-[120px]'}
                 inputMode="numeric"
                 aria-label="발급할 조합 수"
-                disabled={manualIssue.isPending}
+                disabled={issueBlocked}
                 placeholder={`세트 수(기본 ${metaNum(member.meta, 'weekly_reco_count') ?? 30})`}
                 value={issueCount}
                 onChange={(e) => setIssueCount(e.target.value)}
               />
               <label className="flex items-center gap-1.5 text-[12px] text-gray-600">
-                <input type="checkbox" checked={issueSms} disabled={manualIssue.isPending} onChange={(e) => setIssueSms(e.target.checked)} />
+                <input type="checkbox" checked={issueSms} disabled={issueBlocked} onChange={(e) => setIssueSms(e.target.checked)} />
                 문자로도 발송
               </label>
               <Button
                 size="sm"
                 variant="pri"
                 className="ml-auto"
-                disabled={manualIssue.isPending}
+                disabled={issueBlocked}
                 onClick={() => {
                   setIssueFeedback(null)
                   let setCount: number
@@ -1204,27 +1297,26 @@ export function MemberDrawer({
                     setIssueFeedback({ memberId: id, error: true, message: error instanceof Error ? error.message : '조합 수를 확인해 주세요.' })
                     return
                   }
-                  manualIssue.mutate({ memberId: id, setCount, alsoSms: issueSms }, {
-                    onSuccess: (result, variables) => {
-                      if (issueMemberRef.current !== variables.memberId) return
-                      setIssueFeedback({ memberId: variables.memberId, error: false,
-                        message: manualRecoSuccessMessage(result, variables.alsoSms, dataSource === 'supabase') })
-                    },
-                    onError: (error, variables) => {
-                      if (issueMemberRef.current !== variables.memberId) return
-                      setIssueFeedback({ memberId: variables.memberId, error: true,
-                        message: error instanceof Error ? error.message : '발급 또는 문자 접수 여부를 확인해야 합니다. 다시 실행하지 말고 발급 내역과 문자업체 전송내역을 확인해 주세요.' })
-                    },
-                  })
+                  setConfirmIssue({ memberId: id, setCount, alsoSms: issueSms })
                 }}
               >
-                {manualIssue.isPending ? '처리 중…' : '지금 발급'}
+                {issueBusy ? '처리 중…' : '지금 발급'}
               </Button>
             </div>
             <p className="mt-1.5 text-[11px] text-gray-500">
               회원 등급의 고정/제외 규칙(없으면 공통)으로 즉시 생성됩니다. 발급 즉시 아래 목록·홈페이지에 반영
-              {issueSms ? ' + 문자 발송' : ''}됩니다. 이미 처리한 회차는 수량을 바꾸어도 다시 발급·발송하지 않습니다.
+              {issueSms ? ' + 문자 발송' : ''}됩니다. 입력한 수량만큼 새 조합을 추가하며 기존 발급번호와 문자 내역은 유지됩니다.
             </p>
+            {issueStorageError && <p role="alert" className="mt-2 text-xs text-danger">{issueStorageError}</p>}
+            {unresolvedIssue && (
+              <div className="mt-2 rounded-md border border-warning/20 bg-warning/10 p-2 text-xs text-ink-800">
+                <p>이전 요청 결과를 확인하기 전에는 새 수동 발급을 시작할 수 없습니다. 결과 확인은 발급이나 문자 발송을 다시 실행하지 않습니다.</p>
+                <p className="mt-1 break-all font-mono text-gray-600">요청 번호: {unresolvedIssue.operationId}</p>
+                <Button size="sm" variant="sec" className="mt-2" disabled={manualOperation.isPending || issueBusy} onClick={checkManualIssue}>
+                  {manualOperation.isPending ? '결과 확인 중…' : '처리 결과 확인'}
+                </Button>
+              </div>
+            )}
             {issueFeedback?.memberId === id && (
               <p
                 role={issueFeedback.error ? 'alert' : 'status'}
@@ -1419,6 +1511,21 @@ export function MemberDrawer({
         </div>
       )}
 
+      <ConfirmModal
+        open={confirmIssue?.memberId === id}
+        onClose={() => { if (!issueSubmitRef.current) setConfirmIssue(null) }}
+        onConfirm={() => { void confirmManualIssue() }}
+        title="수동 조합 추가 발급"
+        description={confirmIssue ? <>
+          <p>{member.name}({member.user_id}) 회원에게 새 조합 {confirmIssue.setCount}세트를 추가 발급합니다. 입력한 수량은 이번에 추가할 수량이며 전체 합계가 아닙니다.</p>
+          <p className="mt-2">기존에 발급한 번호와 문자 내역은 그대로 유지합니다.</p>
+          <p className="mt-2 font-semibold">{confirmIssue.alsoSms ? '이번에 추가한 조합을 문자로도 발송합니다.' : '번호만 추가하고 문자는 발송하지 않습니다.'}</p>
+          <p className="mt-2">처리 결과가 불명확하면 다시 실행하지 않고 접수 결과부터 확인합니다.</p>
+        </> : undefined}
+        confirmText={confirmIssue?.alsoSms ? '추가 발급·문자 발송' : '번호만 추가 발급'}
+        loading={issueBusy}
+      />
+
       {/* 결제 수기취소 확인(현장 8/12) — 등급 롤백·매출 차감이 함께 일어나므로 되돌릴 수 없음을 명시. */}
       <ConfirmModal
         open={payToCancel !== null}
@@ -1478,7 +1585,7 @@ export function MemberDrawer({
         title="조합 발급·발송내역 삭제"
         description={
           recoToDelete
-            ? `${recoToDelete.round_no}회차 ${recoToDelete.sets.length}세트와 연결된 문자내역을 삭제합니다. 해당 조합은 당첨 집계 대상에서도 제외되며 복구할 수 없습니다.`
+            ? `${recoToDelete.round_no}회차 ${recoToDelete.sets.length}세트를 화면과 당첨 집계 대상에서 제외합니다. 이미 발송한 문자는 회수되지 않으며 발급 원장과 문자 접수 기록은 보존됩니다.`
             : undefined
         }
         confirmText="삭제"

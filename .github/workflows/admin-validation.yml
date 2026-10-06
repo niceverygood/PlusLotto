@@ -68,5 +68,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Verify manual issuance transactions on isolated PostgreSQL
+        run: |
+          docker pull postgres:17-alpine
+          mkdir -p "$RUNNER_TEMP/manual-reco-evidence"
+          python3 scripts/tests/test_manual_additional_postgres.py --report "$RUNNER_TEMP/manual-reco-evidence/claim.json"
+          python3 scripts/tests/test_manual_reco_consumers_postgres.py --report "$RUNNER_TEMP/manual-reco-evidence/consumers.json" --keep-container
+          TEST_DB=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/manual-reco-evidence/consumers.json"))["synthetic_container"])')
+          trap 'docker rm -f "$TEST_DB"' EXIT
+          docker run --rm --network "container:$TEST_DB" -e PG_META_GENERATE_TYPES=typescript -e PG_META_GENERATE_TYPES_INCLUDED_SCHEMAS=public -e PG_META_DB_HOST=127.0.0.1 public.ecr.aws/supabase/postgres-meta:v0.99.0 > "$RUNNER_TEMP/manual-reco-evidence/generated-full.ts"
+
+      - name: Preserve synthetic transaction evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-reco-synthetic-evidence
+          path: ${{ runner.temp }}/manual-reco-evidence
+          retention-days: 7
+
       - name: Build
         run: npm run build

@@ -18,7 +18,8 @@ import { mapPool } from '@/lib/async'
 // 단체문자 동시 발송 한도(브라우저). 너무 높이면 Fixie 동시연결·OneShot 레이트리밋 위험 → 보수적 6
 // (크론 weekly-reco 는 server-side CONC=12). 1000건 기준 순차 대비 체감 ~6배 단축.
 const SMS_SEND_CONC = 6
-import { requestRecommendation } from '@/lib/recoRequest'
+import { requestRecommendation, readRecommendationOperation, type ManualRecoOperation, type RecommendationResult } from '@/lib/recoRequest'
+import type { ManualRecoIntent } from '@/lib/manualRecoIntent'
 import { membershipTermsUrl } from '@/lib/membership'
 import { normalizeInflowType } from '@/lib/inflow'
 import { safeStorageName } from '@/lib/storageKey'
@@ -981,11 +982,17 @@ export async function sendCustomSms(ids: string[], body: string, actor: string |
 export async function manualIssueReco(
   v: ManualIssueInput,
   actor: string | null,
-): Promise<{ round_no: number; sets: number[][] }> {
+): Promise<RecommendationResult> {
   // actor는 API의 검증된 세션에서 결정한다. 브라우저가 회원 meta나 SMS 기록을 직접 쓰지 않는다.
   void actor
   const token = (await sb().auth.getSession()).data.session?.access_token ?? ''
   return requestRecommendation(v, token)
+}
+
+/** 같은 수동 요청의 원장만 읽고 발급·문자 접수를 실행하지 않는다. */
+export async function fetchManualRecoOperation(intent: ManualRecoIntent): Promise<ManualRecoOperation> {
+  const token = (await sb().auth.getSession()).data.session?.access_token ?? ''
+  return readRecommendationOperation(intent, token)
 }
 
 /** 잘못 발급·발송한 추천조합 1건을 원자적으로 삭제하고 당첨 집계 대상에서 제외한다. */
