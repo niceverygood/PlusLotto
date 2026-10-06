@@ -8,17 +8,21 @@ import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, Pay
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { cancelPaymentInDb, cancelPaymentRemote } from '@/lib/db/paymentCancel'
 import { dataSource } from '@/lib/supabase'
+import { RecommendationRequestError, type ManualRecoOperation, type RecommendationResult } from '@/lib/recoRequest'
+import type { ManualRecoIntent, MockManualRecoOperation } from '@/lib/manualRecoIntent'
 import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
 import { useSiteScope } from '@/lib/siteScopeStore'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
 import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
-import { recoSmsBody, renderSms, roundText, smsTypeForTemplate } from '@/lib/sms'
+import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
 import { sendOneShot } from '@/lib/oneshot'
 import { assertNoLegacyImportHold } from '@/lib/legacyImportHold'
 import { resetMemberIds, planMemberReset, assertNoResetRecoRound } from '@/lib/memberReset'
-import { resolveExcludeForGrade } from '@/lib/lotto'
+import { gradeRank, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
+import { roundRecoSets } from '@/lib/recoHistory'
+import { readWinRecords, type WinRecord } from '@/lib/winHistory'
 import { generateIssueSetsForGrade } from '@/lib/lottoPatentExclude'
 import { membershipTermsUrl } from '@/lib/membership'
 import { normalizeInflowType } from '@/lib/inflow'
@@ -1442,7 +1446,7 @@ export function useSendSms() {
           const m = db.members.find((x) => x.id === mid)
           if (!m) continue
           const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-          m.meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
+          m.meta = { ...m.meta, weekly_recos: [issue, ...recos] }
         }
         for (const rec of records) db.sms_sends.push(rec)
         db.logs.push({
@@ -1531,6 +1535,7 @@ export interface ManualIssueInput {
   memberId: string
   setCount: number
   alsoSms: boolean // true 면 조합 본문을 문자로도 발송
+  operationId?: string // 지금 발급의 명시적 확인 의도. 기존 추천템플릿 일괄 경로와 분리.
 }
 
 export interface DeleteRecoInput {
@@ -1544,72 +1549,89 @@ export interface DeleteRecoResult {
   deletedSms: number
 }
 
+function mockManualOperationResult(op: MockManualRecoOperation, operations: readonly MockManualRecoOperation[]): ManualRecoOperation {
+  const unresolved = operations.some(other => other.memberId === op.memberId && other.roundNo === op.roundNo
+    && ['claimed', 'unknown', 'rejected'].includes(other.status))
+  return { id: op.operationId, status: op.status, set_count: op.setCount, also_sms: op.alsoSms,
+    round_no: op.roundNo, canStartNew: !unresolved && (op.status === 'accepted' || op.status === 'not_requested') }
+}
+
+function matchingMockOperation(intent: ManualRecoIntent, operations: readonly MockManualRecoOperation[]): MockManualRecoOperation | undefined {
+  const previous = operations.find(op => op.operationId === intent.operationId)
+  if (previous && (previous.actorId !== intent.actorId || previous.memberId !== intent.memberId
+    || previous.setCount !== intent.setCount || previous.alsoSms !== intent.alsoSms)) throw new Error('같은 요청 번호의 회원 또는 발급 조건이 다릅니다. 이전 요청을 확인해 주세요.')
+  return previous
+}
+
 export function useManualIssueReco() {
   const user = useCurrentUser()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (v: ManualIssueInput): Promise<{ round_no: number; sets: number[][] }> => {
+    retry: false,
+    mutationFn: async (v: ManualIssueInput): Promise<RecommendationResult> => {
       if (dataSource === 'supabase') return supa.manualIssueReco(v, user?.id ?? null)
       const cur = readDb()
+      const intent = v.operationId ? { operationId: v.operationId, actorId: user?.id ?? '', memberId: v.memberId, setCount: v.setCount, alsoSms: v.alsoSms } : null
+      const previous = intent ? matchingMockOperation(intent, cur.manual_reco_operations ?? []) : undefined
+      if (previous) {
+        const operation = mockManualOperationResult(previous, cur.manual_reco_operations ?? [])
+        if (previous.status !== 'accepted' && previous.status !== 'not_requested') throw new Error('이전 수동 발급의 접수 결과가 미확인입니다. 재발급하지 말고 처리 결과를 확인해 주세요.')
+        return { round_no: previous.roundNo, sets: previous.sets, operation }
+      }
       const member = cur.members.find((m) => m.id === v.memberId)
-      if (!member) throw new Error('회원을 찾을 수 없습니다.')
-      assertNoLegacyImportHold([member])
+      if (!member) throw new RecommendationRequestError('회원을 찾을 수 없습니다.', true)
+      try { assertNoLegacyImportHold([member]) } catch (error) { throw new RecommendationRequestError(error instanceof Error ? error.message : '발송 보류 회원입니다.', true) }
+      if (!Number.isInteger(v.setCount) || v.setCount < 1 || v.setCount > 100) throw new RecommendationRequestError('조합 수는 1~100 사이의 정수로 입력해 주세요.', true)
       const rounds = cur.lotto_rounds
       const exclude = resolveExcludeForGrade(cur.site_settings, member.grade)
       const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
-      assertNoResetRecoRound(cur.member_reco_reset_archive, [member.id], targetRound)
-      const setCount = Math.max(1, v.setCount)
+      if (!v.operationId) assertNoResetRecoRound(cur.member_reco_reset_archive, [member.id], targetRound)
+      if (intent && cur.manual_reco_operations?.some(op => op.memberId === member.id && op.roundNo === targetRound
+        && ['claimed', 'unknown', 'rejected'].includes(op.status))) throw new Error('미확인 수동 발급 요청이 있습니다. 처리 결과를 먼저 확인해 주세요.')
       const ratio = cur.site_settings.weekly_free_reco?.logic_ratio ?? 100
-      const sets = generateIssueSetsForGrade(rounds, member.grade, exclude, setCount, ratio)
-      const res = { sets }
+      const sets = generateIssueSetsForGrade(rounds, member.grade, exclude, v.setCount, ratio)
       const ts = nowIso()
-      const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets: res.sets }
-
-      // 문자 발송(옵션) — 직접 발송과 동일한 실발송 게이트.
-      // 조합문자 본문 = 'recommend' 템플릿(설정 > 기본문자 템플릿, 현장 8/4) — 비었으면 기존 포맷 폴백.
-      const recoTplBody = cur.sms_templates.find((t) => t.key === 'recommend')?.body
-      const recoBody = recoSmsBody(member.name, targetRound, res.sets, recoTplBody, member.meta)
+      const issue: WeeklyRecoIssue & { manual_request_id?: string } = { round_no: targetRound, issued_at: ts, sets,
+        ...(v.operationId ? { manual_request_id: v.operationId } : {}) }
+      // 새 수동 요청의 선점과 화면 기록을 함께 보존한다. 실패해도 과거 기록을 지우지 않는다.
+      mutateDb((db) => {
+        const m = db.members.find(x => x.id === member.id)
+        if (!m) throw new Error('회원을 찾을 수 없습니다.')
+        if (intent) {
+          if (matchingMockOperation(intent, db.manual_reco_operations ?? [])) throw new Error('이미 처리 중인 요청입니다.')
+          db.manual_reco_operations ??= []
+          db.manual_reco_operations.push({ ...intent, roundNo: targetRound, status: 'claimed', sets })
+        }
+        const recos = Array.isArray(m.meta?.weekly_recos) ? m.meta!.weekly_recos as WeeklyRecoIssue[] : []
+        m.meta = { ...m.meta, weekly_recos: [issue, ...recos] }
+      })
+      const recoTplBody = cur.sms_templates.find(t => t.key === 'recommend')?.body
+      const recoBody = recoSmsBody(member.name, targetRound, sets, recoTplBody, member.meta)
       const sms = cur.site_settings.sms
       const realSend = !!sms?.oneshot_enabled && !!sms.sender_no
-      let smsStatus: string | null = null
-      if (v.alsoSms) {
-        smsStatus = '미발송'
-        if (realSend) {
-          const r = await sendOneShot({
-            member_id: member.id,
-            source_site: memberSite(member.meta),
-            dest_phone: member.phone,
-            msg_body: recoBody,
-            send_phone: sms.sender_no,
-          })
+      let smsStatus: string | null = v.alsoSms ? '미발송' : null
+      let outcome: MockManualRecoOperation['status'] = v.alsoSms ? 'accepted' : 'not_requested'
+      try {
+        if (v.alsoSms && realSend) {
+          const r = await sendOneShot({ member_id: member.id, source_site: memberSite(member.meta), dest_phone: member.phone, msg_body: recoBody, send_phone: sms.sender_no })
           smsStatus = r.ok ? '발송완료' : '실패'
+          outcome = r.ok ? 'accepted' : 'rejected'
         }
+      } catch {
+        outcome = 'unknown'
+        smsStatus = '접수확인필요'
       }
-
       mutateDb((db) => {
-        const m = db.members.find((x) => x.id === v.memberId)
-        if (!m) return
-        const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-        m.meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, 8) }
-        if (v.alsoSms && smsStatus) {
-          db.sms_sends.push({
-            id: genId('sms'),
-            member_id: m.id,
-            template_key: 'recommend',
-            phone: m.phone,
-            body: recoBody,
-            type: 'recommend',
-            status: smsStatus,
-            sent_at: ts,
-          })
-        }
-        db.logs.push(adminLog(user?.id ?? null, 'reco.manual_issue', v.memberId, {
-          round_no: targetRound,
-          set_count: res.sets.length,
-          sms: v.alsoSms,
-        }))
+        const op = intent ? db.manual_reco_operations?.find(x => x.operationId === intent.operationId) : undefined
+        if (op) op.status = outcome
+        if (v.alsoSms && smsStatus) db.sms_sends.push({ id: genId('sms'), member_id: member.id, template_key: 'recommend', phone: member.phone,
+          body: recoBody, type: 'recommend', status: smsStatus, sent_at: ts })
+        db.logs.push(adminLog(user?.id ?? null, 'reco.manual_issue', v.memberId, { round_no: targetRound, set_count: sets.length, sms: v.alsoSms }))
       })
-      return { round_no: targetRound, sets: res.sets }
+      if (outcome === 'unknown' || outcome === 'rejected') throw new Error('번호는 발급됐지만 문자 접수 결과 확인이 필요합니다. 재발급하지 말고 처리 결과를 확인해 주세요.')
+      const latest = readDb().manual_reco_operations ?? []
+      const op = intent ? matchingMockOperation(intent, latest) : undefined
+      return { round_no: targetRound, sets, ...(op ? { operation: mockManualOperationResult(op, latest) } : {}) }
     },
     onSettled: (_r, _error, v) => {
       qc.invalidateQueries({ queryKey: memberKeys.detail(v.memberId) })
@@ -1621,9 +1643,29 @@ export function useManualIssueReco() {
   })
 }
 
+/** 읽기 전용 원장 조회. 확인 버튼은 발급·문자 전송을 재시도하지 않는다. */
+export function useManualRecoOperation() {
+  const qc = useQueryClient()
+  return useMutation({
+    retry: false,
+    mutationFn: async (intent: ManualRecoIntent): Promise<ManualRecoOperation> => {
+      if (dataSource === 'supabase') return supa.fetchManualRecoOperation(intent)
+      const operations = readDb().manual_reco_operations ?? []
+      const op = matchingMockOperation(intent, operations)
+      return op ? mockManualOperationResult(op, operations)
+        : { id: intent.operationId, status: 'not_found', set_count: intent.setCount, also_sms: intent.alsoSms, canStartNew: false }
+    },
+    onSettled: (_result, _error, intent) => {
+      qc.invalidateQueries({ queryKey: memberKeys.detail(intent.memberId) })
+      qc.invalidateQueries({ queryKey: memberKeys.sms(intent.memberId) })
+      qc.invalidateQueries({ queryKey: ['my-sms'] })
+    },
+  })
+}
+
 /**
- * 잘못 발급·발송한 조합 1건 삭제. weekly_recos에서 제거해야 추첨 후 당첨 집계 대상에서도 빠진다.
- * 연결된 추천 SMS 이력과 해당 회차의 추천 당첨기록도 함께 정리하고 감사로그는 보존한다.
+ * 선택한 조합을 화면과 당첨 집계 대상에서 제외한다.
+ * 이미 발송된 문자는 회수되지 않으며 발급 원장·문자 접수 기록은 보존한다.
  */
 export function useDeleteRecoIssue() {
   const user = useCurrentUser()
@@ -1632,7 +1674,9 @@ export function useDeleteRecoIssue() {
   return useMutation({
     mutationFn: async (v: DeleteRecoInput): Promise<DeleteRecoResult> => {
       if (dataSource === 'supabase') return supa.deleteRecoIssue(v)
-
+      if (!user || !['admin', 'manager', 'leader'].includes(user.role)) throw new Error('추천조합 삭제 권한이 없습니다.')
+      if (readDb().manual_reco_operations?.some(op => op.memberId === v.memberId && op.roundNo === v.roundNo
+        && ['claimed', 'unknown'].includes(op.status))) throw new Error('문자 접수 여부 확인 후 조합을 삭제해 주세요.')
       const current = readDb().members.find((m) => m.id === v.memberId)
       const issueExists = current
         ? ((current.meta?.weekly_recos as WeeklyRecoIssue[] | undefined) ?? []).some(
@@ -1641,7 +1685,7 @@ export function useDeleteRecoIssue() {
         : false
       if (!issueExists) throw new Error('삭제할 조합 발급내역을 찾을 수 없습니다.')
 
-      let deletedSms = 0
+      const deletedSms = 0
       mutateDb((db) => {
         const member = db.members.find((m) => m.id === v.memberId)
         if (!member) return
@@ -1651,33 +1695,41 @@ export function useDeleteRecoIssue() {
         const remaining = recos.filter(
           (issue) => !(issue.round_no === v.roundNo && issue.issued_at === v.issuedAt),
         )
-        const hasSameRound = remaining.some((issue) => issue.round_no === v.roundNo)
+        const removed = recos.filter(issue => issue.round_no === v.roundNo && issue.issued_at === v.issuedAt)
+        if (removed.length !== 1) throw new Error('정확한 발급내역을 확인한 뒤 삭제해 주세요.')
+        db.member_reco_reset_archive = [...(db.member_reco_reset_archive ?? []), {
+          operation_id: genId('issue-delete'), member_id: member.id,
+          issues: removed.map(issue => ({ ...issue })), reset_at: nowIso(), reset_by: user.id,
+        }]
         const nextMeta: Record<string, unknown> = { ...member.meta, weekly_recos: remaining }
-        if (!hasSameRound && Array.isArray(member.meta?.win_records)) {
-          nextMeta.win_records = (member.meta.win_records as { round_no?: number; source?: string }[]).filter(
-            (win) => !(win.source === 'reco' && win.round_no === v.roundNo),
-          )
-          if (member.win_history?.startsWith(`${v.roundNo}회`)) member.win_history = null
+        const records: WinRecord[] = readWinRecords(member.meta).filter(win => !(win.source === 'reco' && win.round_no === v.roundNo))
+        const round = db.lotto_rounds.find(item => item.round_no === v.roundNo)
+        if (round) {
+          for (const { numbers, comboIndex } of roundRecoSets(remaining, v.roundNo)) {
+            const rank = gradeRank(numbers, round.numbers, round.bonus)
+            if (rank !== null) records.push({ round_no: v.roundNo, draw_date: round.draw_date, rank,
+              prize: prizeForRank(round, rank) ?? 0, combo_index: comboIndex, source: 'reco' })
+          }
+        }
+        nextMeta.win_records = records
+        const latest = Math.max(0, ...records.map(record => record.round_no))
+        const previousSummaryRound = Number(member.win_history?.match(/^(\d+)회/)?.[1] ?? 0)
+        if (latest && previousSummaryRound <= Math.max(v.roundNo, latest)) {
+          const wins = records.filter(record => record.round_no === latest)
+          member.win_history = `${latest}회 ${Math.min(...wins.map(record => record.rank))}등${wins.length > 1 ? ` (${wins.length}건)` : ''}`
+        } else if (member.win_history?.startsWith(`${v.roundNo}회`)) {
+          member.win_history = null
         }
         member.meta = nextMeta
 
-        const roundLabel = `${roundText(v.roundNo)}회차`
-        for (let i = db.sms_sends.length - 1; i >= 0; i--) {
-          const sms = db.sms_sends[i]
-          if (
-            sms.member_id === v.memberId &&
-            sms.type === 'recommend' &&
-            (sms.sent_at === v.issuedAt || sms.body.includes(roundLabel))
-          ) {
-            db.sms_sends.splice(i, 1)
-            deletedSms++
-          }
-        }
+        // A display deletion never removes evidence of a real or attempted SMS.
         db.logs.push(
           adminLog(user?.id ?? null, 'reco.issue_delete', v.memberId, {
             round_no: v.roundNo,
             issued_at: v.issuedAt,
             deleted_sms: deletedSms,
+            receipts_preserved: true,
+            removed_issue: removed[0],
           }),
         )
       })

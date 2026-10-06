@@ -4,16 +4,11 @@
 //   회차 등록 → 중복 검사 후 미확정 회차 추가 + 로그
 // 회차/베팅은 전역 데이터(RLS 스코프 없음). 읽기(useRounds)는 fetchTables 스냅샷으로 재사용.
 // 수동 재집계는 내구성 있는 작업으로 접수하고, 처리 진행과 완료는 health RPC로 확인한다.
-import type { Grade, LottoRound, SiteSettings, WeeklyRecoIssue } from '@/types/db'
-import { nowIso } from '@/lib/db/store'
-import { insertLog, fetchSiteSettings, patchSiteSettings, sb, selectAll } from '@/lib/db/remote'
+import type { Grade, LottoRound, WeeklyRecoIssue } from '@/types/db'
+import { requestGradeRecoBatch } from '@/lib/gradeRecoRequest'
+import { insertLog, sb } from '@/lib/db/remote'
 import { lottoSum, oddEven } from '@/lib/lotto'
-import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
-import { generateRecommendation } from '@/lib/lottoGenerator'
-import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import {
-  resolveExcludeForGrade,
-  WEEKLY_FREE_RECO_DEFAULT,
   type RegisterResult,
   type RegisterRoundInput,
   type WeeklyIssueResult,
@@ -69,12 +64,6 @@ export async function registerRound(
 }
 
 // ── 회원 추천조합 발급(현장 피드백) — mock useIssueGradeReco 미러 ──────────────
-function seedFor(id: string, round: number): number {
-  let h = round * 2654435761
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return h >>> 0
-}
-
 type MemberRow = { id: string; meta: Record<string, unknown> | null }
 
 export async function fetchWeeklyRecoStatus(grade: Grade): Promise<{
@@ -103,79 +92,36 @@ export async function fetchWeeklyRecoStatus(grade: Grade): Promise<{
   return { targetCount: rows.length, lastRound, lastIssuedAt }
 }
 
-export async function issueGradeReco(grade: Grade, actor: string | null): Promise<WeeklyIssueResult> {
-  const settings = (await fetchSiteSettings()) as SiteSettings
-  const cfg = settings.weekly_free_reco ?? WEEKLY_FREE_RECO_DEFAULT
-  const setCount = Math.max(1, cfg.set_count || WEEKLY_FREE_RECO_DEFAULT.set_count)
-  const ratio = cfg.logic_ratio ?? 100
-  const rounds = await selectAll<LottoRound>('lotto_rounds') // 1000행 캡 회피(페이지네이션)
-  const exclude = resolveExcludeForGrade(settings, grade)
-  const targetRound = rounds.reduce((mx, r) => Math.max(mx, r.round_no), 0) + 1
-  // 실버·골드·다이아는 특허 제외수 로직, 그 외 등급은 기존 통계 로직(현장 피드백 7/23).
-  const patent = isPatentGrade(grade)
-    ? generatePatentSets(rounds, grade, exclude, 1, seedFor(grade, targetRound))
-    : null
-  const trace = patent
-    ? null
-    : generateRecommendation(rounds, exclude, { mode: 20, setCount: 1, seed: seedFor(grade, targetRound) })
-
-  const { data: mdata, error: me } = await sb()
-    .from('members')
-    .select('id, meta')
-    .eq('grade', grade)
-    .eq('is_deleted', false)
-    .eq('is_withdrawn', false)
-  if (me) throw me
-  const rows = (mdata ?? []) as MemberRow[]
-  const ts = nowIso()
+export async function issueGradeReco(grade: Grade, _actor: string | null): Promise<WeeklyIssueResult> {
+  const { data: session, error: authError } = await sb().auth.getSession()
+  if (authError || !session.session?.access_token) throw new Error('다시 로그인해 주세요.')
+  const ids: string[] = []
+  let cursor: string | null = null
+  for (;;) {
+    let query = sb().from('members').select('id').eq('grade', grade)
+      .eq('is_deleted', false).eq('is_withdrawn', false).order('id').limit(1000)
+    if (cursor !== null) query = query.gt('id', cursor)
+    const { data, error } = await query
+    if (error) throw error
+    const rows = (data ?? []) as { id: string }[]
+    ids.push(...rows.map(row => row.id))
+    if (rows.length < 1000) break
+    cursor = rows[rows.length - 1].id
+  }
   let issued = 0
   let skipped = 0
-  for (const r of rows) {
-    const recos = Array.isArray(r.meta?.weekly_recos) ? (r.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-    if (recos[0]?.round_no === targetRound) {
-      skipped++
-      continue
-    }
-    const mCount = typeof r.meta?.weekly_reco_count === 'number' && (r.meta.weekly_reco_count as number) > 0
-      ? (r.meta.weekly_reco_count as number)
-      : setCount
-    const sets = generateIssueSetsForGrade(rounds, grade, exclude, mCount, ratio, seedFor(r.id, targetRound))
-    const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets }
-    const meta = { ...(r.meta ?? {}), weekly_recos: [issue, ...recos].slice(0, 8) }
-    const { error } = await sb().from('members').update({ meta }).eq('id', r.id)
+  let roundNo: number | null = null
+  for (let offset = 0; offset < ids.length; offset += 50) {
+    const batch = await requestGradeRecoBatch(ids.slice(offset, offset + 50), session.session.access_token)
+    if (roundNo !== null && roundNo !== batch.round_no) throw new Error('발급 중 회차가 바뀌었습니다. 이미 처리한 발급 내역을 확인해 주세요.')
+    roundNo = batch.round_no
+    issued += batch.issued
+    skipped += batch.skipped
+  }
+  if (roundNo === null) {
+    const { data, error } = await sb().from('lotto_rounds').select('round_no').order('round_no', { ascending: false }).limit(1)
     if (error) throw error
-    issued++
+    roundNo = Number(data?.[0]?.round_no ?? 0) + 1
   }
-  if (issued > 0) {
-    const record = patent
-      ? makePatentGenerationRecord(patent, {
-          createdBy: actor,
-          grade,
-          source: 'grade_issue',
-          setCount,
-          logicRatio: ratio,
-          issuedCount: issued,
-        })
-      : makeGenerationRecord(trace!, {
-          createdBy: actor,
-          grade,
-          source: 'grade_issue',
-          setCount,
-          logicRatio: ratio,
-          issuedCount: issued,
-        })
-    await patchSiteSettings(
-      { generation_records: upsertGenerationRecord(settings.generation_records, record) },
-      actor,
-    )
-  }
-  await insertLog({
-    kind: 'admin',
-    actor,
-    action: 'reco.weekly_issue',
-    target_type: 'member',
-    target_id: null,
-    meta: { count: issued, skipped, round_no: targetRound, set_count: setCount, logic_ratio: ratio, grade, channel: 'console' },
-  })
-  return { issued, skipped, round_no: targetRound }
+  return { issued, skipped, round_no: roundNo }
 }

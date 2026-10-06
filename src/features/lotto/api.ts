@@ -1,4 +1,4 @@
-import { hasResetRecoRound } from '@/lib/memberReset'
+import { hasAutomaticRecoTombstone, roundRecoSets, replaceRoundWinRecords } from '@/lib/recoHistory'
 // 로또기록 모듈 데이터 훅 (CLAUDE §1·§8, BUILD_PROMPTS Phase 6 — 스샷 있음, 원본 구조 재현).
 // 회차/베팅은 전역 데이터(역할 스코프 없음). '당첨 확정'은 회차 베팅의 등수/당첨금을 산정하고
 // 1~3등 당첨자의 win_history 를 갱신(§8 당첨자 세그먼트) → lotto/bets/members 쿼리 무효화.
@@ -12,7 +12,7 @@ import { useCurrentUser } from '@/lib/auth'
 import { betKeys, lottoKeys, memberKeys, settingsKeys } from '@/lib/queryKeys'
 import { gradeRank, lottoSum, oddEven, prizeForRank, resolveExcludeForGrade } from '@/lib/lotto'
 import { makeGenerationRecord, makePatentGenerationRecord, upsertGenerationRecord } from '@/lib/generationRecord'
-import { readWinRecords, upsertWinRecords, type WinRecord } from '@/lib/winHistory'
+import { readWinRecords, type WinRecord } from '@/lib/winHistory'
 import { generateRecommendation } from '@/lib/lottoGenerator'
 import { generatePatentSets, generateIssueSetsForGrade, isPatentGrade } from '@/lib/lottoPatentExclude'
 import * as supa from './supa'
@@ -58,7 +58,6 @@ export const WEEKLY_FREE_RECO_DEFAULT: import('@/types/db').WeeklyFreeRecoSettin
   set_count: 30,
   logic_ratio: 100,
 }
-const WEEKLY_RECO_KEEP = 8 // 회원당 보관할 최근 발급 회차 수
 // 회원별 결정적 시드(같은 회원·회차는 동일 결과, 회원마다 다른 조합).
 function memberSeed(id: string, round: number): number {
   let h = round * 2654435761
@@ -247,12 +246,12 @@ export function useConfirmRound() {
         // 추천조합(weekly_recos) 당첨 집계 — 실제 서비스 기준 당첨자 산정(당첨금은 등수별 고정 산식).
         for (const m of db.members) {
           const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-          const issue = recos.find((x) => x.round_no === v.roundNo)
-          if (!issue) continue
+          const sets = roundRecoSets(recos, v.roundNo)
+          if (!sets.length) continue
           let best: number | null = null
           let wins = 0
-          issue.sets.forEach((set, i) => {
-            const rk = gradeRank(set, round.numbers, round.bonus)
+          sets.forEach(({ numbers, comboIndex }) => {
+            const rk = gradeRank(numbers, round.numbers, round.bonus)
             if (rk == null) return
             wins += 1
             if (best === null || rk < best) best = rk
@@ -261,7 +260,7 @@ export function useConfirmRound() {
               draw_date: round.draw_date,
               rank: rk,
               prize: prizeForRank(round, rk) ?? 0,
-              combo_index: i + 1,
+              combo_index: comboIndex,
               source: 'reco',
             })
           })
@@ -270,10 +269,15 @@ export function useConfirmRound() {
             m.win_history = `${v.roundNo}회 ${best}등${wins > 1 ? ` (${wins}건)` : ''}`
           }
         }
-        for (const [memberId, fresh] of freshByMember) {
-          const m = db.members.find((x) => x.id === memberId)
-          if (!m) continue
-          m.meta = { ...m.meta, win_records: upsertWinRecords(readWinRecords(m.meta), fresh) }
+        for (const m of db.members) {
+          const fresh = freshByMember.get(m.id) ?? []
+          const records = replaceRoundWinRecords(readWinRecords(m.meta), fresh, v.roundNo)
+          m.meta = { ...m.meta, win_records: records }
+          if (!fresh.length && m.win_history?.startsWith(`${v.roundNo}회`)) {
+            const latest = records[0]?.round_no
+            const wins = latest ? records.filter(win => win.round_no === latest) : []
+            m.win_history = wins.length ? `${latest}회 ${Math.min(...wins.map(win => win.rank))}등` : null
+          }
         }
 
         // 수동 집계는 운영·mock 모두 문자 발송과 분리한다.
@@ -405,7 +409,7 @@ export function useIssueGradeReco() {
         for (const m of db.members) {
           if (m.grade !== v.grade || m.is_deleted || m.is_withdrawn) continue
           const recos = Array.isArray(m.meta?.weekly_recos) ? (m.meta!.weekly_recos as WeeklyRecoIssue[]) : []
-          if (recos.some(issue => issue.round_no === targetRound) || hasResetRecoRound(db.member_reco_reset_archive, m.id, targetRound)) {
+          if (hasAutomaticRecoTombstone(m.id, targetRound, recos, db.member_reco_reset_archive, db.manual_reco_operations)) {
             skipped++
             continue
           }
@@ -415,7 +419,7 @@ export function useIssueGradeReco() {
             : setCount
           const sets = generateIssueSetsForGrade(rounds, v.grade, exclude, mCount, ratio, memberSeed(m.id, targetRound))
           const issue: WeeklyRecoIssue = { round_no: targetRound, issued_at: ts, sets }
-          m.meta = { ...m.meta, weekly_recos: [issue, ...recos].slice(0, WEEKLY_RECO_KEEP) }
+          m.meta = { ...m.meta, weekly_recos: [issue, ...recos] }
           issued++
         }
         if (issued > 0) {
