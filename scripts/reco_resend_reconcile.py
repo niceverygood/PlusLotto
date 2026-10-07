@@ -8,8 +8,9 @@
                    .xls 는 `pip install xlrd` 필요. 엑셀에서 CSV로 저장한 파일도 받는다.
 
 규칙
-  - 업체 기록에 같은 수신번호 + 같은 사이트(문자 첫 줄 '<브랜드> No. <회차>')가 이미 있으면 제외한다.
-    (결과가 '성공'이 아니어도 업체 접수는 된 것이므로 중복 방지를 위해 제외하고 별도 파일로 남긴다.)
+  - 업체 기록에 같은 수신번호 + 같은 사이트(문자 첫 줄 '<브랜드> No. <회차>')로 '성공'이 이미 있으면 제외한다.
+  - 업체 기록에서 실패(단말기 문제·일시정지 등)만 있고 성공이 없는 조합문자도 재발송 명단에 넣는다
+    (현장 10/7: 실패라도 '발송했다'는 기록이 남아야 하므로 재요청). 문자 내용은 업체 기록의 원문을 쓴다.
   - 남은 행을 사이트별 resend_<사이트>.csv 로 나눈다 (수신번호, 문자내용). 업체 엑셀 대량발송에 그대로 사용.
 
 사용
@@ -53,7 +54,10 @@ def main() -> int:
     out = sys.argv[3] if len(sys.argv) > 3 else 'resend_out'
     os.makedirs(out, exist_ok=True)
 
-    vendor = {(digits(v.get('수신번호')), head(v.get('메시지'))) for v in read_vendor(vendor_path)}
+    vendor_rows = read_vendor(vendor_path)
+    vendor = {(digits(v.get('수신번호')), head(v.get('메시지'))) for v in vendor_rows
+              if str(v.get('결과', '')).strip() == '성공'}
+    brand_site = {b: s for s, b in BRANDS.items()}
     with open(ledger_path, encoding='utf-8-sig', newline='') as f:
         ledger = list(csv.DictReader(f))
 
@@ -71,6 +75,18 @@ def main() -> int:
             continue
         by_site.setdefault(site, []).append((phone, body))
 
+    # 업체 실패만 있고 성공이 없는 조합문자 — 업체 원문으로 재요청.
+    vendor_failed = 0
+    queued = {(p, head(b)) for items in by_site.values() for p, b in items}
+    for v in vendor_rows:
+        key = (digits(v.get('수신번호')), head(v.get('메시지')))
+        site = brand_site.get(key[1].split(' ')[0]) if key[1] else None
+        if not site or not key[0] or key in vendor or key in queued:
+            continue
+        queued.add(key)
+        by_site.setdefault(site, []).append((key[0], str(v.get('메시지')).replace('\r\n', '\n')))
+        vendor_failed += 1
+
     for site, items in sorted(by_site.items()):
         with open(os.path.join(out, f'resend_{site}.csv'), 'w', encoding='utf-8-sig', newline='') as f:
             w = csv.writer(f)
@@ -81,7 +97,8 @@ def main() -> int:
         w.writerow(['사이트', '수신번호', '사유'])
         w.writerows(skipped)
 
-    print('명단 행:', len(ledger), '/ 형식 오류 제외:', bad, '/ 업체 접수 확인돼 제외:', len(skipped))
+    print('명단 행:', len(ledger), '/ 형식 오류 제외:', bad, '/ 업체 성공 확인돼 제외:', len(skipped),
+          '/ 업체 실패분 추가:', vendor_failed)
     for site, items in sorted(by_site.items()):
         print(f'  재발송 {site}: {len(items)}건 -> {out}/resend_{site}.csv')
     return 0
