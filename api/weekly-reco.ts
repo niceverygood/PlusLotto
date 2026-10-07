@@ -1158,8 +1158,24 @@ export interface MemberScanRow {
  * 페이지 경계가 밀려 같은 회원을 두 번 읽거나(문자 이중발송) 건너뛴다(발송 누락). 커서는 "마지막으로
  * 읽은 id 다음부터"라 동시 변경과 무관하게 각 행을 정확히 한 번 읽는다.
  */
-export async function scanMembers(sb: SupabaseClient, page: number, memberIds?: string[]): Promise<MemberScanRow[]> {
+export async function scanMembers(
+  sb: SupabaseClient,
+  page: number,
+  memberIds?: string[],
+  dayFilter?: { today: number },
+): Promise<MemberScanRow[]> {
   if (!Number.isInteger(page) || page < 1 || page > 1000) throw new Error('INVALID_MEMBER_SCAN_PAGE')
+  if (dayFilter && (!Number.isInteger(dayFilter.today) || dayFilter.today < 0 || dayFilter.today > 6))
+    throw new Error('INVALID_MEMBER_SCAN_DAY')
+  // 2026-10-07: 전 회원(meta 포함 ~3.3만 행) 스캔이 4분 예산을 다 써 발급 0건으로 끝났다.
+  // 정기 실행(GET, force 아님)은 오늘 요일 후보만 DB에서 거른다. recoSkipReason 의 요일 판정보다
+  // 넓은 상위집합(문자열 "3" 등도 포함)이며 최종 판정은 그대로 recoSkipReason 이 한다.
+  // 무료 + 요일 미설정 회원은 DEFAULT_DAY(금)에만 포함한다.
+  const dayOr = dayFilter
+    ? dayFilter.today === DEFAULT_DAY
+      ? `meta->>weekly_reco_day.eq.${dayFilter.today},and(grade.eq.free,meta->>weekly_reco_day.is.null)`
+      : `meta->>weekly_reco_day.eq.${dayFilter.today}`
+    : null
   const rows: MemberScanRow[] = []
   let cursor: string | null = null
   let readPage = page
@@ -1174,6 +1190,7 @@ export async function scanMembers(sb: SupabaseClient, page: number, memberIds?: 
       .order('id')
       .limit(readPage)
     if (memberIds) q = q.in('id', memberIds)
+    if (dayOr) q = q.or(dayOr)
     if (cursor !== null) q = q.gt('id', cursor)
     const { data, error } = await q
     if (error) {
@@ -1591,7 +1608,8 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     //   정확히 한 번 읽는다. 누락 쪽도 같이 닫힌다.
     const PAGE = 1000
     stage = 'member_scan'
-    const rows: MemberScanRow[] = await scanMembers(sb, PAGE, options.memberIds)
+    const rows: MemberScanRow[] = await scanMembers(sb, PAGE, options.memberIds,
+      options.memberIds || force ? undefined : { today })
     stage = 'eligibility'
     if (options.memberIds && (rows.length !== options.memberIds.length || rows.some(r => !options.memberIds!.includes(r.id))))
       return res.status(409).json({ ok: false, code: 'TARGET_CHANGED', message: '일부 회원이 없거나 삭제·탈퇴·정지 상태입니다. 발급하지 않았습니다.' })

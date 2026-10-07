@@ -151,3 +151,32 @@ test('continuation wait expiry is pending, never completion or a second request'
     await Promise.resolve()
   })
 })
+
+test('scheduled scan narrows to today candidates in the database; Friday also includes free members without a day', async () => {
+  for (const [today, expectedOr] of [
+    [3, '(meta->>weekly_reco_day.eq.3)'],
+    [5, '(meta->>weekly_reco_day.eq.5,and(grade.eq.free,meta->>weekly_reco_day.is.null))'],
+  ] as const) {
+    const calls: URL[] = []
+    await withFetch(async (input, init) => {
+      const url = assertRead(input, init); calls.push(url)
+      return json([row(1)])
+    }, async () => {
+      assert.deepEqual(await scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today }), [row(1)])
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].searchParams.get('or'), expectedOr)
+    })
+  }
+  await assert.rejects(scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today: 7 }), /INVALID_MEMBER_SCAN_DAY/)
+})
+
+test('audit and scoped scans keep reading without a day filter', async () => {
+  await withFetch(async (input, init) => {
+    const url = assertRead(input, init)
+    assert.equal(url.searchParams.has('or'), false)
+    return json([row(1)])
+  }, async () => {
+    await scanMembers(createClient(base, 'synthetic-key'), 1000)
+    await scanMembers(createClient(base, 'synthetic-key'), 1000, [row(1).id])
+  })
+})
