@@ -9,7 +9,7 @@
 //
 // Vercel 환경변수: SUPABASE_URL(또는 VITE_SUPABASE_URL) / SUPABASE_SERVICE_ROLE_KEY / CRON_SECRET
 // 사전점검: GET ?dryRun=1 또는 POST { memberIds, dryRun: true }. 실발급은 DB 원자 선점 후에만 요청한다.
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 
 // ── 최소 타입(소스: src/types/db.ts) ─────────────────────────────────────────
@@ -1158,10 +1158,11 @@ export interface MemberScanRow {
  * 페이지 경계가 밀려 같은 회원을 두 번 읽거나(문자 이중발송) 건너뛴다(발송 누락). 커서는 "마지막으로
  * 읽은 id 다음부터"라 동시 변경과 무관하게 각 행을 정확히 한 번 읽는다.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanMembers(sb: any, page: number, memberIds?: string[]): Promise<MemberScanRow[]> {
+export async function scanMembers(sb: SupabaseClient, page: number, memberIds?: string[]): Promise<MemberScanRow[]> {
+  if (!Number.isInteger(page) || page < 1 || page > 1000) throw new Error('INVALID_MEMBER_SCAN_PAGE')
   const rows: MemberScanRow[] = []
   let cursor: string | null = null
+  let readPage = page
   for (;;) {
     let q = sb
       .from('members')
@@ -1171,17 +1172,54 @@ async function scanMembers(sb: any, page: number, memberIds?: string[]): Promise
       .eq('is_withdrawn', false)
       .eq('is_suspended', false) // 일시정지(정지) 회원은 자동발급·문자 제외(현장 6/26)
       .order('id')
-      .limit(page)
+      .limit(readPage)
     if (memberIds) q = q.in('id', memberIds)
     if (cursor !== null) q = q.gt('id', cursor)
     const { data, error } = await q
-    if (error) throw error
+    if (error) {
+      // 2026-10-07: a chain's first 1,000-row read hit SQLSTATE 57014.
+      // Retry this GET only, at the same cursor, with bounded smaller payloads.
+      // No claims or sends start until the complete scan has succeeded.
+      const smallerPage = error.code === '57014' ? [250, 100].find(size => size < readPage) : undefined
+      if (smallerPage !== undefined) {
+        console.warn('[weekly-reco] member_scan_timeout', { from: readPage, to: smallerPage, scoped: !!memberIds })
+        readPage = smallerPage
+        continue
+      }
+      throw error
+    }
     const got = (data ?? []) as MemberScanRow[]
     rows.push(...got)
-    if (got.length < page) break
+    if (got.length < readPage) break
     cursor = got[got.length - 1].id
   }
   return rows
+}
+
+type RecoContinuationResult = { status: 'pending' | 'http_accepted' | 'http_error' | 'request_error'; httpStatus?: number }
+
+/** One request only: an uncertain continuation must never cause an automatic replay. */
+export async function requestRecoContinuation(url: string, secret: string, chain: number, waitMs = 1500): Promise<RecoContinuationResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      fetch(url, { method: 'GET', headers: { authorization: `Bearer ${secret}` } })
+        .then((response): RecoContinuationResult => {
+          if (!response.ok) console.error('[weekly-reco] continuation_http_error', { chain, httpStatus: response.status })
+          return { status: response.ok ? 'http_accepted' : 'http_error', httpStatus: response.status }
+        })
+        .catch((): RecoContinuationResult => {
+          // No URL, authorization, member IDs or provider data in runtime logs.
+          console.error('[weekly-reco] continuation_request_unconfirmed', { chain })
+          return { status: 'request_error' }
+        }),
+      new Promise<RecoContinuationResult>(resolve => {
+        timer = setTimeout(() => resolve({ status: 'pending' }), waitMs)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 interface RecoRequest {
@@ -1346,6 +1384,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
   const chain = options.chain
   const startedAt = Date.now()
   const sb = createClient(url, key, { auth: { persistSession: false } })
+  let stage = 'preflight'
 
   // A request UUID belongs to one exact member, actor, quantity and SMS intent.
   // Status is read-only: not_found is never proof that a delayed original request cannot arrive.
@@ -1464,7 +1503,9 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
           ? loggedStart
           : new Date(`${todayKst}T00:00:00+09:00`).toISOString()
 
+      stage = 'audit_member_scan'
       const auditRows = await scanMembers(sb, 1000)
+      stage = 'audit_reconciliation'
       const sms = await scanRecoSms(sb, sinceIso, 1000)
       const result = recoAuditMisses(auditRows, {
         today,
@@ -1549,7 +1590,9 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     //   커서 방식은 "마지막으로 읽은 id 다음부터"라서 동시 삽입·삭제와 무관하게 각 행을
     //   정확히 한 번 읽는다. 누락 쪽도 같이 닫힌다.
     const PAGE = 1000
+    stage = 'member_scan'
     const rows: MemberScanRow[] = await scanMembers(sb, PAGE, options.memberIds)
+    stage = 'eligibility'
     if (options.memberIds && (rows.length !== options.memberIds.length || rows.some(r => !options.memberIds!.includes(r.id))))
       return res.status(409).json({ ok: false, code: 'TARGET_CHANGED', message: '일부 회원이 없거나 삭제·탈퇴·정지 상태입니다. 발급하지 않았습니다.' })
     if (caller.kind === 'staff' && caller.role === 'rep' && rows.some(r => r.assigned_staff_id !== caller.actor))
@@ -1789,6 +1832,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     // 예산을 넘기면 남은 대상을 남겨둔 채 정상 종료(로그 기록)하고, 이어서 처리할 후속 실행을
     // 스스로 트리거한다 — 한 번에 다 못 해도 여러 번에 나눠 반드시 완주하게 한다.
     // (재실행은 같은 회차의 이력 및 영구 선점 원장으로 이미 처리한 회원을 건너뛴다.)
+    stage = 'issuance'
     const BUDGET_MS = 240_000 // maxDuration 300초 중 안전 여유를 남긴 값
     let processed = 0
     for (let i = 0; i < eligible.length; i += CONC) {
@@ -1806,6 +1850,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     const remaining = Math.max(0, eligible.length - processed)
 
     // 회차·등급별 로직 스냅샷 — 특정 회원 조합은 저장하지 않고 공통 제외 과정만 1건씩 기록한다.
+    stage = 'issuance_audit'
     if (issuedByGrade.size > 0 && !options.memberIds) {
       let generationRecords = [...(settings.generation_records ?? [])]
       for (const [grade, gradeIssued] of issuedByGrade) {
@@ -1907,16 +1952,14 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     // 남은 대상이 있으면 후속 실행을 트리거해 이어서 처리한다(연쇄 상한으로 폭주 방지).
     // 응답을 기다리지 않고(자기 자신을 await 하면 타임아웃) 요청만 띄운다.
     const MAX_CHAIN = 20
+    let continuation: RecoContinuationResult | { status: 'limit_reached' } | undefined
+    stage = 'continuation'
     if (!options.memberIds && remaining > 0 && chain < MAX_CHAIN) {
-      try {
-        const nextUrl = `${selfBase}/api/weekly-reco?chain=${chain + 1}`
-        await Promise.race([
-          fetch(nextUrl, { method: 'GET', headers: { authorization: `Bearer ${secret}` } }),
-          new Promise((resolve) => setTimeout(resolve, 1500)),
-        ])
-      } catch {
-        /* 후속 트리거 실패는 다음 크론 주기가 회수 — 이번 실행 결과를 실패로 만들지 않는다 */
-      }
+      const nextUrl = `${selfBase}/api/weekly-reco?chain=${chain + 1}`
+      continuation = await requestRecoContinuation(nextUrl, secret, chain + 1)
+    } else if (!options.memberIds && remaining > 0) {
+      continuation = { status: 'limit_reached' }
+      console.error('[weekly-reco] continuation_limit_reached', { chain, remaining })
     } else if (!options.memberIds && remaining === 0) {
       // 이번 회차 처리가 끝났다 → 곧바로 누락 대조를 한 번 돌린다(현장 9/12 요청).
       // 별도 요청으로 띄워 이 실행이 maxDuration 에 걸리지 않게 한다. 실패해도 vercel.json 의
@@ -1942,11 +1985,17 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     }
     return res.status(200).json({ ok: errCount === 0 && reviewRequired === 0,
       ...(operation ? { operation, operationId: options.operationId, confirmedNotIssued: operation.confirmedNotIssued === true } : {}),
-      code: reviewRequired > 0 ? 'RECEIPT_CONFIRMATION_REQUIRED' : 'COMPLETE', dryRun: false,
+      code: reviewRequired > 0 ? 'RECEIPT_CONFIRMATION_REQUIRED' : remaining > 0 ? 'INCOMPLETE' : 'COMPLETE', dryRun: false,
+      complete: errCount === 0 && reviewRequired === 0 && remaining === 0,
+      ...(continuation ? { continuation } : {}),
       round_no: targetRound, issued, skippedRound, skippedDay, skippedPaused, skippedExpired, errors: errCount,
       reviewRequired, staleRound, smsSent, smsFail, remaining, chain, results })
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    return res.status(500).json({ ok: false, code: 'ERROR', message })
+    const errorCode = object(e) && typeof e.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(e.code) ? e.code : 'UNEXPECTED'
+    // DB errors are plain objects; String(e) loses their code as [object Object].
+    // Log only the stage and machine code, never a query, member payload or secret.
+    console.error('[weekly-reco] execution_failed', { stage, chain, error_code: errorCode })
+    const message = e instanceof Error ? e.message : '데이터 조회 또는 처리에 실패했습니다. 접수 이력을 확인해 주세요.'
+    return res.status(500).json({ ok: false, code: 'ERROR', stage, error_code: errorCode, message })
   }
 }
