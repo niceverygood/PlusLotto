@@ -8,22 +8,22 @@ function member(id: string, site = 'lotto815'): Row {
   return { id, grade: 'gold', name: 'synthetic', phone: '01000000001', registered_at: '2020-01-01T00:00:00Z', assigned_staff_id: 'test-staff', status: 'active', is_deleted: false, is_withdrawn: false, is_suspended: false,
     meta: { source_site: site, weekly_reco_day: 2, weekly_reco_count: 1, reco_paused: false, reco_pause_reason: null, end_date: '2027-12-31', weekly_recos: [] } }
 }
-interface Options { resetArchived?: boolean; resetArchiveUnavailable?: boolean; nullMeta?: boolean; rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean }
+interface Options { resetArchived?: boolean; resetArchiveUnavailable?: boolean; nullMeta?: boolean; rows?: Row[]; concurrent?: boolean; changeHold?: boolean; loseClaim?: boolean; finishFails?: boolean; provider?: 'accepted' | 'rejected' | 'unknown' | 'empty'; role?: string; inactiveStaff?: boolean; smsEnabled?: boolean; commonSenderBlank?: boolean; missingSiteSender?: boolean; completedToday?: boolean; exhaustBudgetAfterScan?: boolean }
 async function fixture(options: Options, work: (s: {
-  rows: Row[]; ledger: Map<string, Ledger>; sends: Record<string, unknown>[]; writes: string[]; requests: string[]; logs: Record<string, unknown>[];
+  rows: Row[]; ledger: Map<string, Ledger>; sends: Record<string, unknown>[]; writes: string[]; requests: string[]; logs: Record<string, unknown>[]; urls: URL[];
   invoke: (body?: Record<string, unknown>, query?: Record<string, unknown>, auth?: string) => Promise<{ status: number; body: Record<string, unknown> }>
 }) => Promise<void>) {
   const oldFetch = globalThis.fetch, oldNow = Date.now
   const env = { CRON_SECRET: 'synthetic-secret', SUPABASE_URL: 'https://synthetic-reco.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'synthetic-key', SELF_BASE_URL: 'https://synthetic-reco.invalid' }
   const oldEnv = Object.fromEntries(Object.keys(env).map(k => [k, process.env[k]]))
   Object.assign(process.env, env); Date.now = () => Date.parse('2026-10-06T00:30:00Z')
-  const rows = options.rows ?? [member('test-a')], ledger = new Map<string, Ledger>(), sends: Record<string, unknown>[] = [], writes: string[] = [], requests: string[] = [], logs: Record<string, unknown>[] = []
+  const rows = options.rows ?? [member('test-a')], ledger = new Map<string, Ledger>(), sends: Record<string, unknown>[] = [], writes: string[] = [], requests: string[] = [], logs: Record<string, unknown>[] = [], urls: URL[] = []
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
   let scans = 0, release: (() => void) | undefined
   const barrier = new Promise<void>(resolve => { release = resolve })
   globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url), method = init?.method ?? 'GET'
-    requests.push(method + ' ' + url.pathname)
+    requests.push(method + ' ' + url.pathname); urls.push(url)
     if (url.origin === 'https://synthetic-reco.invalid') {
       if (url.pathname === '/api/send-sms') {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>
@@ -51,6 +51,7 @@ async function fixture(options: Options, work: (s: {
       const idFilter = url.searchParams.get('id'), ids = idFilter?.startsWith('in.(') ? idFilter.slice(4,-1).split(',').map(id => id.replaceAll('"','')) : undefined
       const snap = structuredClone(rows.filter(r => r.status === 'active' && !r.is_deleted && !r.is_withdrawn && !r.is_suspended && (!ids || ids.includes(r.id))))
       scans++; if (options.concurrent && scans <= 2) { if (scans === 2) release?.(); await barrier }
+      if (options.exhaustBudgetAfterScan) Date.now = () => Date.parse('2026-10-06T00:30:00Z') + 300_000
       return json(options.nullMeta ? snap.map(r => ({ ...r, meta: null })) : snap)
     }
     if (table === 'member_reco_reset_archive') return options.resetArchiveUnavailable ? json({message:'unavailable'},503) : json(options.resetArchived ? [{operation_id:'synthetic-operation',member_id:rows[0].id,issues:[{round_no:1245}]}] : [])
@@ -78,6 +79,7 @@ async function fixture(options: Options, work: (s: {
       entry.status = String(p.p_outcome); entry.receipt = p.p_receipt as Record<string, unknown>
       return json({ ok: true, status: entry.status, outcome: entry.status, repeated: false })
     }
+    if (table === 'logs' && method === 'GET') return json(options.completedToday ? [{ id: 'synthetic-complete-log' }] : [])
     if (table === 'logs') { writes.push('logs'); logs.push(JSON.parse(String(init?.body)) as Record<string,unknown>); return json(null) }
     throw new Error('Unexpected synthetic request: ' + table)
   }
@@ -87,7 +89,7 @@ async function fixture(options: Options, work: (s: {
     await handler({ method: body ? 'POST' : 'GET', headers: { authorization: auth }, query, body }, response)
     return result
   }
-  try { await work({ rows, ledger, sends, writes, requests, logs, invoke }) } finally {
+  try { await work({ rows, ledger, sends, writes, requests, logs, urls, invoke }) } finally {
     globalThis.fetch = oldFetch; Date.now = oldNow
     for (const [k,v] of Object.entries(oldEnv)) if (v === undefined) delete process.env[k]; else process.env[k] = v
   }
@@ -286,5 +288,46 @@ test('dry-run excludes reset legacy issuance and fails closed on unavailable arc
     const result = await s.invoke({ dryRun: true, memberIds: [s.rows[0].id] })
     assert.equal(result.status, 503); assert.equal(result.body.code, 'RESET_ARCHIVE_LOOKUP_UNAVAILABLE')
     assert.equal(s.writes.length, 0); assert.equal(s.sends.length, 0)
+  })
+})
+
+test('scheduled cron run finishes without self-chaining and starts exactly one missing-send audit', async () => {
+  await fixture({}, async s => {
+    const r = await s.invoke()
+    assert.equal(r.status, 200); assert.equal(r.body.issued, 1); assert.equal(r.body.remaining, 0); assert.equal('continuation' in r.body, false)
+    const check = s.urls.find(u => u.pathname === '/rest/v1/logs' && s.requests.includes('GET /rest/v1/logs'))
+    assert.ok(check, 'completion check precedes the scan')
+    assert.equal(check.searchParams.get('action'), 'eq.reco.weekly_issue')
+    assert.equal(check.searchParams.get('meta->>channel'), 'eq.cron')
+    assert.equal(check.searchParams.get('meta->>remaining'), 'eq.0')
+    assert.equal(check.searchParams.get('meta->>round_no'), 'eq.1245')
+    assert.equal(check.searchParams.get('created_at'), 'gte.2026-10-05T15:00:00.000Z')
+    assert.ok(s.requests.indexOf('GET /rest/v1/logs') < s.requests.indexOf('GET /rest/v1/members'))
+    const self = s.urls.filter(u => u.pathname === '/api/weekly-reco')
+    assert.deepEqual(self.map(u => u.search), ['?audit=1'])
+    assert.equal(s.logs.length, 1); assert.equal((s.logs[0].meta as Record<string, unknown>).remaining, 0)
+  })
+})
+test('a run that runs out of time leaves the rest for the next cron and never calls itself', async () => {
+  await fixture({ exhaustBudgetAfterScan: true, rows: [member('test-a'), member('test-b')] }, async s => {
+    const r = await s.invoke()
+    assert.equal(r.status, 200); assert.equal(r.body.code, 'INCOMPLETE'); assert.equal(r.body.remaining, 2); assert.equal(r.body.issued, 0)
+    assert.equal(s.requests.some(x => x.includes('/api/weekly-reco')), false, 'no chain and no audit before completion')
+    assert.deepEqual(s.writes, ['logs']); assert.deepEqual(s.sends, [])
+    assert.equal((s.logs[0].meta as Record<string, unknown>).remaining, 2)
+  })
+})
+test('once today has a completed scheduled pass, later 5-minute runs stop before scanning members', async () => {
+  await fixture({ completedToday: true }, async s => {
+    const r = await s.invoke()
+    assert.equal(r.status, 200); assert.equal(r.body.skipped, 'complete'); assert.equal(r.body.issued, 0)
+    assert.equal(s.requests.some(x => x.includes('/rest/v1/members')), false)
+    assert.deepEqual(s.writes, []); assert.deepEqual(s.sends, [])
+    assert.equal(s.requests.some(x => x.includes('/api/weekly-reco')), false)
+    // Exact-ID and dry-run requests are not stopped by the daily completion marker.
+    const scoped = await s.invoke({ memberIds: ['test-a'], expectedRound: 1245 })
+    assert.equal(scoped.body.issued, 1)
+    const preview = await s.invoke(undefined, { dryRun: '1' })
+    assert.equal(preview.body.dryRun, true); assert.equal(preview.body.skipped, undefined)
   })
 })
