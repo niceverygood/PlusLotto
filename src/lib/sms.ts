@@ -54,6 +54,15 @@ export function roundText(roundNo: number): string {
  * api/weekly-reco.ts 자동발송 크론도 동일 규칙(자급자족 구현, src import 불가)을 따른다.
  */
 export const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
+
+/**
+ * 조합문자의 $brand — 사이트 이름에서 "로또"를 뺀다(현장 10/8, 정의현 차장: 통신사 자동 스팸 차단).
+ * "815로또 No. 1245" → "815 No. 1245". 조합문자 전용이며 renderSms(가입·당첨 등)의 $brand 는 그대로다.
+ * api/weekly-reco.ts 자동발송 크론도 같은 규칙을 자급자족으로 구현한다.
+ */
+export function comboSmsBrand(label: string): string {
+  return label.replace(/로또/g, '').trim() || label
+}
 const LEGACY_PLUS_DEFAULT_TEMPLATE = 'plus No. $round\n$num'
 
 export function recoSmsBody(
@@ -74,7 +83,7 @@ export function recoSmsBody(
     .replace(/\$round/g, roundText(roundNo))
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
-    .replace(/\$brand/g, brand)
+    .replace(/\$brand/g, comboSmsBrand(brand))
 }
 
 /** 템플릿 key → 발송유형(가입·추천·당첨·약관·마케팅). 미지정 템플릿은 마케팅으로 분류. */

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { formatComboSms, recoAuditMisses, scanRecoSms } from '../../api/weekly-reco.ts'
-import { recoSmsBody } from '../../src/lib/sms.ts'
+import { recoSmsBody, comboSmsBrand } from '../../src/lib/sms.ts'
 
 const sets = [[1, 7, 14, 21, 35, 42]]
 const brands = [
@@ -13,16 +13,28 @@ test('자동/수동 조합문자와 미리보기는 회원 계약의 $brand를 �
   for (const [site, label] of brands) {
     const template = '[$brand] No. $round\n$name님\n$num'
     const meta = { source_site: site }
-    const expected = `[${label}] No. 1245\n검수회원님\n[1] 1,7,14,21,35,42`
+    const expected = `[${comboSmsBrand(label)}] No. 1245\n검수회원님\n[1] 1,7,14,21,35,42`
     assert.equal(formatComboSms('검수회원', 1245, sets, template, meta), expected)
     assert.equal(recoSmsBody('검수회원', 1245, sets, template, meta), expected)
+  }
+})
+
+test('조합문자 사이트 이름에는 "로또"가 없다(10/8 스팸 차단 대응), 다른 문자는 그대로', () => {
+  const expected: Record<string, string> = { pluslotto: '플러스', lotto815: '815', infolotto: '인포', cplotto: '일행', best: '프리미엄' }
+  for (const [site] of brands) {
+    for (const template of ['$brand No. $round\n$num', 'plus No. $round\n$num']) {
+      const auto = formatComboSms('검수회원', 1245, sets, template, { source_site: site })
+      assert.equal(auto, recoSmsBody('검수회원', 1245, sets, template, { source_site: site }))
+      assert.equal(auto.includes('로또'), false, `${site}: ${auto}`)
+    }
+    assert.equal(formatComboSms('', 1245, sets, '$brand No. $round', { source_site: site }), `${expected[site]} No. 1245`)
   }
 })
 
 test('템플릿 없는 이관 회원도 자체 브랜드를 쓰고 기존 플러스 기본 문구는 보존한다', () => {
   for (const [site, label] of brands) {
     const meta = { source_site: site }
-    const expected = `${site === 'pluslotto' ? 'plus' : label} No. 1245\n회원님\n[1] 1,7,14,21,35,42`
+    const expected = `${site === 'pluslotto' ? 'plus' : comboSmsBrand(label)} No. 1245\n회원님\n[1] 1,7,14,21,35,42`
     assert.equal(formatComboSms('', 1245, sets, undefined, meta), expected)
     assert.equal(recoSmsBody('', 1245, sets, undefined, meta), expected)
   }
@@ -30,7 +42,7 @@ test('템플릿 없는 이관 회원도 자체 브랜드를 쓰고 기존 플러
 })
 
 test('출처 공백을 정규화하고 미지원 출처는 본문에 노출하지 않는다', () => {
-  for (const [site, expected] of [[' best ', '프리미엄로또'], ['unknown', '플러스로또'], ['__proto__', '플러스로또'], ['', '플러스로또']]) {
+  for (const [site, expected] of [[' best ', '프리미엄'], ['unknown', '플러스'], ['__proto__', '플러스'], ['', '플러스']]) {
     const meta = { source_site: site }
     assert.equal(formatComboSms('', 1245, sets, '$brand', meta), expected)
     assert.equal(recoSmsBody('', 1245, sets, '$brand', meta), expected)
@@ -41,7 +53,7 @@ test('운영의 정확한 구 기본 템플릿은 이관 4사이트에서만 자
   const oldDefault = 'plus No. $round\n$num'
   for (const [site, label] of brands) {
     const meta = { source_site: site }
-    const expected = `${site === 'pluslotto' ? 'plus' : label} No. 1245\n[1] 1,7,14,21,35,42`
+    const expected = `${site === 'pluslotto' ? 'plus' : comboSmsBrand(label)} No. 1245\n[1] 1,7,14,21,35,42`
     assert.equal(formatComboSms('검수회원', 1245, sets, oldDefault, meta), expected)
     assert.equal(recoSmsBody('검수회원', 1245, sets, oldDefault, meta), expected)
   }
