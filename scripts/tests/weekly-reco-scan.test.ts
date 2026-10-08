@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createClient } from '@supabase/supabase-js'
-import handler, { scanMembers, requestRecoContinuation, type MemberScanRow } from '../../api/weekly-reco.ts'
+import handler, { scanMembers, type MemberScanRow } from '../../api/weekly-reco.ts'
 
 const base = 'https://synthetic-scan.supabase.co'
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -109,6 +109,7 @@ test('exhausted member reads return observable57014 and never claim/log/send a p
         case '/rest/v1/site_settings': return json({ id: 1, weekly_free_reco: { enabled: true, set_count: 10, paid_sms: true }, lotto_exclude: { fixed: [], excluded: [] }, sms: { oneshot_enabled: true, sender_no: '0212340000' } })
         case '/rest/v1/sms_templates': return json({ body: '$num' })
         case '/rest/v1/lotto_rounds': return json([{ round_no: 1244, draw_date: '2026-10-03', numbers: [1, 2, 3, 4, 5, 6], bonus: 7 }])
+        case '/rest/v1/logs': return json([]) // today's completion check: not complete yet
         case '/rest/v1/members':
           memberReads++
           // A complete first page is already accumulated when the later read fails.
@@ -131,43 +132,42 @@ test('exhausted member reads return observable57014 and never claim/log/send a p
   }
 })
 
-test('continuation HTTP failure or lost response is reported and never retried', async () => {
-  for (const lost of [false, true]) {
-    let calls = 0
-    await withFetch(async () => { calls++; if (lost) throw new Error('response lost'); return json({ ok: false }, 500) }, async () => {
-      const result = await requestRecoContinuation('https://synthetic.invalid/api/weekly-reco?chain=1', 'synthetic-secret', 1, 20)
-      assert.deepEqual(result, lost ? { status: 'request_error' } : { status: 'http_error', httpStatus: 500 })
-      assert.equal(calls, 1)
-    })
-  }
-})
-
-test('continuation wait expiry is pending, never completion or a second request', async () => {
-  let finish: ((value: Response) => void) | undefined, calls = 0
-  await withFetch(async () => { calls++; return new Promise<Response>(resolve => { finish = resolve }) }, async () => {
-    assert.deepEqual(await requestRecoContinuation('https://synthetic.invalid/api/weekly-reco?chain=1', 'synthetic-secret', 1, 1), { status: 'pending' })
-    assert.equal(calls, 1)
-    finish?.(json({ ok: true }))
-    await Promise.resolve()
-  })
-})
-
-test('scheduled scan narrows to today candidates in the database; Friday also includes free members without a day', async () => {
+test('scheduled scan narrows to today candidates in the database; Friday reads free members without a day in a separate pass', async () => {
   for (const [today, expectedOr] of [
-    [3, '(meta->>weekly_reco_day.eq.3)'],
-    [5, '(meta->>weekly_reco_day.eq.5,and(grade.eq.free,meta->>weekly_reco_day.is.null))'],
+    [3, ['(meta->>weekly_reco_day.eq.3)']],
+    [5, ['(meta->>weekly_reco_day.eq.5)', '(and(grade.eq.free,meta->>weekly_reco_day.is.null))']],
   ] as const) {
     const calls: URL[] = []
     await withFetch(async (input, init) => {
       const url = assertRead(input, init); calls.push(url)
-      return json([row(1)])
+      return json(calls.length === 1 ? [row(1)] : [{ ...row(2), grade: 'free', meta: {} }])
     }, async () => {
-      assert.deepEqual(await scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today }), [row(1)])
-      assert.equal(calls.length, 1)
-      assert.equal(calls[0].searchParams.get('or'), expectedOr)
+      const got = await scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today })
+      assert.deepEqual(got.map(r => r.id), today === 5 ? [row(1).id, row(2).id] : [row(1).id])
+      assert.deepEqual(calls.map(u => u.searchParams.get('or')), expectedOr)
     })
   }
   await assert.rejects(scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today: 7 }), /INVALID_MEMBER_SCAN_DAY/)
+})
+
+test('Friday passes each page by their own cursor and never OR the two predicates', async () => {
+  const dayRows = Array.from({ length: 1001 }, (_, i) => row(i))
+  const freeRows = Array.from({ length: 3 }, (_, i) => ({ ...row(5000 + i), grade: 'free', meta: {} }))
+  const calls: URL[] = []
+  await withFetch(async (input, init) => {
+    const url = assertRead(input, init); calls.push(url)
+    const or = url.searchParams.get('or')
+    assert.ok(or === '(meta->>weekly_reco_day.eq.5)' || or === '(and(grade.eq.free,meta->>weekly_reco_day.is.null))', `unexpected or=${or}`)
+    const source = or === '(meta->>weekly_reco_day.eq.5)' ? dayRows : freeRows
+    const cursor = url.searchParams.get('id')?.slice(3) ?? ''
+    return json(source.filter(r => r.id > cursor).slice(0, Number(url.searchParams.get('limit'))))
+  }, async () => {
+    const got = await scanMembers(createClient(base, 'synthetic-key'), 1000, undefined, { today: 5 })
+    assert.deepEqual(got.map(r => r.id), [...dayRows, ...freeRows].map(r => r.id))
+    assert.equal(calls.length, 3)
+    assert.equal(calls[1].searchParams.get('id'), `gt.${dayRows[999].id}`)
+    assert.equal(calls[2].searchParams.has('id'), false, 'the free pass starts from the beginning')
+  })
 })
 
 test('audit and scoped scans keep reading without a day filter', async () => {

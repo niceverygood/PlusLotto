@@ -1171,72 +1171,51 @@ export async function scanMembers(
   // 정기 실행(GET, force 아님)은 오늘 요일 후보만 DB에서 거른다. recoSkipReason 의 요일 판정보다
   // 넓은 상위집합(문자열 "3" 등도 포함)이며 최종 판정은 그대로 recoSkipReason 이 한다.
   // 무료 + 요일 미설정 회원은 DEFAULT_DAY(금)에만 포함한다.
-  const dayOr = dayFilter
+  // 2026-10-08: 금요일의 두 조건을 OR 한 쿼리로 묶으면 (요일식, id) 인덱스를 id 순서로 타지 못하고
+  // 전 회원 meta 를 풀어보는 계획(10/7 57014 유형)으로 갈 수 있다. 두 조건은 서로 겹치지 않으므로
+  // (요일 값 있음 / 요일 없음) 조건별로 따로 키셋 스캔해 이어 붙인다.
+  const dayPasses: (string | null)[] = dayFilter
     ? dayFilter.today === DEFAULT_DAY
-      ? `meta->>weekly_reco_day.eq.${dayFilter.today},and(grade.eq.free,meta->>weekly_reco_day.is.null)`
-      : `meta->>weekly_reco_day.eq.${dayFilter.today}`
-    : null
+      ? [`meta->>weekly_reco_day.eq.${dayFilter.today}`, 'and(grade.eq.free,meta->>weekly_reco_day.is.null)']
+      : [`meta->>weekly_reco_day.eq.${dayFilter.today}`]
+    : [null]
   const rows: MemberScanRow[] = []
-  let cursor: string | null = null
   let readPage = page
-  for (;;) {
-    let q = sb
-      .from('members')
-      .select('id, grade, name, phone, meta, registered_at, assigned_staff_id, status')
-      .eq('status', 'active')
-      .eq('is_deleted', false)
-      .eq('is_withdrawn', false)
-      .eq('is_suspended', false) // 일시정지(정지) 회원은 자동발급·문자 제외(현장 6/26)
-      .order('id')
-      .limit(readPage)
-    if (memberIds) q = q.in('id', memberIds)
-    if (dayOr) q = q.or(dayOr)
-    if (cursor !== null) q = q.gt('id', cursor)
-    const { data, error } = await q
-    if (error) {
-      // 2026-10-07: a chain's first 1,000-row read hit SQLSTATE 57014.
-      // Retry this GET only, at the same cursor, with bounded smaller payloads.
-      // No claims or sends start until the complete scan has succeeded.
-      const smallerPage = error.code === '57014' ? [250, 100].find(size => size < readPage) : undefined
-      if (smallerPage !== undefined) {
-        console.warn('[weekly-reco] member_scan_timeout', { from: readPage, to: smallerPage, scoped: !!memberIds })
-        readPage = smallerPage
-        continue
+  for (const dayOr of dayPasses) {
+    let cursor: string | null = null
+    for (;;) {
+      let q = sb
+        .from('members')
+        .select('id, grade, name, phone, meta, registered_at, assigned_staff_id, status')
+        .eq('status', 'active')
+        .eq('is_deleted', false)
+        .eq('is_withdrawn', false)
+        .eq('is_suspended', false) // 일시정지(정지) 회원은 자동발급·문자 제외(현장 6/26)
+        .order('id')
+        .limit(readPage)
+      if (memberIds) q = q.in('id', memberIds)
+      if (dayOr) q = q.or(dayOr)
+      if (cursor !== null) q = q.gt('id', cursor)
+      const { data, error } = await q
+      if (error) {
+        // 2026-10-07: a chain's first 1,000-row read hit SQLSTATE 57014.
+        // Retry this GET only, at the same cursor, with bounded smaller payloads.
+        // No claims or sends start until the complete scan has succeeded.
+        const smallerPage = error.code === '57014' ? [250, 100].find(size => size < readPage) : undefined
+        if (smallerPage !== undefined) {
+          console.warn('[weekly-reco] member_scan_timeout', { from: readPage, to: smallerPage, scoped: !!memberIds })
+          readPage = smallerPage
+          continue
+        }
+        throw error
       }
-      throw error
+      const got = (data ?? []) as MemberScanRow[]
+      rows.push(...got)
+      if (got.length < readPage) break
+      cursor = got[got.length - 1].id
     }
-    const got = (data ?? []) as MemberScanRow[]
-    rows.push(...got)
-    if (got.length < readPage) break
-    cursor = got[got.length - 1].id
   }
   return rows
-}
-
-type RecoContinuationResult = { status: 'pending' | 'http_accepted' | 'http_error' | 'request_error'; httpStatus?: number }
-
-/** One request only: an uncertain continuation must never cause an automatic replay. */
-export async function requestRecoContinuation(url: string, secret: string, chain: number, waitMs = 1500): Promise<RecoContinuationResult> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      fetch(url, { method: 'GET', headers: { authorization: `Bearer ${secret}` } })
-        .then((response): RecoContinuationResult => {
-          if (!response.ok) console.error('[weekly-reco] continuation_http_error', { chain, httpStatus: response.status })
-          return { status: response.ok ? 'http_accepted' : 'http_error', httpStatus: response.status }
-        })
-        .catch((): RecoContinuationResult => {
-          // No URL, authorization, member IDs or provider data in runtime logs.
-          console.error('[weekly-reco] continuation_request_unconfirmed', { chain })
-          return { status: 'request_error' }
-        }),
-      new Promise<RecoContinuationResult>(resolve => {
-        timer = setTimeout(() => resolve({ status: 'pending' }), waitMs)
-      }),
-    ])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
 }
 
 interface RecoRequest {
@@ -1397,7 +1376,8 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
   // 발송은 하지 않고 누락 대조만 수행(현장 9/12 요청). 발송 경로와 상호 배타 — 대조 실행이
   // 또 다른 대조를 부르지 않도록 아래 자동 트리거보다 먼저 분기한다.
   const auditOnly = options.auditOnly
-  // 시간예산 초과로 나눠 실행될 때 무한 연쇄를 막는 안전장치(자기 재호출 횟수).
+  // (구) 자기 재호출 연쇄 번호. 연쇄는 2026-10-08 중단했다(아래 '5분 크론' 설명). 이전 배포가 보낸
+  // ?chain=N 요청도 일반 정기 실행으로 처리하고, 값은 로그에만 남긴다.
   const chain = options.chain
   const startedAt = Date.now()
   const sb = createClient(url, key, { auth: { persistSession: false } })
@@ -1606,6 +1586,31 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     //
     //   커서 방식은 "마지막으로 읽은 id 다음부터"라서 동시 삽입·삭제와 무관하게 각 행을
     //   정확히 한 번 읽는다. 누락 쪽도 같이 닫힌다.
+    // 5분 크론 체제(2026-10-08): 오늘 이 회차의 정기 발급을 끝까지 마친 실행(남은 대상 0)이 이미
+    // 있으면 회원 스캔 없이 끝낸다. 예전 연쇄 방식과 같은 '하루 한 번 완주' 동작을 유지한다 — 완주 뒤
+    // 보류 해제 등으로 새로 대상이 된 회원에게 자동문자가 뒤늦게 나가 현장 수동발송과 겹치지 않게 하고,
+    // 남은 5분 실행들이 오늘 대상 회원의 meta 를 반복해 읽지 않게 한다.
+    // 확인 조회가 실패하면 발송을 막지 않고 그대로 진행한다(중복 발급·발송은 영구 선점 원장이 막는다).
+    if (!options.memberIds && !options.dryRun) {
+      stage = 'completion_check'
+      const completed = await sb
+        .from('logs')
+        .select('id')
+        .eq('action', 'reco.weekly_issue')
+        .gte('created_at', new Date(`${todayKst}T00:00:00+09:00`).toISOString())
+        .eq('meta->>channel', 'cron')
+        .eq('meta->>round_no', String(targetRound))
+        .eq('meta->>remaining', '0')
+        .limit(1)
+      if (completed.error) {
+        console.warn('[weekly-reco] completion_check_unavailable', {
+          error_code: typeof completed.error.code === 'string' ? completed.error.code : 'UNKNOWN',
+        })
+      } else if ((completed.data ?? []).length > 0) {
+        return res.status(200).json({ ok: true, skipped: 'complete', dryRun: false, round_no: targetRound, issued: 0, smsSent: 0, chain })
+      }
+    }
+
     const PAGE = 1000
     stage = 'member_scan'
     const rows: MemberScanRow[] = await scanMembers(sb, PAGE, options.memberIds,
@@ -1847,8 +1852,8 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
     }
     // 시간예산 가드(현장 피드백 7/31) — 대상이 수천 명이면 전체 처리가 Vercel maxDuration(300초)을
     // 넘겨 함수가 통째로 강제 종료되고, 뒤쪽 회원은 발급도 로그도 없이 조용히 누락됐다(7/31 사고).
-    // 예산을 넘기면 남은 대상을 남겨둔 채 정상 종료(로그 기록)하고, 이어서 처리할 후속 실행을
-    // 스스로 트리거한다 — 한 번에 다 못 해도 여러 번에 나눠 반드시 완주하게 한다.
+    // 예산을 넘기면 남은 대상을 남겨둔 채 정상 종료(로그 기록)하고, 다음 5분 크론 실행이 이어서
+    // 처리한다 — 한 번에 다 못 해도 여러 번에 나눠 반드시 완주하게 한다.
     // (재실행은 같은 회차의 이력 및 영구 선점 원장으로 이미 처리한 회원을 건너뛴다.)
     stage = 'issuance'
     const BUDGET_MS = 240_000 // maxDuration 300초 중 안전 여유를 남긴 값
@@ -1967,17 +1972,13 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       if (options.memberIds) results.push({ status: 'review_required', code: 'AUDIT_LOG_UNCONFIRMED', round_no: targetRound })
     }
 
-    // 남은 대상이 있으면 후속 실행을 트리거해 이어서 처리한다(연쇄 상한으로 폭주 방지).
-    // 응답을 기다리지 않고(자기 자신을 await 하면 타임아웃) 요청만 띄운다.
-    const MAX_CHAIN = 20
-    let continuation: RecoContinuationResult | { status: 'limit_reached' } | undefined
-    stage = 'continuation'
-    if (!options.memberIds && remaining > 0 && chain < MAX_CHAIN) {
-      const nextUrl = `${selfBase}/api/weekly-reco?chain=${chain + 1}`
-      continuation = await requestRecoContinuation(nextUrl, secret, chain + 1)
-    } else if (!options.memberIds && remaining > 0) {
-      continuation = { status: 'limit_reached' }
-      console.error('[weekly-reco] continuation_limit_reached', { chain, remaining })
+    // 남은 대상은 다음 5분 크론 실행이 이어서 처리한다. 자기 자신을 다시 부르는 연쇄는 쓰지 않는다.
+    // 2026-10-07·10-08: 연쇄의 5번째 실행(chain 4)에서 문자 요청(/api/send-sms)과 다음 연쇄 요청이
+    // 전부 즉시 실패했다(NET, 10/8 918건). 같은 배포를 연달아 다시 부르는 호출 사슬은 Vercel 이 일정
+    // 깊이 이후 무한루프로 보고 차단한다(재귀 보호). 크론이 새로 시작한 실행은 사슬 깊이가 0이다.
+    stage = 'post_issue_audit'
+    if (!options.memberIds && remaining > 0) {
+      console.warn('[weekly-reco] incomplete_next_cron', { remaining, chain })
     } else if (!options.memberIds && remaining === 0) {
       // 이번 회차 처리가 끝났다 → 곧바로 누락 대조를 한 번 돌린다(현장 9/12 요청).
       // 별도 요청으로 띄워 이 실행이 maxDuration 에 걸리지 않게 한다. 실패해도 vercel.json 의
@@ -2005,7 +2006,6 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       ...(operation ? { operation, operationId: options.operationId, confirmedNotIssued: operation.confirmedNotIssued === true } : {}),
       code: reviewRequired > 0 ? 'RECEIPT_CONFIRMATION_REQUIRED' : remaining > 0 ? 'INCOMPLETE' : 'COMPLETE', dryRun: false,
       complete: errCount === 0 && reviewRequired === 0 && remaining === 0,
-      ...(continuation ? { continuation } : {}),
       round_no: targetRound, issued, skippedRound, skippedDay, skippedPaused, skippedExpired, errors: errCount,
       reviewRequired, staleRound, smsSent, smsFail, remaining, chain, results })
   } catch (e) {
