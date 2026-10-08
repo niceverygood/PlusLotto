@@ -57,7 +57,8 @@ interface PatentFilters {
 
 interface PatentGradeConfig {
   window: number | 'all'
-  excludeCount: number
+  excludeCount: number // PATENT_FULL_AUTO_FROM_ROUND 이전 회차의 자동 제외 개수(수동 제외와 합산)
+  fullAutoExcludeCount: number // 이후 회차의 제외 개수(전부 자동, 문서 제목 <제외수 N>)
   filters: PatentFilters
 }
 
@@ -73,10 +74,19 @@ const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: tr
 const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
 
 const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
-  goldp: { window: 10, excludeCount: 5, filters: SILVER_FILTERS }, // 실버
-  vip: { window: 30, excludeCount: 8, filters: GOLD_FILTERS }, // 골드
-  royal: { window: 'all', excludeCount: 12, filters: DIAMOND_FILTERS }, // 다이아
+  goldp: { window: 10, excludeCount: 5, fullAutoExcludeCount: 7, filters: SILVER_FILTERS }, // 실버
+  vip: { window: 30, excludeCount: 8, fullAutoExcludeCount: 12, filters: GOLD_FILTERS }, // 골드
+  royal: { window: 'all', excludeCount: 12, fullAutoExcludeCount: 15, filters: DIAMOND_FILTERS }, // 다이아
 }
+
+/**
+ * 전부 자동 선정 시작 회차(김형준 이사 결정 10/8 — "① 전산이 7·12·15개를 모두 점수 순위대로 자동
+ * 선정하고, 매주 직접 입력은 없애는 방식"). 이 회차부터 실버·골드·다이아의 제외수는 문서 제목의
+ * 개수(7·12·15)를 점수 순위대로 전부 자동 선정하고, 설정 > 로또 고정·제외의 수동 '제외'는 쓰지 않는다
+ * (수동 '고정'은 그대로 존중). 그 전 회차는 기존대로 자동 5·8·12 + 수동 제외 합집합.
+ * 10/8 기록: 수동 제외가 자동 제외에 더해져 실제 제외가 실버 11~12·골드 17~19·다이아 22~23개였다.
+ */
+export const PATENT_FULL_AUTO_FROM_ROUND = 1246
 
 // ── ①②점수표 ────────────────────────────────────────────────────────
 function freqScore(ratio: number): number {
@@ -253,15 +263,19 @@ export function generatePatentSets(
   const fixed = manual.fixed.filter((n) => n >= LOTTO_MIN && n <= LOTTO_MAX).slice(0, LOTTO_PICK)
   const fixedSet = new Set(fixed)
 
-  const { excluded: autoExcluded, window } = computeExcludeSet(desc, cfg.window, cfg.excludeCount, fixedSet)
-  const excludedSet = new Set<number>([...autoExcluded, ...manual.excluded])
+  // 1246회부터 전부 자동(7·12·15) — 수동 '제외'는 쓰지 않는다. 고정수는 그대로.
+  const fullAuto = targetRound >= PATENT_FULL_AUTO_FROM_ROUND
+  const excludeCount = fullAuto ? cfg.fullAutoExcludeCount : cfg.excludeCount
+  const manualExcluded = fullAuto ? [] : manual.excluded
+  const { excluded: autoExcluded, window } = computeExcludeSet(desc, cfg.window, excludeCount, fixedSet)
+  const excludedSet = new Set<number>([...autoExcluded, ...manualExcluded])
   for (const f of fixedSet) excludedSet.delete(f) // 수동 고정수는 어떤 경로로도 제외되지 않는다.
 
   let pool = ALL_NUMBERS.filter((n) => !excludedSet.has(n))
   if (pool.length < LOTTO_PICK) {
     // 풀 하한 방어(lottoGenerator.generateRecommendation 과 동일 원칙) — 수동 제외는 유지,
     // 자동 제외 중 점수가 약한(목록 뒤쪽) 것부터 되돌린다. 45−12=33 이 최소 풀이라 실질적으론 도달하지 않는다.
-    const manualSet = new Set(manual.excluded)
+    const manualSet = new Set(manualExcluded)
     const droppable = autoExcluded.filter((n) => !manualSet.has(n))
     while (pool.length < LOTTO_PICK && droppable.length) {
       const back = droppable.pop()!

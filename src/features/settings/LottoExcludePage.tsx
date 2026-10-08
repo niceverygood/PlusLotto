@@ -11,6 +11,7 @@ import { cn } from '@/lib/cn'
 import { GRADE_LABEL } from '@/design-system/labels'
 import { LOTTO_RULE_GRADES } from '@/lib/lotto'
 import { computeFixedScores } from '@/lib/lottoFixedScore'
+import { PATENT_FULL_AUTO_FROM_ROUND } from '@/lib/lottoPatentExclude'
 import { SectionCard } from './ui'
 import { useAllLottoRounds, useSaveSiteSettings, useSiteSettings } from './api'
 
@@ -318,6 +319,13 @@ export function LottoExcludePage() {
         title="고정·제외 입력 (회차 예약)"
         desc="대상 등급·고정수/제외수를 선택하고 적용 회차·시작일을 지정해 이력에 추가합니다. 등급별로 따로 지정할 수 있고, 해당 등급 규칙이 없으면 ‘공통(전체)’ 규칙이 적용됩니다. 토요일에 입력하면 익주 월요일부터 적용됩니다."
       >
+        {/* 김형준 이사 결정(10/8): 실버·골드·다이아 제외수는 전부 자동 선정, 매주 직접 입력은 없앤다. */}
+        <div className="mb-3 rounded-md border border-accent-100 bg-accent-50 px-3 py-2 text-[12.5px] leading-relaxed text-gray-700">
+          <b className="text-ink-800">실버·골드·다이아 제외수는 {PATENT_FULL_AUTO_FROM_ROUND}회부터 전산이 자동 선정합니다.</b>{' '}
+          특허 제외수 로직의 점수 순위대로 실버 7개·골드 12개·다이아 15개를 매주 자동으로 고릅니다. 이 화면에서 입력한
+          ‘제외수’는 이 세 등급에 적용되지 않으며, ‘고정수’는 계속 적용됩니다. {PATENT_FULL_AUTO_FROM_ROUND - 1}회까지는 기존대로
+          적용됩니다.
+        </div>
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <label className="block">
             <span className="mb-1 block text-[11.5px] font-semibold text-gray-500">대상 등급</span>
