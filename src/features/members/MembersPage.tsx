@@ -10,6 +10,7 @@ import {
   DataTable,
   FilterBar,
   PageHeader,
+  QueryErrorCard,
   Tabs,
   type FilterChip,
   type TabItem,
@@ -132,7 +133,7 @@ export function MembersPage() {
     sortDesc,
   }
 
-  const { data, isLoading, isFetching } = useMembers(query)
+  const { data, error, isError, isLoading, isFetching, refetch } = useMembers(query)
 
   // 엑셀 내려받기(현장 8/13) — 현재 페이지가 아니라 필터에 걸린 전체를 모아서 받는다.
   const [exporting, setExporting] = useState(false)
@@ -505,6 +506,18 @@ export function MembersPage() {
           </Field>
         </div>
       </FilterBar>
+
+      {/* 조회가 실패하면 빈 표 대신 오류를 보여준다(현장 10/8 — 전체 사이트 검색이 시간초과로 실패하면
+          '데이터가 없습니다'로 보였다). 실제 0건과 조회 실패는 다른 상태다. 결제 목록(9/11)과 같은 방식. */}
+      {isError && (
+        <QueryErrorCard
+          title="회원 목록을 불러오지 못했습니다"
+          description="조회 요청이 실패한 상태이며 검색 결과가 0건이라는 뜻이 아닙니다. 잠시 후 다시 시도해 주세요."
+          error={error}
+          isRetrying={isFetching}
+          onRetry={() => void refetch()}
+        />
+      )}
 
       {/* 테이블 */}
       <DataTable
