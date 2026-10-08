@@ -828,6 +828,13 @@ const RECO_SITE_BRANDS = new Map([
   ['cplotto', '일행로또'], ['best', '프리미엄로또'],
 ])
 
+// 2026-10-08 현장 요청(정의현 차장): 조합문자가 통신사 자동 스팸으로 차단돼 사이트 이름에서 "로또"를 뺀다.
+// "815로또 No. 1245" → "815 No. 1245". 조합문자 전용이며 가입·당첨 등 다른 문자의 $brand 는 그대로다.
+// src/lib/sms.ts comboSmsBrand 와 같은 규칙(api 는 src 를 import 할 수 없다).
+function comboSmsBrand(label: string): string {
+  return label.replace(/로또/g, '').trim() || label
+}
+
 export function formatComboSms(
   name: string,
   roundNo: number,
@@ -854,7 +861,7 @@ export function formatComboSms(
     .replace(/\$round/g, round)
     .replace(/\$name/g, name || '회원')
     .replace(/\$num/g, lines)
-    .replace(/\$brand/g, brand)
+    .replace(/\$brand/g, comboSmsBrand(brand))
 }
 
 /** 한국 문자 바이트 길이(비ASCII=2byte). SMS=90byte 기준. (src/lib/oneshot.ts koByteLength 동기화) */

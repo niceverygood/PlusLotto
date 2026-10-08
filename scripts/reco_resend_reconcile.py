@@ -21,9 +21,10 @@ import os
 import re
 import sys
 
+# 조합문자 첫 줄 '<브랜드> No. <회차>'. 10/8부터 "로또"를 뺀 이름(815 등)을 쓰고, 그 전 문자는 옛 이름이다.
 BRANDS = {
-    'pluslotto': 'plus', 'lotto815': '815로또', 'infolotto': '인포로또',
-    'cplotto': '일행로또', 'best': '프리미엄로또',
+    'pluslotto': ('plus', '플러스'), 'lotto815': ('815', '815로또'), 'infolotto': ('인포', '인포로또'),
+    'cplotto': ('일행', '일행로또'), 'best': ('프리미엄', '프리미엄로또'),
 }
 
 
@@ -57,7 +58,7 @@ def main() -> int:
     vendor_rows = read_vendor(vendor_path)
     vendor = {(digits(v.get('수신번호')), head(v.get('메시지'))) for v in vendor_rows
               if str(v.get('결과', '')).strip() == '성공'}
-    brand_site = {b: s for s, b in BRANDS.items()}
+    brand_site = {b: s for s, names in BRANDS.items() for b in names}
     with open(ledger_path, encoding='utf-8-sig', newline='') as f:
         ledger = list(csv.DictReader(f))
 
@@ -66,8 +67,8 @@ def main() -> int:
     bad = 0
     for row in ledger:
         site, phone, body = row.get('사이트', ''), digits(row.get('수신번호')), row.get('문자내용') or ''
-        brand = BRANDS.get(site)
-        if not brand or not phone or not body or not head(body).startswith(brand + ' '):
+        names = BRANDS.get(site, ())
+        if not names or not phone or not body or not any(head(body).startswith(b + ' ') for b in names):
             bad += 1
             continue
         if (phone, head(body)) in vendor:
