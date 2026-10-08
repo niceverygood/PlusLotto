@@ -7,7 +7,7 @@ import { readDb } from './db/store'
 import { dataSource } from './supabase'
 import { sb } from './db/remote'
 import { useCurrentUser, type CurrentUser } from './auth'
-import { matchesSiteScope, siteScopeOrFilter, type SiteScope } from './siteScope'
+import { matchesSiteScope, rpcSourceSite, siteScopeOrFilter, type SiteScope } from './siteScope'
 import { useSiteScope } from './siteScopeStore'
 
 // 우측하단 고정 팝업 켜기/끄기(현장 피드백 7/30) — 실무자마다 선호가 달라 브라우저별 로컬 설정으로
@@ -53,7 +53,18 @@ function dueReservations(members: readonly ReservationRow[], user: CurrentUser):
   return out.sort((a, b) => Date.parse(a.reserved_at) - Date.parse(b.reserved_at))
 }
 
+/** PostgREST 가 함수를 찾지 못했을 때(마이그레이션 적용 전 배포)만 true. */
+function isMissingFunction(error: { code?: string } | null): boolean {
+  return !!error && (error.code === 'PGRST202' || error.code === '42883')
+}
+
 async function fetchDueReservationsRemote(user: CurrentUser, siteScope: SiteScope): Promise<CallReservationAlert[]> {
+  // 10/8 운영 DB CPU 100%의 1위 원인: 이 30초 폴링이 회원 전체 meta 를 매번 풀어 봤다.
+  // 예약 있는 회원만 담는 부분 인덱스를 쓰는 RPC 로 바꾼다(20261008170000). 가시성·사이트 조건은 같다.
+  const rpc = await sb().rpc('admin_call_reservations', { p_source_site: rpcSourceSite(siteScope) })
+  if (!rpc.error) return dueReservations((rpc.data ?? []) as ReservationRow[], user)
+  if (!isMissingFunction(rpc.error)) throw rpc.error
+  // 함수가 아직 없는 DB 에서만 예전 조회로 대체한다.
   let q = sb()
     .from('members')
     .select('id, name, phone, assigned_staff_id, meta')
