@@ -885,6 +885,30 @@ function koByteLength(s: string): number {
   return n
 }
 
+/**
+ * 발급 원장 1건 → 업체 tran_id(매뉴얼 30자). 10/9 사고 — '접수 성공(0)'인데 업체 전송내역에 없는
+ * 회원이 나왔지만 업체 응답에 건별 식별값이 없어 1:1 대조가 불가능했다. 원장 UUID 를 36진수로 줄여
+ * (최대 26자) 업체 내역·문의에서 원장 행을 바로 찾게 한다.
+ */
+export function recoTranId(claimId: string | number): string {
+  const hex = String(claimId).toLowerCase().replace(/-/g, '')
+  if (/^[0-9a-f]{32}$/.test(hex)) return 'R' + BigInt('0x' + hex).toString(36)
+  return ('R' + String(claimId).replace(/[^A-Za-z0-9]/g, '')).slice(0, 30)
+}
+
+/** 업체 원응답에서 대조용 단순 값만 남긴다(키 40자·값 200자·최대 20개, 토큰류 키 제외). */
+function vendorFields(raw: unknown): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  if (!object(raw)) return out
+  for (const [k, v] of Object.entries(raw)) {
+    if (Object.keys(out).length >= 20) break
+    if (!/^[A-Za-z0-9_]{1,40}$/.test(k) || /token|secret|key|auth|pass/i.test(k)) continue
+    if (typeof v === 'string') out[k] = v.slice(0, 200)
+    else if ((typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean') out[k] = v
+  }
+  return out
+}
+
 /** 검증된 발송 함수(/api/send-sms, Fixie 프록시 경유)를 재사용해 1건 발송. */
 async function sendComboSms(
   base: string,
@@ -893,7 +917,11 @@ async function sendComboSms(
   body: string,
   sender: string,
   sourceSite: string,
+  tranId: string,
 ): Promise<{ outcome: 'accepted' | 'rejected' | 'unknown'; code: string; receipt: Record<string, unknown> }> {
+  const msgType = koByteLength(body) <= 90 ? 'SMS' : 'LMS'
+  // 응답이 끊겨도(NET) 업체에는 접수됐을 수 있으므로 요청 시각·추적번호·수신번호는 항상 남긴다.
+  const trace: Record<string, unknown> = { tranId, msgType, dest: dest.replace(/\D/g, ''), requestedAt: new Date(Date.now()).toISOString() }
   try {
     const r = await fetch(`${base}/api/send-sms`, {
       method: 'POST',
@@ -909,19 +937,26 @@ async function sendComboSms(
         dest_phone: dest,
         msg_body: body,
         send_phone: sender,
-        msgType: koByteLength(body) <= 90 ? 'SMS' : 'LMS',
+        msgType,
+        tran_id: tranId,
       }),
       signal: AbortSignal.timeout(20_000),
     })
     const d: unknown = await r.json()
-    if (!object(d)) return { outcome: 'unknown', code: 'INVALID_RESPONSE', receipt: { code: 'INVALID_RESPONSE', httpStatus: r.status, body } }
+    if (!object(d)) return { outcome: 'unknown', code: 'INVALID_RESPONSE', receipt: { ...trace, code: 'INVALID_RESPONSE', httpStatus: r.status, body } }
     const code = typeof d.code === 'string' && d.code ? d.code : 'UNKNOWN'
     const outcome = r.ok && d.ok === true && code !== 'UNKNOWN' ? 'accepted'
       : d.ok === false && !['UNKNOWN', 'NET', 'NET_ERR', 'EXCEPTION'].includes(code) ? 'rejected' : 'unknown'
-    return { outcome, code, receipt: { code, cmid: typeof d.cmid === 'string' ? d.cmid : null,
-      httpStatus: r.status, body } }
+    const text = (v: unknown) => (typeof v === 'string' && v ? v : null)
+    return { outcome, code, receipt: { ...trace, code, cmid: typeof d.cmid === 'string' ? d.cmid : null,
+      httpStatus: r.status, body,
+      // send-sms 가 확정한 실제 발송 사실(사이트별로 다시 고른 발신번호·업체에 보낸 추적번호 등).
+      provider: text(d.provider), sender: text(d.sender), tranId: text(d.tranId) ?? tranId,
+      providerHttpStatus: typeof d.providerHttpStatus === 'number' ? d.providerHttpStatus : null,
+      respondedAt: text(d.respondedAt) ?? new Date(Date.now()).toISOString(),
+      message: text(d.message), vendor: vendorFields(d.raw) } }
   } catch {
-    return { outcome: 'unknown', code: 'NET', receipt: { code: 'NET', body } }
+    return { outcome: 'unknown', code: 'NET', receipt: { ...trace, code: 'NET', body } }
   }
 }
 
@@ -1853,7 +1888,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       let receipt: Record<string, unknown> = { code: 'NOT_REQUESTED' }
       if (claim.should_send) {
         const smsBody = formatComboSms(typeof claimedMember.name === 'string' ? claimedMember.name : '', targetRound, sets, recoTplBody, claimedMember.meta)
-        const sent = await sendComboSms(selfBase, r.id, String(claimedMember.phone), smsBody, sender, sourceSite)
+        const sent = await sendComboSms(selfBase, r.id, String(claimedMember.phone), smsBody, sender, sourceSite, recoTranId(claim.claim_id))
         outcome = sent.outcome; receipt = sent.receipt
         if (outcome === 'accepted') smsSent++
         else { smsFail++; reviewRequired++ }
