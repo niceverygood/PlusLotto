@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import handler, { parseRecoRequest, recoSkipReason, recoContextProblem } from '../../api/weekly-reco.ts'
+import handler, { parseRecoRequest, recoSkipReason, recoContextProblem, recoTranId } from '../../api/weekly-reco.ts'
 
 type Row = { id: string; grade: string; name: string; phone: string; registered_at: string; assigned_staff_id: string | null; status: string; is_deleted: boolean; is_withdrawn: boolean; is_suspended: boolean; meta: Record<string, unknown> }
 type Ledger = { id: string; token: string; status: string; member: Row; issue: Record<string, unknown>; shouldSend: boolean; receipt?: Record<string, unknown> }
@@ -32,7 +32,8 @@ async function fixture(options: Options, work: (s: {
         if (options.provider === 'unknown') throw new Error('synthetic response lost')
         if (options.provider === 'empty') return json({ ok: false, code: '' })
         if (options.provider === 'rejected') return json({ ok: false, code: 'D179' })
-        return json({ ok: true, code: '0', cmid: 'synthetic-receipt' })
+        return json({ ok: true, code: '0', cmid: 'synthetic-receipt', provider: 'oneshot', sender: '0212340001', tranId: body.tran_id,
+          providerHttpStatus: 200, respondedAt: '2026-10-06T00:30:01.000Z', raw: { result_code: '0', result_msg: 'success', api_token: 'x', nested: { a: 1 } } })
       }
       if (url.pathname === '/api/weekly-reco' && url.searchParams.get('audit') === '1') return json({ ok: true })
     }
@@ -191,12 +192,36 @@ test('accepted receipt retains provider ID and body; SMS disabled is explicitly 
     const r = await s.invoke({ memberIds: ['test-a'], mode: 'manual' }, {}, 'Bearer staff-token')
     assert.equal(s.ledger.get('test-a')?.receipt?.cmid, 'synthetic-receipt')
     assert.equal(s.ledger.get('test-a')?.receipt?.httpStatus, 200)
+    // 10/9 사고 재발 방지 — 업체와 1:1 대조할 추적번호·실제 발신번호·요청/응답 시각·업체 응답을 남긴다.
+    const receipt = s.ledger.get('test-a')?.receipt ?? {}
+    assert.equal(s.sends[0].tran_id, recoTranId('claim-test-a'))
+    assert.equal(receipt.tranId, s.sends[0].tran_id)
+    assert.equal(receipt.provider, 'oneshot'); assert.equal(receipt.sender, '0212340001'); assert.equal(receipt.dest, '01000000001')
+    assert.equal(receipt.msgType, s.sends[0].msgType); assert.equal(receipt.providerHttpStatus, 200)
+    assert.equal(receipt.requestedAt, '2026-10-06T00:30:00.000Z'); assert.equal(receipt.respondedAt, '2026-10-06T00:30:01.000Z')
+    assert.deepEqual(receipt.vendor, { result_code: '0', result_msg: 'success' })
     assert.equal((r.body.results as Record<string, unknown>[])[0].sms_outcome, 'accepted')
   })
   await fixture({ smsEnabled: false }, async s => {
     const r = await s.invoke({ memberIds: ['test-a'], mode: 'manual' }, {}, 'Bearer staff-token')
     assert.equal(s.sends.length, 0); assert.equal((r.body.results as Record<string, unknown>[])[0].sms_outcome, 'not_requested')
   })
+})
+test('lost provider response still records tracking ID and request time for reconciliation', async () => {
+  await fixture({ provider: 'unknown' }, async s => {
+    await s.invoke({ memberIds: ['test-a'] })
+    const receipt = s.ledger.get('test-a')?.receipt ?? {}
+    assert.equal(receipt.code, 'NET'); assert.equal(receipt.tranId, s.sends[0].tran_id)
+    assert.equal(receipt.requestedAt, '2026-10-06T00:30:00.000Z'); assert.equal(receipt.dest, '01000000001')
+  })
+})
+test('ledger UUID becomes a vendor tran_id within 30 alphanumerics', () => {
+  const max = recoTranId('ffffffff-ffff-ffff-ffff-ffffffffffff')
+  assert.match(max, /^R[0-9a-z]{1,25}$/); assert.ok(max.length <= 30)
+  assert.equal(recoTranId('00000000-0000-0000-0000-000000000001'), 'R1')
+  assert.notEqual(recoTranId('3f1c2d4e-0000-4000-8000-000000000001'), recoTranId('3f1c2d4e-0000-4000-8000-000000000002'))
+  assert.equal(recoTranId('3F1C2D4E-0000-4000-8000-000000000001'), recoTranId('3f1c2d4e-0000-4000-8000-000000000001'))
+  assert.equal(recoTranId(123), 'R123')
 })
 test('same-round issue anywhere in history prevents another issue', () => {
   assert.equal(recoSkipReason({ grade: 'gold', meta: { weekly_reco_day: 2, weekly_recos: [{ round_no: 1246 },{ round_no: 1245 }] } },
