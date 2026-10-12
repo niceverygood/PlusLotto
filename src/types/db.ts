@@ -17,6 +17,7 @@ export type Grade =
   | 'free' // 무료
   | 'gold' // 골드
   | 'goldp' // 골드플러스
+  | 'ruby' // 루비 — 실버(goldp)와 골드(vip) 사이 유료등급(현장 10/12)
   | 'vip' // VIP
   | 'royal' // 로얄
   | 'ovr' // 인반언스 (명칭 미확인)

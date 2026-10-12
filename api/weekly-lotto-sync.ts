@@ -12,7 +12,7 @@ const UA =
 
 // 당첨 안내문자 자동발송(현장 피드백 7/28, 정의현 차장) — 설정(site_settings.win_sms)에서 체크한
 // 등수 × 회원분류(유료/무료)에만 발송. 판정 규칙 원본은 src/lib/winSms.ts (서버함수라 자급자족 복제).
-const PAID_GRADES = ['gold', 'goldp', 'vip', 'royal']
+const PAID_GRADES = ['gold', 'goldp', 'ruby', 'vip', 'royal']
 interface WinSmsCfg {
   enabled: boolean
   ranks: number[]

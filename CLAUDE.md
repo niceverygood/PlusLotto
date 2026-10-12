@@ -111,7 +111,7 @@ docs/
   --gray-50:#F7F8FA; --gray-100:#EDF0F4; --gray-200:#E1E6EC; --gray-300:#CCD3DD; --gray-400:#99A3B2;
   --gray-500:#6B7585; --gray-600:#4B5565; --gray-700:#343C49; --gray-800:#212732; --gray-900:#0F1420;
   /* Membership grade (직관적 의미로 재정의) */
-  --g-simple:#64748B; --g-free:#94A3B8; --g-gold:#C99700; --g-goldp:#B45309;
+  --g-simple:#64748B; --g-free:#94A3B8; --g-gold:#C99700; --g-goldp:#B45309; --g-ruby:#BE185D;
   --g-vip:#0F9D6B; --g-royal:#7C3AED; --g-ovr:#0F1420; --g-toss:#0EA5E9;
   /* Layout */
   --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-full:999px;
@@ -133,7 +133,7 @@ const config: Config = {
         accent:{600:'#D97706',500:'#F59E0B',100:'#FDECC8',50:'#FFF7E6'},
         success:'#16A34A', warning:'#D97706', danger:'#DC2626', info:'#0EA5E9',
         gray:{50:'#F7F8FA',100:'#EDF0F4',200:'#E1E6EC',300:'#CCD3DD',400:'#99A3B2',500:'#6B7585',600:'#4B5565',700:'#343C49',800:'#212732',900:'#0F1420'},
-        grade:{simple:'#64748B',free:'#94A3B8',gold:'#C99700',goldp:'#B45309',vip:'#0F9D6B',royal:'#7C3AED',ovr:'#0F1420',toss:'#0EA5E9'},
+        grade:{simple:'#64748B',free:'#94A3B8',gold:'#C99700',goldp:'#B45309',ruby:'#BE185D',vip:'#0F9D6B',royal:'#7C3AED',ovr:'#0F1420',toss:'#0EA5E9'},
       },
       fontFamily:{ sans:['Pretendard Variable','Pretendard','system-ui','sans-serif'], mono:['JetBrains Mono','ui-monospace','monospace'] },
       borderRadius:{ sm:'6px', DEFAULT:'8px', lg:'12px' },
@@ -156,6 +156,7 @@ export default config
 | 간편가입 `grade-simple` / 무료 `grade-free` | 슬레이트/그레이 | 정상·승인 | success |
 | 골드 `grade-gold` / 골드플러스 `grade-goldp` | 금색/브론즈 | 대기 | warning |
 | VIP `grade-vip` / 로얄 `grade-royal` | 에메랄드/보라 | 실패 | danger |
+| 루비 `grade-ruby` (실버와 골드 사이, 10/12) | 루비 핑크 | | |
 | 인반언스* `grade-ovr` / 토스DB `grade-toss` | 옵시디언/시안 | 취소 | gray |
 | | | 정지 | danger(muted) |
 

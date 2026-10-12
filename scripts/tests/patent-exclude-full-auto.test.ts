@@ -19,7 +19,7 @@ function rounds(last: number): LottoRound[] {
 }
 
 const manual = { fixed: [], excluded: [1, 2, 3, 44, 45] }
-const EXPECTED = { before: { goldp: 5, vip: 8, royal: 12 }, after: { goldp: 7, vip: 12, royal: 15 } } as const
+const EXPECTED = { before: { goldp: 5, ruby: 6, vip: 8, royal: 12 }, after: { goldp: 7, ruby: 10, vip: 12, royal: 15 } } as const
 
 test('전부 자동 시작 회차는 1246회이고 두 사본이 같은 값을 쓴다', () => {
   assert.equal(API_FROM, 1246)
@@ -28,7 +28,7 @@ test('전부 자동 시작 회차는 1246회이고 두 사본이 같은 값을 �
 
 test('1245회까지는 기존대로 자동 5·8·12개 + 수동 제외를 합쳐 적용한다', () => {
   const data = rounds(1244) // 다음 회차 = 1245
-  for (const grade of ['goldp', 'vip', 'royal'] as const) {
+  for (const grade of ['goldp', 'ruby', 'vip', 'royal'] as const) {
     const r = apiGenerate(data, grade, manual, 5, 7)
     assert.equal(r.targetRound, 1245)
     assert.equal(r.autoExcluded.length, EXPECTED.before[grade], grade)
@@ -38,7 +38,7 @@ test('1245회까지는 기존대로 자동 5·8·12개 + 수동 제외를 합쳐
 
 test('1246회부터 실버 7·골드 12·다이아 15개를 전부 자동 선정하고 수동 제외는 쓰지 않는다', () => {
   const data = rounds(1245) // 다음 회차 = 1246
-  for (const grade of ['goldp', 'vip', 'royal'] as const) {
+  for (const grade of ['goldp', 'ruby', 'vip', 'royal'] as const) {
     const r = apiGenerate(data, grade, manual, 5, 7)
     assert.equal(r.targetRound, 1246)
     assert.equal(r.autoExcluded.length, EXPECTED.after[grade], grade)
@@ -63,7 +63,7 @@ test('수동 고정수는 1246회 이후에도 그대로 존중되고 제외되�
 test('자동발송(api)과 화면(src) 사본은 같은 입력에 같은 제외수를 낸다', () => {
   for (const last of [1244, 1245]) {
     const data = rounds(last)
-    for (const grade of ['goldp', 'vip', 'royal'] as const) {
+    for (const grade of ['goldp', 'ruby', 'vip', 'royal'] as const) {
       const a = apiGenerate(data, grade, manual, 3, 11)
       const b = appGenerate(data, grade, manual, 3, 11)
       assert.deepEqual(a.autoExcluded, b.autoExcluded, `${last} ${grade}`)
@@ -71,5 +71,21 @@ test('자동발송(api)과 화면(src) 사본은 같은 입력에 같은 제외�
       assert.equal(a.window, b.window)
       assert.deepEqual(a.sets, b.sets)
     }
+  }
+})
+
+test('루비(10/12 추가)는 실버와 골드 사이 — 분석 창 20회차·제외 10개, 연번·구간 필터를 적용한다', () => {
+  const data = rounds(1245)
+  const ruby = apiGenerate(data, 'ruby', manual, 5, 7)
+  assert.equal(ruby.window, 20)
+  assert.equal(ruby.autoExcluded.length, 10)
+  for (const n of manual.excluded.filter((x) => !ruby.autoExcluded.includes(x))) assert.ok(!ruby.excluded.includes(n), '수동 제외 미적용')
+  for (const set of ruby.sets) {
+    let pairs = 0
+    for (let i = 1; i < set.length; i++) if (set[i] - set[i - 1] === 1) pairs++
+    assert.ok(pairs <= 2, `연번 ${pairs}쌍: ${set}`)
+    const buckets = new Map<number, number>()
+    for (const n of set) { const b = n >= 40 ? 4 : Math.floor(n / 10); buckets.set(b, (buckets.get(b) ?? 0) + 1) }
+    assert.ok(Math.max(...buckets.values()) <= 3, `구간 쏠림: ${set}`)
   }
 })

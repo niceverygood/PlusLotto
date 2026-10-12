@@ -11,7 +11,7 @@
 import type { Grade } from '@/types/db'
 
 /** 조합 자동발급·문자발송 대상 유료등급 (api/weekly-reco.ts PAID_GRADES 와 동일). */
-export const PAID_RECO_GRADES = new Set<Grade>(['gold', 'goldp', 'vip', 'royal'])
+export const PAID_RECO_GRADES = new Set<Grade>(['gold', 'goldp', 'ruby', 'vip', 'royal'])
 
 /** 전역 기본 발송요일 — 금요일(0=일..6=토). api/weekly-reco.ts DEFAULT_DAY 와 동일. */
 export const DEFAULT_RECO_DAY = 5

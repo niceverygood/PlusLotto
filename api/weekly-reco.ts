@@ -541,11 +541,11 @@ export const EXCLUSION_RULE_LABEL: Record<ExclusionRuleKey, string> = {
 export const MODE_OPTIONS: ExclusionMode[] = [10, 15, 20]
 
 // ── 이하 특허 제외수 로직: src/lib/lottoPatentExclude.ts 사본(임포트 제거, 현장 피드백 7/23) ──────
-// 실버(goldp)·골드(vip)·다이아(royal) 3개 유료등급 전용 — 위 통계 제외수 엔진(computeExclusions/
+// 실버(goldp)·루비(ruby, 10/12)·골드(vip)·다이아(royal) 유료등급 전용 — 위 통계 제외수 엔진(computeExclusions/
 // passesQuality)과는 완전히 별도 경로. 원본 수정 시 이 사본도 동기화할 것(파일 상단 경고 참조).
-type PatentGrade = 'goldp' | 'vip' | 'royal'
+type PatentGrade = 'goldp' | 'ruby' | 'vip' | 'royal'
 function isPatentGrade(grade: string | null | undefined): grade is PatentGrade {
-  return grade === 'goldp' || grade === 'vip' || grade === 'royal'
+  return grade === 'goldp' || grade === 'ruby' || grade === 'vip' || grade === 'royal'
 }
 
 interface PatentFilters {
@@ -572,8 +572,13 @@ const SILVER_FILTERS: PatentFilters = {
 }
 const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true, carryoverMax2: true }
 const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
+// 루비(10/12 추가, 실버와 골드 사이) — 문서에 루비 기준이 없어 실버·골드의 중간값으로 정했다.
+// 분석 창 20회차·제외 10개·필터는 실버 + 연번제한·구간균등(이월수제한은 골드부터).
+// TODO(live-verify): 루비 제외수 개수·분석 창·필터 현장 확정 후 이 한 줄만 바꾼다 (ASSUMPTIONS).
+const RUBY_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true }
 const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
   goldp: { window: 10, excludeCount: 5, fullAutoExcludeCount: 7, filters: SILVER_FILTERS }, // 실버
+  ruby: { window: 20, excludeCount: 6, fullAutoExcludeCount: 10, filters: RUBY_FILTERS }, // 루비
   vip: { window: 30, excludeCount: 8, fullAutoExcludeCount: 12, filters: GOLD_FILTERS }, // 골드
   royal: { window: 'all', excludeCount: 12, fullAutoExcludeCount: 15, filters: DIAMOND_FILTERS }, // 다이아
 }
@@ -822,8 +827,8 @@ function generateIssueSetsForGrade(
 }
 
 // ── 유료회원 지정요일 조합 SMS 자동발송(현장 피드백 6/18) ────────────────────────
-// 유료 등급(골드/골드+/VIP/로얄)만 대상. 무료는 발급만(문자 X).
-const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
+// 유료 등급(골드/골드+/VIP/로얄 + 루비 10/12)만 대상. 무료는 발급만(문자 X).
+const PAID_GRADES = new Set(['gold', 'goldp', 'ruby', 'vip', 'royal'])
 
 /**
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 규칙(자급자족 중복, 상단 참조).

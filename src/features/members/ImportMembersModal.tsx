@@ -13,7 +13,7 @@ import { useBulkImportMembers, type BulkImportResult, type MemberCreateInput } f
 import { autoMapHeaders, IMPORT_FIELDS, parseLeadFile, type ParsedSheet } from './import'
 import { INFLOW_TYPES } from './views'
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 const selectCls =
   'h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 text-[12.5px] text-gray-700 outline-none focus:border-primary-500'
 const inputCls =

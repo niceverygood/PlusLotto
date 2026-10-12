@@ -166,7 +166,7 @@ export function RecommendPage() {
               }}
               className="h-8 rounded-md border border-gray-300 bg-white px-2 text-[12.5px] font-semibold text-gray-700 outline-none focus:border-primary-500"
             >
-              {(['free', 'simple', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss'] as Grade[]).map((g) => (
+              {(['free', 'simple', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss'] as Grade[]).map((g) => (
                 <option key={g} value={g}>
                   {GRADE_LABEL[g]}
                 </option>

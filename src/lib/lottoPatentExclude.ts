@@ -1,5 +1,5 @@
 // 특허적용 제외수 로직 (김형준 이사 전달 "특허적용 제외수 로직.docx", 현장 피드백 7/23).
-// 실버(goldp)·골드(vip)·다이아(royal) 3개 유료등급 전용 — 통계 제외수 엔진(computeExclusions/
+// 실버(goldp)·루비(ruby, 10/12)·골드(vip)·다이아(royal) 유료등급 전용 — 통계 제외수 엔진(computeExclusions/
 // passesQuality, lottoGenerator.ts)과는 완전히 별도 경로로 동작한다. 그 외 등급(무료·간편가입·
 // 등급미정(gold)·토스DB 등)의 발급 조합은 기존 로직을 그대로 유지 — 이 파일은 아무 영향도 주지 않는다.
 //
@@ -33,12 +33,12 @@ import {
   generateIssueSets,
 } from './lottoGenerator'
 
-export type PatentGrade = 'goldp' | 'vip' | 'royal'
-export const PATENT_GRADES: readonly PatentGrade[] = ['goldp', 'vip', 'royal']
-export const PATENT_GRADE_LABEL: Record<PatentGrade, string> = { goldp: '실버', vip: '골드', royal: '다이아' }
+export type PatentGrade = 'goldp' | 'ruby' | 'vip' | 'royal'
+export const PATENT_GRADES: readonly PatentGrade[] = ['goldp', 'ruby', 'vip', 'royal']
+export const PATENT_GRADE_LABEL: Record<PatentGrade, string> = { goldp: '실버', ruby: '루비', vip: '골드', royal: '다이아' }
 
 export function isPatentGrade(grade: Grade | null | undefined): grade is PatentGrade {
-  return grade === 'goldp' || grade === 'vip' || grade === 'royal'
+  return grade === 'goldp' || grade === 'ruby' || grade === 'vip' || grade === 'royal'
 }
 
 const ALL_NUMBERS: readonly number[] = Array.from(
@@ -73,8 +73,13 @@ const SILVER_FILTERS: PatentFilters = {
 const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true, carryoverMax2: true }
 const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
 
+// 루비(10/12 추가, 실버와 골드 사이) — 문서에 루비 기준이 없어 실버·골드의 중간값으로 정했다.
+// 분석 창 20회차·제외 10개·필터는 실버 + 연번제한·구간균등(이월수제한은 골드부터).
+// TODO(live-verify): 루비 제외수 개수·분석 창·필터 현장 확정 후 이 한 줄만 바꾼다 (ASSUMPTIONS).
+const RUBY_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true }
 const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
   goldp: { window: 10, excludeCount: 5, fullAutoExcludeCount: 7, filters: SILVER_FILTERS }, // 실버
+  ruby: { window: 20, excludeCount: 6, fullAutoExcludeCount: 10, filters: RUBY_FILTERS }, // 루비
   vip: { window: 30, excludeCount: 8, fullAutoExcludeCount: 12, filters: GOLD_FILTERS }, // 골드
   royal: { window: 'all', excludeCount: 12, fullAutoExcludeCount: 15, filters: DIAMOND_FILTERS }, // 다이아
 }

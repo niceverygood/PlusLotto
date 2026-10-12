@@ -18,6 +18,8 @@ export type PaymentRound = (typeof PAYMENT_ROUNDS)[number]
 /** 상품 등급 → 차수. 실버=1차 · 골드=2차 · 다이아=3차 (현장 8/25). */
 const ROUND_BY_GRADE: Partial<Record<Grade, PaymentRound>> = {
   goldp: '1차결제', // 실버
+  // ruby(루비, 10/12 추가)는 실버와 골드 사이라 기존 1·2·3차 어디에도 맞지 않는다. 차수 체계가
+  // 확정될 때까지 매핑하지 않는다(호출부 기본 '1차결제', 운영자가 직접 선택). TODO(live-verify)
   vip: '2차결제', // 골드
   royal: '3차결제', // 다이아
 }

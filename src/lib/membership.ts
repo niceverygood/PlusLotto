@@ -7,7 +7,7 @@ import { isPortalSourceSite, type PortalSourceSite } from './portalScope'
 import { memberSite } from './siteScope'
 
 /** 고객 노출 등급 순서 (simple/ovr/toss 는 내부 분류라 미노출). */
-export const TIER_GRADES = ['free', 'gold', 'goldp', 'vip', 'royal'] as const
+export const TIER_GRADES = ['free', 'gold', 'goldp', 'ruby', 'vip', 'royal'] as const
 export type TierGrade = (typeof TIER_GRADES)[number]
 
 export function isTierGrade(g: string): g is TierGrade {
@@ -79,6 +79,25 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
     terms: '',
   },
   {
+    // 루비 — 실버와 골드 사이 유료등급(현장 10/12, 정의현 차장). 카드 문구·가격은 미확정이라
+    // 고객 홈페이지에는 숨겨 둔다. 설정 > 멤버십 등급에서 문구를 넣고 '표시'를 켜면 노출된다.
+    // TODO(live-verify): 가격·조합 수·혜택 문구·노출 여부 (ASSUMPTIONS)
+    grade: 'ruby',
+    label: '루비',
+    price: '문의',
+    tagline: '실버보다 한 단계 더 깊은 분석',
+    weekly_sets: '주 15조합',
+    highlights: [
+      '주간 추천 조합 15세트',
+      '추천 번호 문자(SMS) 우선 발송',
+      '회차별 당첨 집계 알림',
+      '심화 번호 분석 리포트',
+    ],
+    featured: false,
+    terms: '',
+    hidden: true,
+  },
+  {
     grade: 'vip',
     label: '골드',
     price: '문의',
@@ -111,7 +130,7 @@ export const DEFAULT_MEMBERSHIP_TIERS: MembershipTier[] = [
 ]
 
 /**
- * 저장된 raw(부분/누락 가능)를 항상 5개·정렬된 완전한 등급 배열로 정규화.
+ * 저장된 raw(부분/누락 가능)를 항상 DEFAULT_MEMBERSHIP_TIERS 개수·순서의 완전한 등급 배열로 정규화.
  * 빈/누락 필드는 기본값으로 폴백 → 편집기 프리필·고객 렌더 양쪽이 안전.
  */
 export function resolveTiers(raw: MembershipTier[] | null | undefined): MembershipTier[] {

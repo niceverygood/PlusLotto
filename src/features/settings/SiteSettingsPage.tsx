@@ -18,6 +18,7 @@ import { datetime, num } from '@/lib/format'
 import { normalizeWinnerStats, upsertWinnerRound, winnerTotal, WINNER_RANKS } from '@/lib/winnerStats'
 import { readWinSms } from '@/lib/winSms'
 import { STATUS_KEY_ORDER, normalizeStatusColors } from '@/lib/statusColors'
+import { normalizeGradeColors } from '@/lib/gradeColors'
 import {
   FieldRow,
   SaveBar,
@@ -34,7 +35,7 @@ import { AppDownloadCard } from './AppDownloadCard'
 import { EndDateBackfillCard, RecoDayBackfillCard } from './EndDateBackfillCard'
 import { FailedSmsResendCard } from './FailedSmsResendCard'
 
-const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADE_ORDER: readonly Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 
 const gradeColorSchema = z.object({ fg: z.string(), bg: z.string() })
 const formSchema = z.object({
@@ -49,6 +50,7 @@ const formSchema = z.object({
     free: gradeColorSchema,
     gold: gradeColorSchema,
     goldp: gradeColorSchema,
+    ruby: gradeColorSchema,
     vip: gradeColorSchema,
     royal: gradeColorSchema,
     ovr: gradeColorSchema,
@@ -128,7 +130,8 @@ function toForm(s: SiteSettings): FormValues {
   const winSms = readWinSms(s)
   return {
     bank: { ...s.bank },
-    grade_colors: structuredClone(s.grade_colors),
+    // 루비처럼 저장 이후 추가된 등급은 기본색으로 채운다(전 등급 필수 검증이 저장을 막지 않도록).
+    grade_colors: normalizeGradeColors(s.grade_colors),
     status_colors: normalizeStatusColors(s.status_colors) as FormValues['status_colors'],
     pg: s.pg_providers.map((p) => ({
       id: p.id,

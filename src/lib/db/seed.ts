@@ -571,6 +571,7 @@ function buildSiteSettings(): SiteSettings {
       simple: { fg: '#64748b', bg: '#eaedf2' },
       gold: { fg: '#c99700', bg: '#fbf2d2' },
       goldp: { fg: '#b45309', bg: '#fbebd9' },
+      ruby: { fg: '#be185d', bg: '#fce7f3' },
       vip: { fg: '#0f9d6b', bg: '#e3f6ee' },
       royal: { fg: '#7c3aed', bg: '#f1eafe' },
       ovr: { fg: '#0f1420', bg: '#e5e7eb' },

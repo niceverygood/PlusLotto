@@ -52,7 +52,7 @@ import { MemberBulkActions } from './bulk'
 import { MemberCreateDrawer } from './MemberCreateDrawer'
 import { ImportMembersModal } from './ImportMembersModal'
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 const STATUSES: MemberStatus[] = ['active', 'suspended', 'deleted', 'withdrawn']
 const GROUP_ORDER: ViewGroup[] = ['상태', '등급', '담당', '유입', '운영']
 
