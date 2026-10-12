@@ -844,9 +844,11 @@ const RECO_SITE_BRANDS = new Map([
 
 // 2026-10-08 현장 요청(정의현 차장): 조합문자가 통신사 자동 스팸으로 차단돼 사이트 이름에서 "로또"를 뺀다.
 // "815로또 No. 1245" → "815 No. 1245". 조합문자 전용이며 가입·당첨 등 다른 문자의 $brand 는 그대로다.
+// 2026-10-12 현장 요청(정의현 차장): 인포로또는 "인포"도 스팸으로 걸려 영문 "info"로 쓴다("info No. 1246").
 // src/lib/sms.ts comboSmsBrand 와 같은 규칙(api 는 src 를 import 할 수 없다).
+const COMBO_SMS_BRAND_OVERRIDES = new Map([['인포로또', 'info']])
 function comboSmsBrand(label: string): string {
-  return label.replace(/로또/g, '').trim() || label
+  return COMBO_SMS_BRAND_OVERRIDES.get(label) ?? (label.replace(/로또/g, '').trim() || label)
 }
 
 export function formatComboSms(

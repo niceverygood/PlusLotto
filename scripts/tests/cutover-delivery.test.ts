@@ -19,8 +19,8 @@ test('자동/수동 조합문자와 미리보기는 회원 계약의 $brand를 �
   }
 })
 
-test('조합문자 사이트 이름에는 "로또"가 없다(10/8 스팸 차단 대응), 다른 문자는 그대로', () => {
-  const expected: Record<string, string> = { pluslotto: '플러스', lotto815: '815', infolotto: '인포', cplotto: '일행', best: '프리미엄' }
+test('조합문자 사이트 이름에는 "로또"가 없다(10/8 스팸 차단 대응), 인포는 info(10/12), 다른 문자는 그대로', () => {
+  const expected: Record<string, string> = { pluslotto: '플러스', lotto815: '815', infolotto: 'info', cplotto: '일행', best: '프리미엄' }
   for (const [site] of brands) {
     for (const template of ['$brand No. $round\n$num', 'plus No. $round\n$num']) {
       const auto = formatComboSms('검수회원', 1245, sets, template, { source_site: site })
@@ -118,4 +118,17 @@ test('실패 후 재발송 완료는 성공으로 대조하고 같은 번호의 
   })
   assert.equal(audit.expected, 3)
   assert.deepEqual(audit.misses.map(row => [row.member_id, row.reason]), [['815-contract', 'sms_failed']])
+})
+
+test('인포로또 조합문자는 "인포" 대신 info로 나간다(10/12 스팸 차단 대응)', () => {
+  const meta = { source_site: 'infolotto' }
+  for (const template of [undefined, '$brand No. $round\n$num', 'plus No. $round\n$num']) {
+    const auto = formatComboSms('', 1246, sets, template, meta)
+    assert.equal(auto.startsWith('info No. 1246'), true, auto)
+    assert.equal(auto.includes('인포'), false, auto)
+    assert.equal(recoSmsBody('', 1246, sets, template, meta), auto)
+  }
+  // 다른 사이트 표기는 그대로다.
+  assert.equal(comboSmsBrand('815로또'), '815'); assert.equal(comboSmsBrand('일행로또'), '일행')
+  assert.equal(comboSmsBrand('프리미엄로또'), '프리미엄'); assert.equal(comboSmsBrand('플러스로또'), '플러스')
 })

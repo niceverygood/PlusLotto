@@ -58,10 +58,12 @@ export const RECO_TEMPLATE_FALLBACK = 'plus No. $round\n$name님\n$num'
 /**
  * 조합문자의 $brand — 사이트 이름에서 "로또"를 뺀다(현장 10/8, 정의현 차장: 통신사 자동 스팸 차단).
  * "815로또 No. 1245" → "815 No. 1245". 조합문자 전용이며 renderSms(가입·당첨 등)의 $brand 는 그대로다.
+ * 인포로또는 "인포"도 스팸으로 걸려 영문 "info"로 쓴다(현장 10/12, 정의현 차장).
  * api/weekly-reco.ts 자동발송 크론도 같은 규칙을 자급자족으로 구현한다.
  */
+const COMBO_SMS_BRAND_OVERRIDES = new Map([['인포로또', 'info']])
 export function comboSmsBrand(label: string): string {
-  return label.replace(/로또/g, '').trim() || label
+  return COMBO_SMS_BRAND_OVERRIDES.get(label) ?? (label.replace(/로또/g, '').trim() || label)
 }
 const LEGACY_PLUS_DEFAULT_TEMPLATE = 'plus No. $round\n$num'
 
