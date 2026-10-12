@@ -52,6 +52,8 @@ const config: Config = {
           'gold-bg': 'var(--g-gold-bg)',
           goldp: 'var(--g-goldp)',
           'goldp-bg': 'var(--g-goldp-bg)',
+          ruby: 'var(--g-ruby)',
+          'ruby-bg': 'var(--g-ruby-bg)',
           vip: 'var(--g-vip)',
           'vip-bg': 'var(--g-vip-bg)',
           royal: 'var(--g-royal)',

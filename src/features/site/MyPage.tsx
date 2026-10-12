@@ -28,7 +28,7 @@ import { useMemberAuth } from './auth'
 import { useMembershipTiers } from './api'
 
 // 유료 등급 집합 — 발급번호/이용권 안내 분기에 사용.
-const PAID_GRADES = new Set<Grade>(['gold', 'goldp', 'vip', 'royal'])
+const PAID_GRADES = new Set<Grade>(['gold', 'goldp', 'ruby', 'vip', 'royal'])
 
 /** 가장 최근(가장 큰) 회차의 발급 일시 → 사람이 읽기 쉬운 안내 텍스트. */
 function latestIssuedLabel(recos: WeeklyRecoIssue[]): string | null {

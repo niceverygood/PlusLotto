@@ -9,7 +9,7 @@ import type { Grade, SiteSettings } from '@/types/db'
 import { SaveBar, SectionCard, hintCls, textareaCls } from './ui'
 import { useSaveSiteSettings, useSiteSettings } from './api'
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 type TermsTab = 'common' | Grade
 
 function draftFrom(settings: SiteSettings): Record<string, string> {

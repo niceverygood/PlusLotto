@@ -16,6 +16,7 @@ import { addYears } from 'date-fns'
 /** 등급 → 결제 후 이용 연수. 표에 없는 등급은 기본 1년. */
 const TERM_YEARS_BY_GRADE: Partial<Record<Grade, number>> = {
   goldp: 1, // 실버
+  ruby: 1, // 루비(10/12 추가) — TODO(live-verify): 현장 미확정. 확정 전까지 실버와 같은 1년(ASSUMPTIONS)
   vip: 3, // 골드
   royal: 3, // 다이아
 }

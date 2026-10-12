@@ -40,7 +40,7 @@ interface DemoRow {
   joinedAt: string
 }
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 const STATUSES: MemberStatus[] = ['active', 'suspended', 'deleted', 'withdrawn']
 const STAFF = [
   { value: 'two001', label: 'two001' },

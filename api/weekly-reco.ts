@@ -541,11 +541,11 @@ export const EXCLUSION_RULE_LABEL: Record<ExclusionRuleKey, string> = {
 export const MODE_OPTIONS: ExclusionMode[] = [10, 15, 20]
 
 // ── 이하 특허 제외수 로직: src/lib/lottoPatentExclude.ts 사본(임포트 제거, 현장 피드백 7/23) ──────
-// 실버(goldp)·골드(vip)·다이아(royal) 3개 유료등급 전용 — 위 통계 제외수 엔진(computeExclusions/
+// 실버(goldp)·루비(ruby, 10/12)·골드(vip)·다이아(royal) 유료등급 전용 — 위 통계 제외수 엔진(computeExclusions/
 // passesQuality)과는 완전히 별도 경로. 원본 수정 시 이 사본도 동기화할 것(파일 상단 경고 참조).
-type PatentGrade = 'goldp' | 'vip' | 'royal'
+type PatentGrade = 'goldp' | 'ruby' | 'vip' | 'royal'
 function isPatentGrade(grade: string | null | undefined): grade is PatentGrade {
-  return grade === 'goldp' || grade === 'vip' || grade === 'royal'
+  return grade === 'goldp' || grade === 'ruby' || grade === 'vip' || grade === 'royal'
 }
 
 interface PatentFilters {
@@ -558,7 +558,8 @@ interface PatentFilters {
 }
 interface PatentGradeConfig {
   window: number | 'all'
-  excludeCount: number
+  excludeCount: number // PATENT_FULL_AUTO_FROM_ROUND 이전 회차의 자동 제외 개수(수동 제외와 합산)
+  fullAutoExcludeCount: number // 이후 회차의 제외 개수(전부 자동, 문서 제목 <제외수 N>)
   filters: PatentFilters
 }
 const SILVER_FILTERS: PatentFilters = {
@@ -571,11 +572,25 @@ const SILVER_FILTERS: PatentFilters = {
 }
 const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true, carryoverMax2: true }
 const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
+// 루비(10/12 추가, 실버와 골드 사이) — 문서에 루비 기준이 없어 실버·골드의 중간값으로 정했다.
+// 분석 창 20회차·제외 10개·필터는 실버 + 연번제한·구간균등(이월수제한은 골드부터).
+// TODO(live-verify): 루비 제외수 개수·분석 창·필터 현장 확정 후 이 한 줄만 바꾼다 (ASSUMPTIONS).
+const RUBY_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true }
 const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
-  goldp: { window: 10, excludeCount: 5, filters: SILVER_FILTERS }, // 실버
-  vip: { window: 30, excludeCount: 8, filters: GOLD_FILTERS }, // 골드
-  royal: { window: 'all', excludeCount: 12, filters: DIAMOND_FILTERS }, // 다이아
+  goldp: { window: 10, excludeCount: 5, fullAutoExcludeCount: 7, filters: SILVER_FILTERS }, // 실버
+  ruby: { window: 20, excludeCount: 6, fullAutoExcludeCount: 10, filters: RUBY_FILTERS }, // 루비
+  vip: { window: 30, excludeCount: 8, fullAutoExcludeCount: 12, filters: GOLD_FILTERS }, // 골드
+  royal: { window: 'all', excludeCount: 12, fullAutoExcludeCount: 15, filters: DIAMOND_FILTERS }, // 다이아
 }
+
+/**
+ * 전부 자동 선정 시작 회차(김형준 이사 결정 10/8 — "① 전산이 7·12·15개를 모두 점수 순위대로 자동
+ * 선정하고, 매주 직접 입력은 없애는 방식"). 이 회차부터 실버·골드·다이아의 제외수는 문서 제목의
+ * 개수(7·12·15)를 점수 순위대로 전부 자동 선정하고, 설정 > 로또 고정·제외의 수동 '제외'는 쓰지 않는다
+ * (수동 '고정'은 그대로 존중). 그 전 회차는 기존대로 자동 5·8·12 + 수동 제외 합집합.
+ * 10/8 기록: 수동 제외가 자동 제외에 더해져 실제 제외가 실버 11~12·골드 17~19·다이아 22~23개였다.
+ */
+export const PATENT_FULL_AUTO_FROM_ROUND = 1246
 
 function patentFreqScore(ratio: number): number {
   if (ratio >= 0.4) return 50
@@ -719,7 +734,7 @@ interface PatentGenerateResult {
   prevBonus: number | null
 }
 
-function generatePatentSets(
+export function generatePatentSets(
   rounds: readonly LottoRound[],
   grade: PatentGrade,
   manual: LottoExcludeSettings,
@@ -733,13 +748,17 @@ function generatePatentSets(
   const fixed = manual.fixed.filter((n) => n >= LOTTO_MIN && n <= LOTTO_MAX).slice(0, LOTTO_PICK)
   const fixedSet = new Set(fixed)
 
-  const { excluded: autoExcluded, window } = computePatentExcludeSet(desc, cfg.window, cfg.excludeCount, fixedSet)
-  const excludedSet = new Set<number>([...autoExcluded, ...manual.excluded])
+  // 1246회부터 전부 자동(7·12·15) — 수동 '제외'는 쓰지 않는다. 고정수는 그대로.
+  const fullAuto = targetRound >= PATENT_FULL_AUTO_FROM_ROUND
+  const excludeCount = fullAuto ? cfg.fullAutoExcludeCount : cfg.excludeCount
+  const manualExcluded = fullAuto ? [] : manual.excluded
+  const { excluded: autoExcluded, window } = computePatentExcludeSet(desc, cfg.window, excludeCount, fixedSet)
+  const excludedSet = new Set<number>([...autoExcluded, ...manualExcluded])
   for (const f of fixedSet) excludedSet.delete(f)
 
   let pool = ALL_NUMBERS.filter((n) => !excludedSet.has(n))
   if (pool.length < LOTTO_PICK) {
-    const manualSet = new Set(manual.excluded)
+    const manualSet = new Set(manualExcluded)
     const droppable = autoExcluded.filter((n) => !manualSet.has(n))
     while (pool.length < LOTTO_PICK && droppable.length) {
       const back = droppable.pop()!
@@ -808,8 +827,8 @@ function generateIssueSetsForGrade(
 }
 
 // ── 유료회원 지정요일 조합 SMS 자동발송(현장 피드백 6/18) ────────────────────────
-// 유료 등급(골드/골드+/VIP/로얄)만 대상. 무료는 발급만(문자 X).
-const PAID_GRADES = new Set(['gold', 'goldp', 'vip', 'royal'])
+// 유료 등급(골드/골드+/VIP/로얄 + 루비 10/12)만 대상. 무료는 발급만(문자 X).
+const PAID_GRADES = new Set(['gold', 'goldp', 'ruby', 'vip', 'royal'])
 
 /**
  * 조합 목록 → SMS 본문(LMS). src/lib/sms.ts recoSmsBody 와 동일 규칙(자급자족 중복, 상단 참조).
@@ -830,9 +849,12 @@ const RECO_SITE_BRANDS = new Map([
 
 // 2026-10-08 현장 요청(정의현 차장): 조합문자가 통신사 자동 스팸으로 차단돼 사이트 이름에서 "로또"를 뺀다.
 // "815로또 No. 1245" → "815 No. 1245". 조합문자 전용이며 가입·당첨 등 다른 문자의 $brand 는 그대로다.
+// 2026-10-12 현장 요청(정의현 차장): 인포로또는 "인포"도 스팸으로 걸려 영문 "info"로 쓴다("info No. 1246").
+// 같은 날 프리미엄로또도 "프리미엄" → 영문 "premium"으로 바꿔 달라는 요청이 왔다("premium No. 1246").
 // src/lib/sms.ts comboSmsBrand 와 같은 규칙(api 는 src 를 import 할 수 없다).
+const COMBO_SMS_BRAND_OVERRIDES = new Map([['인포로또', 'info'], ['프리미엄로또', 'premium']])
 function comboSmsBrand(label: string): string {
-  return label.replace(/로또/g, '').trim() || label
+  return COMBO_SMS_BRAND_OVERRIDES.get(label) ?? (label.replace(/로또/g, '').trim() || label)
 }
 
 export function formatComboSms(
@@ -871,6 +893,30 @@ function koByteLength(s: string): number {
   return n
 }
 
+/**
+ * 발급 원장 1건 → 업체 tran_id(매뉴얼 30자). 10/9 사고 — '접수 성공(0)'인데 업체 전송내역에 없는
+ * 회원이 나왔지만 업체 응답에 건별 식별값이 없어 1:1 대조가 불가능했다. 원장 UUID 를 36진수로 줄여
+ * (최대 26자) 업체 내역·문의에서 원장 행을 바로 찾게 한다.
+ */
+export function recoTranId(claimId: string | number): string {
+  const hex = String(claimId).toLowerCase().replace(/-/g, '')
+  if (/^[0-9a-f]{32}$/.test(hex)) return 'R' + BigInt('0x' + hex).toString(36)
+  return ('R' + String(claimId).replace(/[^A-Za-z0-9]/g, '')).slice(0, 30)
+}
+
+/** 업체 원응답에서 대조용 단순 값만 남긴다(키 40자·값 200자·최대 20개, 토큰류 키 제외). */
+function vendorFields(raw: unknown): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  if (!object(raw)) return out
+  for (const [k, v] of Object.entries(raw)) {
+    if (Object.keys(out).length >= 20) break
+    if (!/^[A-Za-z0-9_]{1,40}$/.test(k) || /token|secret|key|auth|pass/i.test(k)) continue
+    if (typeof v === 'string') out[k] = v.slice(0, 200)
+    else if ((typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean') out[k] = v
+  }
+  return out
+}
+
 /** 검증된 발송 함수(/api/send-sms, Fixie 프록시 경유)를 재사용해 1건 발송. */
 async function sendComboSms(
   base: string,
@@ -879,7 +925,11 @@ async function sendComboSms(
   body: string,
   sender: string,
   sourceSite: string,
+  tranId: string,
 ): Promise<{ outcome: 'accepted' | 'rejected' | 'unknown'; code: string; receipt: Record<string, unknown> }> {
+  const msgType = koByteLength(body) <= 90 ? 'SMS' : 'LMS'
+  // 응답이 끊겨도(NET) 업체에는 접수됐을 수 있으므로 요청 시각·추적번호·수신번호는 항상 남긴다.
+  const trace: Record<string, unknown> = { tranId, msgType, dest: dest.replace(/\D/g, ''), requestedAt: new Date(Date.now()).toISOString() }
   try {
     const r = await fetch(`${base}/api/send-sms`, {
       method: 'POST',
@@ -895,19 +945,26 @@ async function sendComboSms(
         dest_phone: dest,
         msg_body: body,
         send_phone: sender,
-        msgType: koByteLength(body) <= 90 ? 'SMS' : 'LMS',
+        msgType,
+        tran_id: tranId,
       }),
       signal: AbortSignal.timeout(20_000),
     })
     const d: unknown = await r.json()
-    if (!object(d)) return { outcome: 'unknown', code: 'INVALID_RESPONSE', receipt: { code: 'INVALID_RESPONSE', httpStatus: r.status, body } }
+    if (!object(d)) return { outcome: 'unknown', code: 'INVALID_RESPONSE', receipt: { ...trace, code: 'INVALID_RESPONSE', httpStatus: r.status, body } }
     const code = typeof d.code === 'string' && d.code ? d.code : 'UNKNOWN'
     const outcome = r.ok && d.ok === true && code !== 'UNKNOWN' ? 'accepted'
       : d.ok === false && !['UNKNOWN', 'NET', 'NET_ERR', 'EXCEPTION'].includes(code) ? 'rejected' : 'unknown'
-    return { outcome, code, receipt: { code, cmid: typeof d.cmid === 'string' ? d.cmid : null,
-      httpStatus: r.status, body } }
+    const text = (v: unknown) => (typeof v === 'string' && v ? v : null)
+    return { outcome, code, receipt: { ...trace, code, cmid: typeof d.cmid === 'string' ? d.cmid : null,
+      httpStatus: r.status, body,
+      // send-sms 가 확정한 실제 발송 사실(사이트별로 다시 고른 발신번호·업체에 보낸 추적번호 등).
+      provider: text(d.provider), sender: text(d.sender), tranId: text(d.tranId) ?? tranId,
+      providerHttpStatus: typeof d.providerHttpStatus === 'number' ? d.providerHttpStatus : null,
+      respondedAt: text(d.respondedAt) ?? new Date(Date.now()).toISOString(),
+      message: text(d.message), vendor: vendorFields(d.raw) } }
   } catch {
-    return { outcome: 'unknown', code: 'NET', receipt: { code: 'NET', body } }
+    return { outcome: 'unknown', code: 'NET', receipt: { ...trace, code: 'NET', body } }
   }
 }
 
@@ -1839,7 +1896,7 @@ export default async function handler(req: RecoRequest, res: RecoResponse) {
       let receipt: Record<string, unknown> = { code: 'NOT_REQUESTED' }
       if (claim.should_send) {
         const smsBody = formatComboSms(typeof claimedMember.name === 'string' ? claimedMember.name : '', targetRound, sets, recoTplBody, claimedMember.meta)
-        const sent = await sendComboSms(selfBase, r.id, String(claimedMember.phone), smsBody, sender, sourceSite)
+        const sent = await sendComboSms(selfBase, r.id, String(claimedMember.phone), smsBody, sender, sourceSite, recoTranId(claim.claim_id))
         outcome = sent.outcome; receipt = sent.receipt
         if (outcome === 'accepted') smsSent++
         else { smsFail++; reviewRequired++ }

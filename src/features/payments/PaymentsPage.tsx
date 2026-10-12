@@ -33,7 +33,7 @@ import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 
 const PAGE_SIZE = 50
 const METHODS: PaymentMethod[] = ['bank', 'manual', 'pg', 'unknown']
-const PRODUCT_GRADES: Grade[] = ['goldp', 'vip', 'royal']
+const PRODUCT_GRADES: Grade[] = ['goldp', 'ruby', 'vip', 'royal']
 const PG_PROVIDERS = ['웰컴페이먼츠', '페이허브', '플러스페이']
 const TAB_LABEL: Record<PaymentStatusTab, string> = {
   all: '전체',

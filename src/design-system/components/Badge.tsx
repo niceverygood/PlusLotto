@@ -9,6 +9,7 @@ const GRADE_CLASS: Record<Grade, { wrap: string; dot: string }> = {
   simple: { wrap: 'bg-grade-simple-bg text-grade-simple', dot: 'bg-grade-simple' },
   gold: { wrap: 'bg-grade-gold-bg text-grade-gold', dot: 'bg-grade-gold' },
   goldp: { wrap: 'bg-grade-goldp-bg text-grade-goldp', dot: 'bg-grade-goldp' },
+  ruby: { wrap: 'bg-grade-ruby-bg text-grade-ruby', dot: 'bg-grade-ruby' },
   vip: { wrap: 'bg-grade-vip-bg text-grade-vip', dot: 'bg-grade-vip' },
   royal: { wrap: 'bg-grade-royal-bg text-grade-royal', dot: 'bg-grade-royal' },
   ovr: { wrap: 'bg-grade-ovr-bg text-grade-ovr', dot: 'bg-grade-ovr' },

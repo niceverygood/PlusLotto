@@ -21,7 +21,7 @@ import {
 
 export type StatsView = 'signup' | 'payment' | 'inflow' | 'consult'
 
-const PAID_GRADES: readonly Grade[] = ['gold', 'goldp', 'vip', 'royal']
+const PAID_GRADES: readonly Grade[] = ['gold', 'goldp', 'ruby', 'vip', 'royal']
 const isPaid = (g: Grade): boolean => PAID_GRADES.includes(g)
 const MAX_TREND_DAYS = 370
 

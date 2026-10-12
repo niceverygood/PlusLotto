@@ -299,7 +299,8 @@ export default async function handler(req: any, res: any) {
         const code = String(sd.statusCode ?? '')
         return res
           .status(200)
-          .json({ ok: code === '2000', code, cmid: sd.messageId ?? null, provider: 'solapi', msgType, raw: sd })
+          .json({ ok: code === '2000', code, cmid: sd.messageId ?? null, provider: 'solapi', msgType, raw: sd,
+            sender: effectiveSender, dest, providerHttpStatus: sr.status, requestedAt: sdate, respondedAt: new Date().toISOString() })
       } catch (e) {
         return res.status(200).json({ ok: false, code: 'EXCEPTION', provider: 'solapi', message: String(e) })
       }
@@ -313,23 +314,35 @@ export default async function handler(req: any, res: any) {
     form.append('msg_body', msg)
     if (msgType !== 'SMS') form.append('subject', String(body.subject ?? '안내').slice(0, 40))
     if (body.send_time) form.append('send_time', String(body.send_time)) // YYYYMMDDHHMISS, 없으면 즉시
-    if (body.tran_id) form.append('tran_id', String(body.tran_id).slice(0, 30))
+    // tran_id = 우리 쪽 건별 추적번호(업체 매뉴얼 30자). 10/9 사고 — 업체 응답에 건별 식별값이 없어
+    // '접수 성공했는데 업체 내역에 없는' 3명을 업체와 1:1로 대조할 수 없었다. 영문·숫자·_- 만 보낸다.
+    const tranId = typeof body.tran_id === 'string' ? body.tran_id.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 30) : ''
+    if (tranId) form.append('tran_id', tranId)
     if (reseller) form.append('resellerCode', reseller)
 
     // Vercel Fixie 통합이 FIXIE_URL 을 자동 생성. 없으면 수동 PROXY_URL.
     const proxyUrl = process.env.FIXIE_URL || process.env.PROXY_URL
     const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined
     const url = `${ONESHOT_BASE}/${msgType}/${encodeURIComponent(id)}`
+    const requestedAt = new Date().toISOString()
     const upstream = await uFetch(url, { method: 'POST', body: form, dispatcher })
     const text = await upstream.text()
+    const respondedAt = new Date().toISOString()
     let data: Record<string, unknown> = {}
     try {
-      data = JSON.parse(text)
+      const parsedResponse: unknown = JSON.parse(text)
+      data = isRecord(parsedResponse) ? parsedResponse : { raw: text.slice(0, 2000) }
     } catch {
-      data = { raw: text }
+      data = { raw: text.slice(0, 2000) }
     }
     const code = String(data.result_code ?? '')
-    return res.status(200).json({ ok: code === '0', code, cmid: data.cmid ?? null, msgType, raw: data })
+    // 업체 대조용 발송 사실(어느 번호로·언제·어떤 추적번호로)을 함께 돌려준다. 발신번호는 위에서
+    // 사이트별로 다시 고른 실제 값이라 호출자가 보낸 send_phone 과 다를 수 있다.
+    return res.status(200).json({
+      ok: code === '0', code, cmid: data.cmid ?? null, msgType, raw: data,
+      provider: 'oneshot', sender: effectiveSender, dest, tranId: tranId || null,
+      providerHttpStatus: upstream.status, requestedAt, respondedAt,
+    })
   } catch (e) {
     return res.status(500).json({ ok: false, code: 'EXCEPTION', message: String(e) })
   }

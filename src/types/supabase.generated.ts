@@ -1287,6 +1287,7 @@ export type Database = {
         | "free"
         | "gold"
         | "goldp"
+        | "ruby"
         | "vip"
         | "royal"
         | "ovr"
@@ -1427,7 +1428,7 @@ export const Constants = {
   public: {
     Enums: {
       assign_type: ["manual", "auto"],
-      grade: ["simple", "free", "gold", "goldp", "vip", "royal", "ovr", "toss"],
+      grade: ["simple", "free", "gold", "goldp", "ruby", "vip", "royal", "ovr", "toss"],
       inquiry_status: ["open", "answered"],
       log_kind: ["admin", "point", "sms", "payment", "inflow"],
       member_status: ["active", "suspended", "deleted", "withdrawn"],

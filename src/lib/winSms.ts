@@ -12,7 +12,7 @@ import type { Grade, Member, SiteSettings, WinMessage, WinSmsSettings } from '@/
 import { renderSms } from '@/lib/sms'
 
 /** 유료회원 등급 (매출·통계 모듈과 동일 기준). 그 외(simple/free/ovr/toss)는 무료로 본다. */
-export const PAID_GRADES: readonly Grade[] = ['gold', 'goldp', 'vip', 'royal']
+export const PAID_GRADES: readonly Grade[] = ['gold', 'goldp', 'ruby', 'vip', 'royal']
 
 export function isPaidGrade(g: Grade): boolean {
   return PAID_GRADES.includes(g)

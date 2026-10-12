@@ -72,7 +72,7 @@ import {
 import type { Payment, PaymentMethod } from '@/types/db'
 import { LegacyHistorySection } from './LegacyHistorySection'
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 // 메모는 별도 탭이 아니라 '기본정보' 탭 최하단에 표시(현장 피드백 7/3).
 type DrawerTab = 'info' | 'payments' | 'sms' | 'assignments' | 'reco' | 'calls' | 'complaints' | 'legacy-history'
 

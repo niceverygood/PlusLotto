@@ -26,7 +26,7 @@ import { CONSULT_STATUSES, INFLOW_TYPES } from './views'
 type BulkModal = 'status' | 'consult' | 'inflow' | 'grade' | 'assign' | 'auto' | 'reco' | 'reset' | 'resetdb' | 'sms' | null
 
 const STATUS_VALUES: MemberStatus[] = ['active', 'suspended', 'deleted', 'withdrawn']
-const GRADE_VALUES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADE_VALUES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'] // index = weekly_reco_day(0=일..6=토)
 
 const selectCls =

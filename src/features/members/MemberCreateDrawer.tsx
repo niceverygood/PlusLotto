@@ -20,7 +20,7 @@ const textareaCls =
 const labelCls = 'mb-1.5 block text-[12px] font-semibold text-gray-600'
 const errCls = 'mt-1 text-[11.5px] text-danger'
 
-const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']
+const GRADES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
 // 유입경로(채널) 프리셋 — inflow_code(채널)만 채운다. 유입구분(콜 단계)은 별도 선택.
 const INFLOW_CODE_PRESETS = [
   { code: 'NAVER', label: '네이버검색' },
@@ -40,7 +40,7 @@ const schema = z.object({
   tendency: z.string(),
   age_band: z.string(),
   gender: z.string(),
-  grade: z.enum(['simple', 'free', 'gold', 'goldp', 'vip', 'royal', 'ovr', 'toss']),
+  grade: z.enum(['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']),
   assigned_staff_id: z.string(),
   nickname: z.string(),
   memo: z.string(),

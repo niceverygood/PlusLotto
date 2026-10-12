@@ -83,7 +83,7 @@ export const MEMBER_VIEWS: readonly MemberView[] = [
   {
     key: 'paid',
     label: '유료',
-    filter: { gradeIn: ['gold', 'goldp', 'vip', 'royal'] },
+    filter: { gradeIn: ['gold', 'goldp', 'ruby', 'vip', 'royal'] },
     tab: true,
   },
   { key: 'no-staff', label: '담당미지정', filter: { hasStaff: false }, tab: true },
@@ -106,6 +106,7 @@ export const MEMBER_VIEWS: readonly MemberView[] = [
   { key: 'free', label: '무료', filter: { grade: 'free' }, group: '등급' },
   { key: 'simple', label: '간편가입', filter: { grade: 'simple' }, group: '등급' },
   { key: 'gold', label: '골드회원', filter: { gradeIn: ['gold', 'goldp'] }, group: '등급' },
+  { key: 'ruby', label: '루비', filter: { grade: 'ruby' }, group: '등급' },
   { key: 'vip-royal', label: 'VIP·로얄', filter: { gradeIn: ['vip', 'royal'] }, group: '등급' },
   {
     key: 'ovr',

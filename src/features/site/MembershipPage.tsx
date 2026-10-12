@@ -29,6 +29,7 @@ const GRADE_TONE: Record<
   simple: { text: 'text-grade-simple', dot: 'bg-grade-simple', ring: 'ring-grade-simple/30', soft: 'bg-grade-simple-bg', bar: 'bg-grade-simple' },
   gold: { text: 'text-grade-gold', dot: 'bg-grade-gold', ring: 'ring-grade-gold/40', soft: 'bg-grade-gold-bg', bar: 'bg-grade-gold' },
   goldp: { text: 'text-grade-goldp', dot: 'bg-grade-goldp', ring: 'ring-grade-goldp/40', soft: 'bg-grade-goldp-bg', bar: 'bg-grade-goldp' },
+  ruby: { text: 'text-grade-ruby', dot: 'bg-grade-ruby', ring: 'ring-grade-ruby/40', soft: 'bg-grade-ruby-bg', bar: 'bg-grade-ruby' },
   vip: { text: 'text-grade-vip', dot: 'bg-grade-vip', ring: 'ring-grade-vip/40', soft: 'bg-grade-vip-bg', bar: 'bg-grade-vip' },
   royal: { text: 'text-grade-royal', dot: 'bg-grade-royal', ring: 'ring-grade-royal/40', soft: 'bg-grade-royal-bg', bar: 'bg-grade-royal' },
   ovr: { text: 'text-grade-ovr', dot: 'bg-grade-ovr', ring: 'ring-grade-ovr/30', soft: 'bg-grade-ovr-bg', bar: 'bg-grade-ovr' },
@@ -43,13 +44,13 @@ interface FeatureRow {
 
 // TODO(live-verify): 비교 항목/값은 합리적 추정. 운영 확정 시 교체.
 const FEATURE_ROWS: FeatureRow[] = [
-  { label: '주간 추천 조합 수', values: { free: '1조합', gold: '5조합', goldp: '10조합', vip: '20조합', royal: '30조합+' } },
-  { label: '추천 번호 문자(SMS) 발송', values: { free: false, gold: true, goldp: true, vip: true, royal: true } },
-  { label: '회차별 당첨 집계 알림', values: { free: false, gold: true, goldp: true, vip: true, royal: true } },
-  { label: '번호 분석 리포트', values: { free: false, gold: '기본', goldp: '심화', vip: '프리미엄', royal: '프리미엄+' } },
-  { label: '전담 상담원 1:1 관리', values: { free: false, gold: false, goldp: false, vip: true, royal: true } },
-  { label: '맞춤 당첨 컨설팅', values: { free: false, gold: false, goldp: false, vip: true, royal: true } },
-  { label: '특별 이벤트·당첨 케어', values: { free: false, gold: false, goldp: false, vip: false, royal: true } },
+  { label: '주간 추천 조합 수', values: { free: '1조합', gold: '5조합', goldp: '10조합', ruby: '15조합', vip: '20조합', royal: '30조합+' } },
+  { label: '추천 번호 문자(SMS) 발송', values: { free: false, gold: true, goldp: true, ruby: true, vip: true, royal: true } },
+  { label: '회차별 당첨 집계 알림', values: { free: false, gold: true, goldp: true, ruby: true, vip: true, royal: true } },
+  { label: '번호 분석 리포트', values: { free: false, gold: '기본', goldp: '심화', ruby: '심화', vip: '프리미엄', royal: '프리미엄+' } },
+  { label: '전담 상담원 1:1 관리', values: { free: false, gold: false, goldp: false, ruby: false, vip: true, royal: true } },
+  { label: '맞춤 당첨 컨설팅', values: { free: false, gold: false, goldp: false, ruby: false, vip: true, royal: true } },
+  { label: '특별 이벤트·당첨 케어', values: { free: false, gold: false, goldp: false, ruby: false, vip: false, royal: true } },
 ]
 
 function CellValue({ value, tone }: { value: boolean | string; tone: string }) {
