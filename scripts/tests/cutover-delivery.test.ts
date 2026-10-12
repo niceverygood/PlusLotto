@@ -19,8 +19,8 @@ test('자동/수동 조합문자와 미리보기는 회원 계약의 $brand를 �
   }
 })
 
-test('조합문자 사이트 이름에는 "로또"가 없다(10/8 스팸 차단 대응), 인포는 info(10/12), 다른 문자는 그대로', () => {
-  const expected: Record<string, string> = { pluslotto: '플러스', lotto815: '815', infolotto: 'info', cplotto: '일행', best: '프리미엄' }
+test('조합문자 사이트 이름에는 "로또"가 없다(10/8 스팸 차단 대응), 인포는 info·프리미엄은 premium(10/12), 다른 문자는 그대로', () => {
+  const expected: Record<string, string> = { pluslotto: '플러스', lotto815: '815', infolotto: 'info', cplotto: '일행', best: 'premium' }
   for (const [site] of brands) {
     for (const template of ['$brand No. $round\n$num', 'plus No. $round\n$num']) {
       const auto = formatComboSms('검수회원', 1245, sets, template, { source_site: site })
@@ -42,7 +42,7 @@ test('템플릿 없는 이관 회원도 자체 브랜드를 쓰고 기존 플러
 })
 
 test('출처 공백을 정규화하고 미지원 출처는 본문에 노출하지 않는다', () => {
-  for (const [site, expected] of [[' best ', '프리미엄'], ['unknown', '플러스'], ['__proto__', '플러스'], ['', '플러스']]) {
+  for (const [site, expected] of [[' best ', 'premium'], ['unknown', '플러스'], ['__proto__', '플러스'], ['', '플러스']]) {
     const meta = { source_site: site }
     assert.equal(formatComboSms('', 1245, sets, '$brand', meta), expected)
     assert.equal(recoSmsBody('', 1245, sets, '$brand', meta), expected)
@@ -130,5 +130,16 @@ test('인포로또 조합문자는 "인포" 대신 info로 나간다(10/12 스�
   }
   // 다른 사이트 표기는 그대로다.
   assert.equal(comboSmsBrand('815로또'), '815'); assert.equal(comboSmsBrand('일행로또'), '일행')
-  assert.equal(comboSmsBrand('프리미엄로또'), '프리미엄'); assert.equal(comboSmsBrand('플러스로또'), '플러스')
+  assert.equal(comboSmsBrand('플러스로또'), '플러스')
+})
+
+test('프리미엄로또 조합문자는 "프리미엄" 대신 premium으로 나간다(10/12 현장 요청)', () => {
+  const meta = { source_site: 'best' }
+  for (const template of [undefined, '$brand No. $round\n$num', 'plus No. $round\n$num']) {
+    const auto = formatComboSms('', 1246, sets, template, meta)
+    assert.equal(auto.startsWith('premium No. 1246'), true, auto)
+    assert.equal(auto.includes('프리미엄'), false, auto)
+    assert.equal(recoSmsBody('', 1246, sets, template, meta), auto)
+  }
+  assert.equal(comboSmsBrand('프리미엄로또'), 'premium'); assert.equal(comboSmsBrand('인포로또'), 'info')
 })
