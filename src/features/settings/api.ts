@@ -11,6 +11,7 @@ import type {
   SiteSettings,
   SmsSend,
   SmsTemplate,
+  TermsPost,
   WinnerRoundStats,
 } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
@@ -19,6 +20,7 @@ import { fetchSiteSettings, fetchTables, sb, selectAll } from '@/lib/db/remote'
 import { useCurrentUser } from '@/lib/auth'
 import { lottoKeys, memberKeys, settingsKeys, siteKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { mergeWinnerHistory, normalizeWinnerRoundStats, normalizeWinnerStats } from '@/lib/winnerStats'
+import { sortTermsPosts } from '@/lib/termsPosts'
 import * as supa from './supa'
 import * as smsResend from './smsResend'
 
@@ -381,6 +383,81 @@ export function useResendFailedSms() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all })
       qc.invalidateQueries({ queryKey: memberKeys.all })
+    },
+  })
+}
+
+// ── 사이트별 약관 게시판(현장 10/14) ─────────────────────────────────────────
+// 개정할 때는 기존 글을 고치기보다 새 글(새 시행일)로 올리면 고객 화면에 이전 약관이 이력으로 남는다.
+export function useTermsPosts(site: TermsPost['source_site']) {
+  return useQuery({
+    queryKey: settingsKeys.termsPosts(site),
+    queryFn: async (): Promise<TermsPost[]> => {
+      if (dataSource === 'supabase') return supa.fetchTermsPosts(site)
+      return sortTermsPosts((readDb().terms_posts ?? []).filter((p) => p.source_site === site))
+    },
+  })
+}
+
+function validateTermsInput(input: supa.TermsPostInput): supa.TermsPostInput {
+  const title = input.title.trim()
+  if (!title) throw new Error('제목을 입력해 주세요.')
+  if (title.length > 200) throw new Error('제목은 200자 이내로 입력해 주세요.')
+  if (!input.body.trim()) throw new Error('약관 내용을 입력해 주세요.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effective_on)) throw new Error('시행일을 선택해 주세요.')
+  return { ...input, title }
+}
+
+export function useSaveTermsPost() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { id?: string; input: supa.TermsPostInput }) => {
+      if (user?.role !== 'admin' && user?.role !== 'manager') throw new Error('약관은 최고관리자·관리자만 편집할 수 있습니다.')
+      const input = validateTermsInput(v.input)
+      if (dataSource === 'supabase') return supa.saveTermsPost({ id: v.id, input }, user.id)
+      const ts = nowIso()
+      const id = v.id ?? genId('trm')
+      mutateDb((db) => {
+        db.terms_posts ??= []
+        if (v.id) {
+          const p = db.terms_posts.find((x) => x.id === v.id)
+          if (!p) return
+          Object.assign(p, input, { updated_at: ts })
+          db.logs.push(adminLog(user.id, 'terms.update', 'terms_post', v.id, { site: input.source_site, title: input.title }))
+        } else {
+          db.terms_posts.push({ id, ...input, author_id: user.id, created_at: ts, updated_at: ts })
+          db.logs.push(adminLog(user.id, 'terms.create', 'terms_post', id, { site: input.source_site, title: input.title }))
+        }
+      })
+      return id
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings', 'terms-posts'] })
+      qc.invalidateQueries({ queryKey: siteKeys.terms() })
+    },
+  })
+}
+
+export function useDeleteTermsPost() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (user?.role !== 'admin' && user?.role !== 'manager') throw new Error('약관은 최고관리자·관리자만 편집할 수 있습니다.')
+      if (dataSource === 'supabase') return supa.deleteTermsPost(id, user.id)
+      mutateDb((db) => {
+        const list = db.terms_posts ?? []
+        const idx = list.findIndex((x) => x.id === id)
+        if (idx === -1) return
+        const [removed] = list.splice(idx, 1)
+        db.logs.push(adminLog(user.id, 'terms.delete', 'terms_post', id, { site: removed.source_site, title: removed.title }))
+      })
+      return id
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings', 'terms-posts'] })
+      qc.invalidateQueries({ queryKey: siteKeys.terms() })
     },
   })
 }

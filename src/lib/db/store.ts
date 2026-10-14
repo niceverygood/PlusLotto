@@ -21,6 +21,7 @@ import type {
   SmsTemplate,
   Staff,
   Team,
+  TermsPost,
 } from '@/types/db'
 import { buildSeed } from './seed'
 
@@ -43,6 +44,8 @@ export interface DbShape {
   events: CampaignEvent[]
   inquiries: Inquiry[]
   faqs: Faq[]
+  /** 사이트별 약관 게시판(현장 10/14). 이전 버전 저장분에는 없을 수 있다. */
+  terms_posts?: TermsPost[]
   nav_access: Record<string, Role[]>
   site_settings: SiteSettings
   /** 날짜별 근무인원(매출 일일요약, 현장 8/7) — 결제 데이터로 계산 불가한 수기 입력값. */

@@ -1281,6 +1281,10 @@ export type Database = {
       }
       portal_membership_tiers: { Args: never; Returns: Json }
       portal_site_public: { Args: never; Returns: Json }
+      portal_terms_posts: {
+        Args: { p_grade?: string; p_source_site: string }
+        Returns: Json
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       sms_is_legacy_import_held: { Args: { p_phone: string }; Returns: boolean }

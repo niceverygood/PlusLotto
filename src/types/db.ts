@@ -88,6 +88,20 @@ export interface Member {
   meta: Record<string, unknown>
 }
 
+/** 사이트별 약관 게시판 글(현장 10/14) — 개정본을 글로 쌓고 고객 화면은 시행일 최신순 목록. */
+export interface TermsPost {
+  id: string
+  source_site: 'pluslotto' | 'lotto815' | 'infolotto' | 'cplotto' | 'best'
+  grade: Grade | null // null = 전 등급 공통
+  title: string
+  body: string
+  effective_on: string // 시행일 yyyy-MM-dd
+  published: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Payment {
   id: string
   member_id: string

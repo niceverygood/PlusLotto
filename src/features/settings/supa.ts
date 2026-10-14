@@ -1,7 +1,7 @@
 // 설정(site_settings·sms_templates) — supabase 쓰기 경로 (M7). mock 의 mutateDb + adminLog 미러링.
 // site_settings 는 단일행(id=1) 업데이트, sms_templates 는 key 기준 upsert.
 // 읽기는 api.ts 가 fetchSiteSettings/fetchTables 로 분기(여기선 쓰기만).
-import type { AppDownload, Member, PromoSlide, SiteSettings, SmsTemplate } from '@/types/db'
+import type { AppDownload, Member, PromoSlide, SiteSettings, SmsTemplate, TermsPost } from '@/types/db'
 import { fetchSiteSettings, insertLog, paginateAll, sb, selectByIds } from '@/lib/db/remote'
 import { mapPool } from '@/lib/async'
 import { endDateForGrade } from '@/lib/membershipTerm'
@@ -365,4 +365,43 @@ export async function uploadAppDownload(
     meta: { version: meta.version, size: meta.size },
   })
   return meta
+}
+
+// ── 사이트별 약관 게시판(현장 10/14) ─────────────────────────────────────────
+// 쓰기 권한은 terms_posts RLS(최고관리자·관리자). 모든 변경은 관리자 로그로 남긴다.
+export type TermsPostInput = Pick<TermsPost, 'source_site' | 'grade' | 'title' | 'body' | 'effective_on' | 'published'>
+
+export async function fetchTermsPosts(site: TermsPost['source_site']): Promise<TermsPost[]> {
+  const { data, error } = await sb().from('terms_posts').select('*').eq('source_site', site)
+    .order('effective_on', { ascending: false }).order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as TermsPost[]
+}
+
+export async function saveTermsPost(v: { id?: string; input: TermsPostInput }, actor: string | null): Promise<string> {
+  const ts = new Date().toISOString()
+  if (v.id) {
+    const { error } = await sb().from('terms_posts').update({ ...v.input, updated_at: ts }).eq('id', v.id)
+    if (error) throw error
+    await insertLog({ kind: 'admin', actor, action: 'terms.update', target_type: 'terms_post', target_id: v.id,
+      meta: { site: v.input.source_site, grade: v.input.grade, title: v.input.title } })
+    return v.id
+  }
+  const id = genId('trm')
+  const { error } = await sb().from('terms_posts')
+    .insert({ id, ...v.input, author_id: actor, created_at: ts, updated_at: ts })
+  if (error) throw error
+  await insertLog({ kind: 'admin', actor, action: 'terms.create', target_type: 'terms_post', target_id: id,
+    meta: { site: v.input.source_site, grade: v.input.grade, title: v.input.title } })
+  return id
+}
+
+export async function deleteTermsPost(id: string, actor: string | null): Promise<string> {
+  const { data } = await sb().from('terms_posts').select('source_site, title').eq('id', id).maybeSingle()
+  const row = data as { source_site: string; title: string } | null
+  const { error } = await sb().from('terms_posts').delete().eq('id', id)
+  if (error) throw error
+  await insertLog({ kind: 'admin', actor, action: 'terms.delete', target_type: 'terms_post', target_id: id,
+    meta: { site: row?.source_site ?? null, title: row?.title ?? '' } })
+  return id
 }
