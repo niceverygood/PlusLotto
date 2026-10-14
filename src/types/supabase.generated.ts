@@ -1208,6 +1208,7 @@ export type Database = {
           p_from: string
           p_group?: string
           p_source_site?: string
+          p_team_id?: string
           p_to: string
           p_view: string
         }

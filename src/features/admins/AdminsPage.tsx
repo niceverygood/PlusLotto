@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Pencil, PhoneMissed, Plus, ShieldCheck, UserPlus } from 'lucide-react'
+import { AlertTriangle, Building2, Pencil, PhoneMissed, Plus, ShieldCheck, UserPlus } from 'lucide-react'
 import { Button, ConfirmModal, Drawer, EmptyState, PageHeader, SkeletonRows } from '@/design-system/components'
 import { usePageMeta } from '@/app/uiStore'
 import { useCurrentUser } from '@/lib/auth'
@@ -17,6 +17,7 @@ import type { Role, Staff } from '@/types/db'
 import {
   useCallVolumeStatus,
   useSaveStaff,
+  useSaveTeam,
   useToggleAutoAssign,
   useToggleStaffActive,
   useTodayDbCounts,
@@ -60,6 +61,7 @@ export function AdminsPage() {
   const teamName = (id: string | null) => (id ? (teams.find((t) => t.id === id)?.name ?? id) : '—')
 
   const [edit, setEdit] = useState<Staff | 'new' | null>(null)
+  const [teamsOpen, setTeamsOpen] = useState(false)
   const [deactivate, setDeactivate] = useState<Staff | null>(null)
   const [roleFilter, setRoleFilter] = useState<Role | ''>('')
 
@@ -87,6 +89,12 @@ export function AdminsPage() {
             {me?.role === 'admin' && (
               <Button variant="sec" size="sm" onClick={() => navigate('/admins/roles')}>
                 <ShieldCheck className="h-4 w-4" /> 권한관리
+              </Button>
+            )}
+            {/* 센터(팀) 관리 — 팀 이름을 센터명으로 바꾸고 새 센터를 추가(현장 10/14). */}
+            {me?.role === 'admin' && (
+              <Button variant="sec" size="sm" onClick={() => setTeamsOpen(true)}>
+                <Building2 className="h-4 w-4" /> 센터 관리
               </Button>
             )}
             {/* 통화녹음 관련 화면은 관리자 이상만(현장 피드백 8/4, 정의현 차장). */}
@@ -146,7 +154,7 @@ export function AdminsPage() {
                 <th className="px-3 py-2.5">이름</th>
                 <th className="px-2 py-2.5">로그인 ID</th>
                 <th className="w-28 px-2 py-2.5">역할</th>
-                <th className="w-24 px-2 py-2.5">팀</th>
+                <th className="w-24 px-2 py-2.5">센터</th>
                 <th className="w-20 px-2 py-2.5">상태</th>
                 <th className="w-36 px-2 py-2.5 text-right" title="오늘 배정된 디비 수량 (전체 · 수동/자동)">
                   금일 디비
@@ -252,6 +260,7 @@ export function AdminsPage() {
       </div>
 
       {edit && <StaffEditor staff={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+      {teamsOpen && <TeamsDrawer onClose={() => setTeamsOpen(false)} />}
 
       <ConfirmModal
         open={!!deactivate}
@@ -392,9 +401,9 @@ function StaffEditor({ staff, onClose }: { staff: Staff | null; onClose: () => v
             {isSelf && <p className="mt-1 text-[11.5px] text-gray-400">본인 역할은 변경할 수 없습니다.</p>}
           </div>
           <div>
-            <label className={labelCls}>팀</label>
+            <label className={labelCls}>센터</label>
             <select className={inputCls} disabled={role === 'admin' || lockTeam} {...register('team_id')}>
-              <option value="">팀 없음</option>
+              <option value="">센터 없음</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -435,6 +444,87 @@ function StaffEditor({ staff, onClose }: { staff: Staff | null; onClose: () => v
           </p>
         )}
       </div>
+    </Drawer>
+  )
+}
+
+/**
+ * 센터 관리(현장 10/14, 정의현 차장 — "팀구분을 대전센터, 전주센터, 원주센터로 변경"). 기존 팀의
+ * 이름만 바꾸고 id 는 유지하므로 직원·회원의 소속과 매출 집계가 그대로 이어진다. 삭제는 두지 않는다
+ * (소속 직원·회원이 남아 있을 수 있어서). 최고관리자 전용.
+ */
+function TeamsDrawer({ onClose }: { onClose: () => void }) {
+  const { data: teams = [], isLoading } = useTeams()
+  const save = useSaveTeam()
+  const [names, setNames] = useState<Record<string, string>>({})
+  const [newName, setNewName] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const sorted = [...teams].sort((a, b) => a.id.localeCompare(b.id))
+
+  async function run(v: { id?: string; name: string }, after?: () => void) {
+    setErr(null)
+    try {
+      await save.mutateAsync(v)
+      after?.()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '저장하지 못했습니다.')
+    }
+  }
+
+  return (
+    <Drawer open onClose={onClose} title="센터 관리" width={480}>
+      <p className="mb-3 text-[12.5px] leading-relaxed text-gray-500">
+        센터 이름을 바꾸면 계정 화면·회원 상세·매출 화면에 바로 반영됩니다. 이름만 바뀌고 소속은 그대로 유지됩니다.
+      </p>
+      {isLoading ? (
+        <SkeletonRows rows={3} cols={2} />
+      ) : (
+        <div className="space-y-2">
+          {sorted.length === 0 && <p className="text-[12.5px] text-gray-400">등록된 센터가 없습니다.</p>}
+          {sorted.map((t) => {
+            const value = names[t.id] ?? t.name
+            const changed = value.trim() !== t.name.trim()
+            return (
+              <div key={t.id} className="flex items-center gap-2">
+                <input
+                  className={inputCls}
+                  value={value}
+                  maxLength={40}
+                  aria-label={`${t.name} 이름`}
+                  onChange={(e) => setNames({ ...names, [t.id]: e.target.value })}
+                />
+                <Button
+                  variant="sec"
+                  size="sm"
+                  disabled={!changed || save.isPending}
+                  onClick={() => void run({ id: t.id, name: value })}
+                >
+                  저장
+                </Button>
+              </div>
+            )
+          })}
+          <div className="flex items-center gap-2 border-t border-gray-100 pt-3">
+            <input
+              className={inputCls}
+              value={newName}
+              maxLength={40}
+              placeholder="새 센터 이름 (예: 원주센터)"
+              aria-label="새 센터 이름"
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <Button
+              variant="pri"
+              size="sm"
+              disabled={!newName.trim() || save.isPending}
+              onClick={() => void run({ name: newName }, () => setNewName(''))}
+            >
+              <Plus className="h-4 w-4" /> 추가
+            </Button>
+          </div>
+          {err && <p className={errCls}>{err}</p>}
+        </div>
+      )}
     </Drawer>
   )
 }

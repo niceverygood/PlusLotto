@@ -667,7 +667,7 @@ export function MemberDrawer({
           )}
           <Row label="담당자">{member.assigned_staff_id ? staffName[member.assigned_staff_id] ?? '-' : '미지정'}</Row>
           {memberSite(member.meta) !== 'lotto815' && (
-            <Row label="팀">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
+            <Row label="센터">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
           )}
           <Row label="가입일시" mono>
             {datetime(member.registered_at)}
