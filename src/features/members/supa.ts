@@ -717,6 +717,16 @@ export async function bulkUpdateMembers(
 // 관리자 화면·자동할당 모달의 '금일 배분디비' 집계(assignments 기준)가 실제 배정과 어긋나지 않는다
 // (현장 피드백 "자동/수동배분 갯수처리 오류"). 로그 insert 를 회원 update 보다 먼저 실행 —
 // 로그 기록이 실패하면 회원도 바뀌지 않아 "배정은 됐는데 로그가 없는" 유령 상태를 만들지 않는다.
+/**
+ * 2차담당자(실장) 지정·해제(현장 10/14). 1차 배정과 달리 assignments(금일 디비·자동배분 회피 기준)에는
+ * 남기지 않고 관리자 로그로만 남긴다 — 2차 지정이 금일 디비 수량을 부풀리지 않게. 변경 권한은 DB
+ * 트리거(enforce_member_admin_ops)가 최고관리자로 제한한다.
+ */
+export async function assignSecondaryStaff(ids: string[], staffId: string | null, actor: string | null): Promise<void> {
+  await updateByIds('members', { secondary_staff_id: staffId }, ids)
+  await pushLog({ kind: 'admin', actor, action: staffId ? 'member.assign_secondary' : 'member.reset_secondary', meta: { count: ids.length, ids, staff_id: staffId } })
+}
+
 export async function assignStaff(ids: string[], staffId: string, actor: string | null): Promise<void> {
   const { data: st } = await sb().from('staff').select('team_id').eq('id', staffId).maybeSingle()
   const teamId = (st as { team_id: string | null } | null)?.team_id ?? null

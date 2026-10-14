@@ -596,6 +596,7 @@ export type Database = {
       members: {
         Row: {
           assigned_staff_id: string | null
+          secondary_staff_id: string | null
           consult_status: string | null
           grade: Database["public"]["Enums"]["grade"]
           id: string
@@ -621,6 +622,7 @@ export type Database = {
         }
         Insert: {
           assigned_staff_id?: string | null
+          secondary_staff_id?: string | null
           consult_status?: string | null
           grade?: Database["public"]["Enums"]["grade"]
           id: string
@@ -645,6 +647,7 @@ export type Database = {
         }
         Update: {
           assigned_staff_id?: string | null
+          secondary_staff_id?: string | null
           consult_status?: string | null
           grade?: Database["public"]["Enums"]["grade"]
           id?: string

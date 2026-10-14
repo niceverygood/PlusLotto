@@ -29,6 +29,7 @@ import {
   useMemberViewCounts,
   useInflowCodes,
   useUpdateMember,
+  useAssignSecondaryStaff,
   useAssignStaff,
   useResetAssign,
   useLogMemberExport,
@@ -100,6 +101,7 @@ export function MembersPage() {
   const gradeF = get('g') as Grade | undefined
   const statusF = get('st') as MemberStatus | undefined
   const staffF = get('staff')
+  const secondaryF = get('sec') // 2차담당자(실장) 필터 — 현장 10/14. '__none' = 2차 미지정
   const inflowF = get('inflow')
   const inflowTypeF = get('it')
   const consultF = get('cs')
@@ -113,6 +115,8 @@ export function MembersPage() {
     grade: gradeF,
     status: statusF,
     assignedStaffId: staffF,
+    secondaryStaffId: secondaryF && secondaryF !== '__none' ? secondaryF : undefined,
+    hasSecondary: secondaryF === '__none' ? false : undefined,
     inflowCode: inflowF,
     inflowType: inflowTypeF,
     consultStatus: consultF,
@@ -176,11 +180,19 @@ export function MembersPage() {
   const logExport = useLogMemberExport()
   const updateMember = useUpdateMember()
   const assignStaff = useAssignStaff()
+  const assignSecondary = useAssignSecondaryStaff()
   const resetAssign = useResetAssign()
 
   // ── 컬럼 ─────────────────────────────────────────
   const staffOptions = useMemo(
     () => [{ value: '', label: '미지정' }, ...staff.map((s) => ({ value: s.id, label: s.name }))],
+    [staff],
+  )
+  const secondaryOptions = useMemo(
+    () => [
+      { value: '', label: '미지정' },
+      ...staff.filter((s) => s.is_active && s.role === 'leader').map((s) => ({ value: s.id, label: s.name })),
+    ],
     [staff],
   )
   const pageOffset = (page - 1) * pageSize
@@ -196,11 +208,14 @@ export function MembersPage() {
           staffId
             ? assignStaff.mutate({ ids: [id], staffId })
             : resetAssign.mutate({ ids: [id] }),
+        secondaryOptions,
+        canEditSecondary: role === 'admin',
+        onChangeSecondary: (id, staffId) => assignSecondary.mutate({ ids: [id], staffId: staffId || null }),
         onChangeConsult: (id, consult) =>
           updateMember.mutate({ id, patch: { consult_status: consult || null } }),
       }),
     // mutate 함수는 안정적 — pageOffset/옵션/역할 변경 시에만 재생성
-    [pageOffset, staffOptions, role], // eslint-disable-line react-hooks/exhaustive-deps
+    [pageOffset, staffOptions, secondaryOptions, role], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   // ── 정렬 (서버 manual) ────────────────────────────
@@ -232,6 +247,10 @@ export function MembersPage() {
   if (staffF) {
     const name = staff.find((s) => s.id === staffF)?.name ?? staffF
     chips.push({ key: 'staff', label: `담당: ${name}`, onRemove: () => remove('staff') })
+  }
+  if (secondaryF) {
+    const name = secondaryF === '__none' ? '미지정' : staff.find((s) => s.id === secondaryF)?.name ?? secondaryF
+    chips.push({ key: 'sec', label: `2차담당: ${name}`, onRemove: () => remove('sec') })
   }
   if (inflowF) chips.push({ key: 'inflow', label: `유입코드: ${inflowF}`, onRemove: () => remove('inflow') })
   if (inflowTypeF)
@@ -386,6 +405,26 @@ export function MembersPage() {
               ))}
             </select>
           </Field>
+          {/* 2차담당자(실장) 검색 — 1차/2차 담당 궁합 파악용(현장 10/14) */}
+          {role !== 'rep' && (
+            <Field label="2차담당">
+              <select
+                className={selectCls}
+                value={secondaryF ?? ''}
+                onChange={(e) => set('sec', e.target.value || null, { resetPage: true })}
+              >
+                <option value="">전체</option>
+                <option value="__none">미지정</option>
+                {staff
+                  .filter((s) => s.role === 'leader')
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.is_active ? '' : ' (비활성)'}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          )}
           {/* 레거시 원본/유입코드/유입구분은 최고관리자·관리자만(현장 피드백 7/21, 8/31) */}
           {canSeeInflow && (
             <>

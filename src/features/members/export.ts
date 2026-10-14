@@ -26,6 +26,7 @@ function sheetRow(m: Member, staffName: (id: string | null) => string): Record<s
     상담상태: m.consult_status ?? '',
     성향: m.tendency ?? '',
     담당: staffName(m.assigned_staff_id),
+    '2차담당': staffName(m.secondary_staff_id ?? null),
     유입구분: m.inflow_type ?? '',
     유입코드: m.inflow_code ?? '',
     메모: m.memo ?? '',

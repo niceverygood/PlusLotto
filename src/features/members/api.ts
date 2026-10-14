@@ -1146,6 +1146,30 @@ export function useBulkImportMembers() {
 }
 
 /** 담당자 수동 배정. members.assigned_staff_id/team_id 갱신 + assignments 로그(§8). */
+/** 2차담당자(실장) 지정·해제(현장 10/14). staffId=null 이면 해제. 최고관리자만(1차 배정과 같은 기준). */
+export function useAssignSecondaryStaff() {
+  const user = useCurrentUser()
+  const invalidate = useInvalidateMembers()
+  return useMutation({
+    mutationFn: async (v: { ids: string[]; staffId: string | null }) => {
+      if (user?.role !== 'admin') throw new Error('2차담당자 지정은 최고관리자만 가능합니다.')
+      if (dataSource === 'supabase') {
+        await supa.assignSecondaryStaff(v.ids, v.staffId, user.id)
+        return v.ids
+      }
+      mutateDb((db) => {
+        for (const m of db.members) if (v.ids.includes(m.id)) m.secondary_staff_id = v.staffId
+        db.logs.push(adminLog(user.id, v.staffId ? 'member.assign_secondary' : 'member.reset_secondary', null, {
+          count: v.ids.length,
+          staff_id: v.staffId,
+        }))
+      })
+      return v.ids
+    },
+    onSuccess: (ids) => invalidate(ids),
+  })
+}
+
 export function useAssignStaff() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()

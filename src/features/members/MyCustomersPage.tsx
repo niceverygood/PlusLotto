@@ -15,6 +15,7 @@ import {
   useMyCustomers,
   useMyCustomerCounts,
   useUpdateMember,
+  useAssignSecondaryStaff,
   useAssignStaff,
   useResetAssign,
   type MembersQuery,
@@ -61,10 +62,18 @@ export function MyCustomersPage() {
 
   const updateMember = useUpdateMember()
   const assignStaff = useAssignStaff()
+  const assignSecondary = useAssignSecondaryStaff()
   const resetAssign = useResetAssign()
 
   const staffOptions = useMemo(
     () => [{ value: '', label: '미지정' }, ...staff.map((s) => ({ value: s.id, label: s.name }))],
+    [staff],
+  )
+  const secondaryOptions = useMemo(
+    () => [
+      { value: '', label: '미지정' },
+      ...staff.filter((s) => s.is_active && s.role === 'leader').map((s) => ({ value: s.id, label: s.name })),
+    ],
     [staff],
   )
   const pageOffset = (page - 1) * PAGE_SIZE
@@ -78,10 +87,13 @@ export function MyCustomersPage() {
         onChangeStatus: (id, status) => updateMember.mutate({ id, patch: { status } }),
         onChangeStaff: (id, staffId) =>
           staffId ? assignStaff.mutate({ ids: [id], staffId }) : resetAssign.mutate({ ids: [id] }),
+        secondaryOptions,
+        canEditSecondary: role === 'admin',
+        onChangeSecondary: (id, staffId) => assignSecondary.mutate({ ids: [id], staffId: staffId || null }),
         onChangeConsult: (id, consult) =>
           updateMember.mutate({ id, patch: { consult_status: consult || null } }),
       }),
-    [pageOffset, staffOptions, role], // eslint-disable-line react-hooks/exhaustive-deps
+    [pageOffset, staffOptions, secondaryOptions, role], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   const sorting: SortingState = sortId ? [{ id: sortId, desc: sortDesc }] : []

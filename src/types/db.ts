@@ -74,6 +74,8 @@ export interface Member {
   inflow_code: string | null
   inflow_type: string | null
   assigned_staff_id: string | null
+  /** 2차담당자(실장) — 현장 10/14. 1차(assigned_staff_id)가 우선 담당이며 가시성·매출 귀속은 1차 기준. */
+  secondary_staff_id?: string | null
   team_id: string | null
   memo: string | null
   win_history: string | null

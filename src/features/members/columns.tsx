@@ -25,6 +25,9 @@ export interface MemberColumnsCtx {
   role: Role | null // 유입 컬럼 하드 차단(admin/manager 외 컬럼 자체 제거, 현장 피드백 7/21)
   onChangeStatus: (id: string, status: MemberStatus) => void
   onChangeStaff: (id: string, staffId: string) => void // '' = 미지정(리셋)
+  secondaryOptions: InlineSelectOption[] // 2차담당(실장) 셀렉트 옵션([미지정] 포함) — 현장 10/14
+  onChangeSecondary: (id: string, staffId: string) => void // '' = 2차 해제
+  canEditSecondary: boolean // 2차담당 변경 권한 — 최고관리자만(DB 트리거와 같은 기준)
   onChangeConsult: (id: string, consult: string) => void // 상담상태 인라인 변경
 }
 
@@ -103,6 +106,27 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
             options={ctx.staffOptions}
             disabled={!ctx.canEditStaff}
             onChange={(v) => ctx.onChangeStaff(m.id, v)}
+          />
+        )
+      },
+    },
+    {
+      id: 'secondary_staff',
+      header: '2차담당',
+      enableSorting: false,
+      cell: (info) => {
+        const m = info.row.original
+        const value = m.secondary_staff_id ?? ''
+        // 퇴사·역할변경으로 목록에 없는 현재 값도 이름으로 보이게 옵션에 더한다.
+        const options = value && !ctx.secondaryOptions.some((o) => o.value === value)
+          ? [...ctx.secondaryOptions, { value, label: staffNameById[value] ?? value }]
+          : ctx.secondaryOptions
+        return (
+          <InlineSelect
+            value={value}
+            options={options}
+            disabled={!ctx.canEditSecondary}
+            onChange={(v) => ctx.onChangeSecondary(m.id, v)}
           />
         )
       },
@@ -237,6 +261,9 @@ export function memberColumns(ctx: MemberColumnsCtx): ColumnDef<Member>[] {
  * - 팀장(rep)은 본인 담당만 보므로 '담당' 컬럼 숨김. */
 export function memberColumnVisibility(role: Role | null): VisibilityState {
   const v: VisibilityState = {}
-  if (role === 'rep') v.staff = false
+  if (role === 'rep') {
+    v.staff = false
+    v.secondary_staff = false
+  }
   return v
 }

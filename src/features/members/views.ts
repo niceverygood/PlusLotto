@@ -17,6 +17,8 @@ export interface MemberFilter {
   gradeIn?: readonly Grade[]
   hasStaff?: boolean // true=배정됨, false=담당미지정
   assignedStaffId?: string // 특정 담당자(FilterBar)
+  secondaryStaffId?: string // 특정 2차담당자(실장) — 현장 10/14
+  hasSecondary?: boolean // true=2차 지정됨, false=2차 미지정
   staffRole?: Extract<Role, 'manager' | 'leader'> // 담당 staff 의 역할(실장/팀장담당)
   is_suspended?: boolean
   is_deleted?: boolean
@@ -280,6 +282,9 @@ export function filterMembers(
     if (filter.hasStaff === true && !m.assigned_staff_id) return false
     if (filter.hasStaff === false && m.assigned_staff_id) return false
     if (filter.assignedStaffId && m.assigned_staff_id !== filter.assignedStaffId) return false
+    if (filter.secondaryStaffId && m.secondary_staff_id !== filter.secondaryStaffId) return false
+    if (filter.hasSecondary === true && !m.secondary_staff_id) return false
+    if (filter.hasSecondary === false && m.secondary_staff_id) return false
     if (filter.staffRole) {
       const role = m.assigned_staff_id ? ctx.staffRoleById[m.assigned_staff_id] : undefined
       if (role !== filter.staffRole) return false
