@@ -100,6 +100,40 @@ export function useSaveStaff() {
   })
 }
 
+/** 센터(팀) 이름 변경·추가 — 최고관리자 전용(teams RLS 와 같은 기준). */
+export function useSaveTeam() {
+  const user = useCurrentUser()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { id?: string; name: string }) => {
+      if (!user || user.role !== 'admin') throw new Error('센터는 최고관리자만 관리할 수 있습니다.')
+      const name = v.name.trim()
+      if (!name) throw new Error('센터 이름을 입력해 주세요.')
+      if (name.length > 40) throw new Error('센터 이름은 40자 이내로 입력해 주세요.')
+      const teams = dataSource === 'supabase' ? null : readDb().teams
+      if (teams?.some((t) => t.id !== v.id && t.name.trim() === name)) throw new Error('같은 이름의 센터가 이미 있습니다.')
+      if (dataSource === 'supabase') return supa.saveTeam({ id: v.id, name }, user.id)
+      const id = v.id ?? genId('team')
+      mutateDb((db) => {
+        if (v.id) {
+          const t = db.teams.find((x) => x.id === v.id)
+          if (!t) return
+          t.name = name
+          db.logs.push(adminLog(user.id, 'team.update', 'team', v.id, { name }))
+        } else {
+          db.teams.push({ id, name, leader_id: null })
+          db.logs.push(adminLog(user.id, 'team.create', 'team', id, { name }))
+        }
+      })
+      return id
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: staffKeys.teams })
+      qc.invalidateQueries({ queryKey: staffKeys.all })
+    },
+  })
+}
+
 /** 계정 활성/비활성 토글(삭제 대신 비활성으로 운영). */
 export function useToggleStaffActive() {
   const user = useCurrentUser()

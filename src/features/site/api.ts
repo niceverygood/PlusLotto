@@ -18,7 +18,7 @@
 //   InquiryInput = { name:string; phone?:string; category?:string; title:string; body:string }
 // ─────────────────────────────────────────────────────────────────────────
 import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query'
-import type { BankTransferSettings, BusinessInfo, Faq, LottoRound, MembershipTier, Notice, PromoSlide, WinnerStats } from '@/types/db'
+import type { BankTransferSettings, BusinessInfo, Faq, Grade, LottoRound, MembershipTier, Notice, PromoSlide, TermsPost, WinnerStats } from '@/types/db'
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
 import { resolveTiers } from '@/lib/membership'
@@ -27,6 +27,7 @@ import { normalizeWinnerStats } from '@/lib/winnerStats'
 import { CUSTOMER_BRAND, CUSTOMER_SITE } from '@/lib/customerSiteContext'
 import { CUSTOMER_SITES, customerSiteTiers } from '@/lib/customerSites'
 import type { PortalSourceSite } from '@/lib/portalScope'
+import { sortTermsPosts } from '@/lib/termsPosts'
 
 const digits = (s: string): string => s.replace(/\D/g, '')
 
@@ -90,6 +91,29 @@ export function useMembershipTiers(sourceSite: PortalSourceSite | null = CUSTOME
       return resolveTiers(readDb().site_settings.membership_tiers)
     },
     // 운영자가 다른 탭에서 약관을 저장한 뒤 홈페이지로 돌아오면 즉시 재조회한다.
+    staleTime: 0,
+  })
+}
+
+// ── 약관보기(사이트별 약관 게시판, 현장 10/14) ─────────────────────────────────
+// 고객(anon)은 terms_posts 를 직접 못 읽는다 → 사이트를 검증하는 RPC portal_terms_posts 가 공개 글만 준다.
+// 그 등급 전용 글 + 공통(grade=null) 글, 시행일 최신순.
+export type PublicTermsPost = Pick<TermsPost, 'id' | 'grade' | 'title' | 'body' | 'effective_on' | 'created_at'>
+
+export function useTermsPosts(sourceSite: PortalSourceSite | null, grade: Grade | null): UseQueryResult<PublicTermsPost[]> {
+  return useQuery({
+    queryKey: [...siteKeys.terms(), sourceSite ?? 'none', grade ?? 'common'],
+    enabled: !!sourceSite,
+    queryFn: async (): Promise<PublicTermsPost[]> => {
+      if (!sourceSite) return []
+      if (dataSource === 'supabase' && supabase) {
+        const { data, error } = await supabase.rpc('portal_terms_posts', { p_source_site: sourceSite, p_grade: grade })
+        if (error) throw new Error('약관을 불러오지 못했습니다.')
+        return Array.isArray(data) ? (data as PublicTermsPost[]) : []
+      }
+      return sortTermsPosts((readDb().terms_posts ?? []).filter((p) =>
+        p.published && p.source_site === sourceSite && (p.grade === null || p.grade === grade)))
+    },
     staleTime: 0,
   })
 }

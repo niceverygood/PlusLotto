@@ -40,6 +40,7 @@ import { krw, num } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { useRole } from '@/lib/auth'
 import { useSiteScope } from '@/lib/siteScopeStore'
+import { useTeams } from '@/lib/staff'
 import { PAYMENT_METHOD_LABEL } from '@/design-system/labels'
 import {
   GROUP_LABEL,
@@ -70,17 +71,20 @@ const selectCls =
 const today = () => format(new Date(), 'yyyy-MM-dd')
 
 export function RevenuePage() {
-  usePageMeta('매출', '승인 결제 기준 매출 집계 · 담당/팀/상품/PG 귀속')
+  usePageMeta('매출', '승인 결제 기준 매출 집계 · 담당/센터/상품/PG 귀속')
   const { get, set, setMany } = useUrlFilters()
 
   const view = (get('view') ?? 'real') as PageView
   const from = get('from') ?? format(subDays(new Date(), 29), 'yyyy-MM-dd')
   const to = get('to') ?? today()
   const groupBy = (get('group') ?? 'staff') as GroupDim
+  // 센터 필터(현장 10/14 — 센터별 매출 파악). 결제 담당자의 현재 센터 기준.
+  const teamId = get('center')
+  const { data: teams = [] } = useTeams()
 
   const summaryView: RevenueView = view === 'calendar' || view === 'daily' ? 'real' : view
   const { data, error, isError, isFetching, isLoading, refetch } = useRevenue(
-    { view: summaryView, from, to, groupBy },
+    { view: summaryView, from, to, groupBy, teamId },
     { enabled: view !== 'calendar' && view !== 'daily' },
   )
 
@@ -117,6 +121,22 @@ export function RevenuePage() {
               value={{ from, to }}
               onChange={(r) => setMany({ from: r.from, to: r.to })}
             />
+            <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-[12px] font-semibold text-gray-500">
+              센터
+              <select
+                className={selectCls}
+                value={teamId ?? ''}
+                onChange={(e) => set('center', e.target.value || null)}
+              >
+                <option value="">전체</option>
+                {[...teams].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             {view === 'real' && (
               <label className="flex items-center gap-2 text-[12px] font-semibold text-gray-500">
                 그룹
@@ -133,6 +153,7 @@ export function RevenuePage() {
                 </select>
               </label>
             )}
+            </div>
           </div>
 
           {isError ? (

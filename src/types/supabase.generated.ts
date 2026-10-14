@@ -596,6 +596,7 @@ export type Database = {
       members: {
         Row: {
           assigned_staff_id: string | null
+          secondary_staff_id: string | null
           consult_status: string | null
           grade: Database["public"]["Enums"]["grade"]
           id: string
@@ -621,6 +622,7 @@ export type Database = {
         }
         Insert: {
           assigned_staff_id?: string | null
+          secondary_staff_id?: string | null
           consult_status?: string | null
           grade?: Database["public"]["Enums"]["grade"]
           id: string
@@ -645,6 +647,7 @@ export type Database = {
         }
         Update: {
           assigned_staff_id?: string | null
+          secondary_staff_id?: string | null
           consult_status?: string | null
           grade?: Database["public"]["Enums"]["grade"]
           id?: string
@@ -1208,6 +1211,7 @@ export type Database = {
           p_from: string
           p_group?: string
           p_source_site?: string
+          p_team_id?: string
           p_to: string
           p_view: string
         }
@@ -1249,6 +1253,7 @@ export type Database = {
       app_touch_login: { Args: never; Returns: undefined }
       canonical_inflow_type: { Args: { p_value: string }; Returns: string }
       legacy_815_source_datetime: { Args: { p_raw: string }; Returns: string }
+      member_legacy_win_summary: { Args: { p_member_id: string }; Returns: Json }
       member_legacy_history_page: {
         Args: {
           p_before_at?: string
@@ -1276,6 +1281,10 @@ export type Database = {
       }
       portal_membership_tiers: { Args: never; Returns: Json }
       portal_site_public: { Args: never; Returns: Json }
+      portal_terms_posts: {
+        Args: { p_grade?: string; p_source_site: string }
+        Returns: Json
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       sms_is_legacy_import_held: { Args: { p_phone: string }; Returns: boolean }

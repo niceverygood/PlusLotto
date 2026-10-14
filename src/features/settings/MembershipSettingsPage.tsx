@@ -135,12 +135,12 @@ export function MembershipSettingsPage() {
           />
         </FieldRow>
 
-        <FieldRow label="등급별 이용약관" hint="약관은 한 곳에서 관리해 고객 홈페이지와 문자 링크가 항상 같은 내용을 표시합니다.">
+        <FieldRow label="등급별 이용약관" hint="약관은 사이트별 약관 게시판에서 관리합니다. 고객 홈페이지 약관보기와 문자 약관 링크가 같은 게시판을 보여 줍니다.">
           <Link
             to="/admin/settings/terms"
             className="inline-flex h-9 items-center rounded-md border border-primary-100 bg-primary-50 px-3 text-[12.5px] font-semibold text-primary-700 hover:border-primary-500"
           >
-            이용약관 편집으로 이동
+            이용약관 게시판으로 이동
           </Link>
         </FieldRow>
       </SectionCard>

@@ -723,9 +723,10 @@ export function buildSeed(): DbShape {
 
   return {
     teams: [
-      { id: 'team-1', name: '1팀', leader_id: 'staff-leader1' },
-      // TODO(live-verify): 팀 구성/팀장 매핑은 실제 운영 데이터로 확정.
-      { id: 'team-2', name: '2팀', leader_id: null },
+      // 팀 = 센터(현장 10/14 — 대전·전주·원주센터). 운영 DB 는 관리자 > 센터 관리에서 이름을 바꾼다.
+      { id: 'team-1', name: '대전센터', leader_id: 'staff-leader1' },
+      { id: 'team-2', name: '전주센터', leader_id: null },
+      { id: 'team-3', name: '원주센터', leader_id: null },
     ],
     staff,
     products: [

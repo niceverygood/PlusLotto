@@ -63,6 +63,8 @@ export const settingsKeys = {
   winnerHistory: () => ['settings', 'winner-history'] as const,
   // 실패 문자 재발송(현장 9/7) — 날짜·종류별 실패 목록.
   failedSms: (day: string, type: string) => ['settings', 'failed-sms', day, type] as const,
+  // 사이트별 약관 게시판(현장 10/14) — 관리자 목록(비공개 포함).
+  termsPosts: (site: string) => ['settings', 'terms-posts', site] as const,
 }
 
 // 고객 홈페이지 공개 데이터. 설정 저장 시 운영 콘솔과 고객 화면 캐시를 함께 무효화한다(§8).
@@ -72,6 +74,8 @@ export const siteKeys = {
   faqs: () => ['site', 'faqs'] as const,
   tiers: () => ['site', 'membership-tiers'] as const,
   publicInfo: () => ['site', 'public-info'] as const,
+  // 고객 약관보기(공개 글만, 사이트·등급별).
+  terms: () => ['site', 'terms-posts'] as const,
 }
 
 // SMS 템플릿: members(드로어·일괄·나의문자)와 settings(편집)가 공유 → lib 단일 출처(§2·§8).

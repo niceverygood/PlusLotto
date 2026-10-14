@@ -21,6 +21,7 @@ import type {
   SmsTemplate,
   Staff,
   Team,
+  TermsPost,
 } from '@/types/db'
 import { buildSeed } from './seed'
 
@@ -43,6 +44,8 @@ export interface DbShape {
   events: CampaignEvent[]
   inquiries: Inquiry[]
   faqs: Faq[]
+  /** 사이트별 약관 게시판(현장 10/14). 이전 버전 저장분에는 없을 수 있다. */
+  terms_posts?: TermsPost[]
   nav_access: Record<string, Role[]>
   site_settings: SiteSettings
   /** 날짜별 근무인원(매출 일일요약, 현장 8/7) — 결제 데이터로 계산 불가한 수기 입력값. */
@@ -59,7 +62,8 @@ const DB_KEY = 'pluslotto-db'
 // v12: 유입구분 '구디비' 추가 + member.consult_status(상담상태) 추가(현장 피드백).
 // v13: 역할별 메뉴 축소(팀장=이용자·나의고객, 실장=로또 제외) + 등급별 약관(현장 피드백 6/11).
 // v16: 당첨자 수를 current+admin 로그 이력으로 전환 + 생성기록을 회차·등급 로직 중심으로 전환.
-const DB_VERSION = 18
+// v19: 팀 → 센터(대전·전주·원주, 현장 10/14).
+const DB_VERSION = 19
 
 interface Persisted {
   __v: number

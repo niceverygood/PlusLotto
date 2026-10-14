@@ -98,6 +98,25 @@ export async function saveStaff(
   return id
 }
 
+/**
+ * 센터(팀) 이름 변경·추가(현장 10/14 — "팀구분을 대전센터·전주센터·원주센터로"). teams 쓰기는
+ * RLS 상 최고관리자만 허용(teams_write). id 는 바꾸지 않아 기존 직원·회원의 소속이 그대로 유지된다.
+ */
+export async function saveTeam(v: { id?: string; name: string }, actor: string | null): Promise<string> {
+  const name = v.name.trim()
+  if (v.id) {
+    const { error } = await sb().from('teams').update({ name }).eq('id', v.id)
+    if (error) throw error
+    await insertLog({ kind: 'admin', actor, action: 'team.update', target_type: 'team', target_id: v.id, meta: { name } })
+    return v.id
+  }
+  const id = genId('team')
+  const { error } = await sb().from('teams').insert({ id, name, leader_id: null })
+  if (error) throw error
+  await insertLog({ kind: 'admin', actor, action: 'team.create', target_type: 'team', target_id: id, meta: { name } })
+  return id
+}
+
 /** 계정 활성/비활성 토글. */
 export async function toggleStaffActive(
   id: string,

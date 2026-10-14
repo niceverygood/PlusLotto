@@ -74,6 +74,8 @@ export interface Member {
   inflow_code: string | null
   inflow_type: string | null
   assigned_staff_id: string | null
+  /** 2차담당자(실장) — 현장 10/14. 1차(assigned_staff_id)가 우선 담당이며 가시성·매출 귀속은 1차 기준. */
+  secondary_staff_id?: string | null
   team_id: string | null
   memo: string | null
   win_history: string | null
@@ -84,6 +86,20 @@ export interface Member {
   is_deleted: boolean
   is_withdrawn: boolean
   meta: Record<string, unknown>
+}
+
+/** 사이트별 약관 게시판 글(현장 10/14) — 개정본을 글로 쌓고 고객 화면은 시행일 최신순 목록. */
+export interface TermsPost {
+  id: string
+  source_site: 'pluslotto' | 'lotto815' | 'infolotto' | 'cplotto' | 'best'
+  grade: Grade | null // null = 전 등급 공통
+  title: string
+  body: string
+  effective_on: string // 시행일 yyyy-MM-dd
+  published: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Payment {

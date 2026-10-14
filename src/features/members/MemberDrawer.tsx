@@ -44,6 +44,7 @@ import {
   useAddComplaint,
   useAddMemo,
   useAnalyzeCallRecording,
+  useAssignSecondaryStaff,
   useAssignStaff,
   useCallRecordingUrl,
   useDeleteCallRecording,
@@ -152,6 +153,7 @@ export function MemberDrawer({
   const deleteMemo = useDeleteMemo()
   const addComplaint = useAddComplaint()
   const assignStaff = useAssignStaff()
+  const assignSecondary = useAssignSecondaryStaff()
   const resetAssign = useResetAssign()
   const sendSms = useSendSms()
   const sendCustomSms = useSendCustomSms()
@@ -478,6 +480,30 @@ export function MemberDrawer({
             </span>
           )}
         </label>
+        {/* 2차담당자(실장) — 현장 10/14. 1차와 같이 최고관리자만 변경. */}
+        <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
+          2차담당
+          {role === 'admin' ? (
+            <select
+              className={selectCls}
+              value={member.secondary_staff_id ?? ''}
+              onChange={(e) => assignSecondary.mutate({ ids: [id], staffId: e.target.value || null })}
+            >
+              <option value="">미지정</option>
+              {staff
+                .filter((s) => (s.is_active && s.role === 'leader') || s.id === member.secondary_staff_id)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+          ) : (
+            <span className="text-[12.5px] font-normal text-ink-800">
+              {member.secondary_staff_id ? (staffName[member.secondary_staff_id] ?? '-') : '미지정'}
+            </span>
+          )}
+        </label>
         <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
           상담상태
           <select
@@ -666,8 +692,9 @@ export function MemberDrawer({
             </>
           )}
           <Row label="담당자">{member.assigned_staff_id ? staffName[member.assigned_staff_id] ?? '-' : '미지정'}</Row>
+          <Row label="2차담당자">{member.secondary_staff_id ? staffName[member.secondary_staff_id] ?? '-' : '미지정'}</Row>
           {memberSite(member.meta) !== 'lotto815' && (
-            <Row label="팀">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
+            <Row label="센터">{member.team_id ? teamName[member.team_id] ?? '-' : '-'}</Row>
           )}
           <Row label="가입일시" mono>
             {datetime(member.registered_at)}

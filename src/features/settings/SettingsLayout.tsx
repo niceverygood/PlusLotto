@@ -8,7 +8,7 @@ const SUB_NAV: readonly { to: string; label: string; end?: boolean }[] = [
   { to: '/settings/membership', label: '멤버십 등급' },
   { to: '/settings/report', label: '리포트' },
   { to: '/settings/lotto-exclude', label: '로또 고정·제외' },
-  { to: '/settings/terms', label: '이용약관' },
+  { to: '/settings/terms', label: '이용약관 게시판' },
 ]
 
 export function SettingsLayout() {

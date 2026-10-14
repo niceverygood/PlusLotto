@@ -1,7 +1,7 @@
 // 이용자 일괄작업 바 (CLAUDE §8). 선택 회원에 상태/유입분류 일괄변경,
 // 담당 배정·자동할당·리셋, 문자 발송을 적용한다. 위험 작업은 확인 모달(§10).
 import { useState } from 'react'
-import { UserPlus, Wand2, MessageSquare, RefreshCw, Tag, Eraser, Award, CalendarClock } from 'lucide-react'
+import { UserPlus, UserCog, Wand2, MessageSquare, RefreshCw, Tag, Eraser, Award, CalendarClock } from 'lucide-react'
 import { BulkButton, ConfirmModal, Modal, Button } from '@/design-system/components'
 import { STATUS_META, GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
@@ -11,6 +11,7 @@ import { useSiteScope } from '@/lib/siteScopeStore'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
 import type { Grade, MemberStatus } from '@/types/db'
 import {
+  useAssignSecondaryStaff,
   useAssignStaff,
   useAutoAssign,
   useBulkUpdateMembers,
@@ -23,7 +24,7 @@ import {
 } from './api'
 import { CONSULT_STATUSES, INFLOW_TYPES } from './views'
 
-type BulkModal = 'status' | 'consult' | 'inflow' | 'grade' | 'assign' | 'auto' | 'reco' | 'reset' | 'resetdb' | 'sms' | null
+type BulkModal = 'status' | 'consult' | 'inflow' | 'grade' | 'assign' | 'secondary' | 'auto' | 'reco' | 'reset' | 'resetdb' | 'sms' | null
 
 const STATUS_VALUES: MemberStatus[] = ['active', 'suspended', 'deleted', 'withdrawn']
 const GRADE_VALUES: Grade[] = ['simple', 'free', 'gold', 'goldp', 'ruby', 'vip', 'royal', 'ovr', 'toss']
@@ -67,6 +68,8 @@ export function MemberBulkActions({
   const bulkUpdate = useBulkUpdateMembers()
   const bulkSettings = useBulkUpdateMemberSettings()
   const assign = useAssignStaff()
+  const assignSecondary = useAssignSecondaryStaff()
+  const [secondaryVal, setSecondaryVal] = useState('')
   const autoAssign = useAutoAssign()
   const reset = useResetAssign()
   const resetDb = useResetMembers()
@@ -77,6 +80,7 @@ export function MemberBulkActions({
     bulkUpdate.isPending ||
     bulkSettings.isPending ||
     assign.isPending ||
+    assignSecondary.isPending ||
     autoAssign.isPending ||
     reset.isPending ||
     resetDb.isPending ||
@@ -100,6 +104,12 @@ export function MemberBulkActions({
   const openAssign = () => {
     setStaffVal(staff[0]?.id ?? '')
     setModal('assign')
+  }
+  // 2차담당자 후보 = 활성 실장(leader) — 현장 10/14 "2차담당자는 실장".
+  const leaders = staff.filter((s) => s.is_active && s.role === 'leader')
+  const openSecondary = () => {
+    setSecondaryVal(leaders[0]?.id ?? '')
+    setModal('secondary')
   }
   // 자동배분 후보 = 활성 rep. 모달 오픈 시 기본 풀('자동배분 대상' 플래그)로 초기화(§V2-1).
   const reps = staff.filter((s) => s.is_active && s.role === 'rep')
@@ -131,6 +141,9 @@ export function MemberBulkActions({
           </BulkButton>
           <BulkButton onClick={openAssign}>
             <UserPlus className="h-3.5 w-3.5" /> 담당배정
+          </BulkButton>
+          <BulkButton onClick={openSecondary}>
+            <UserCog className="h-3.5 w-3.5" /> 2차담당
           </BulkButton>
           <BulkButton onClick={openAuto}>
             <Wand2 className="h-3.5 w-3.5" /> 자동할당
@@ -386,6 +399,44 @@ export function MemberBulkActions({
             </option>
           ))}
         </select>
+      </Modal>
+
+      {/* 2차담당자(실장) 지정·해제 — 현장 10/14. 1차 담당·금일 디비 수량은 바뀌지 않는다. */}
+      <Modal
+        open={modal === 'secondary'}
+        onClose={close}
+        title={`2차담당자 지정 · ${n}건`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="sec" size="sm" onClick={close} disabled={busy}>
+              취소
+            </Button>
+            <Button
+              variant="pri"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                assignSecondary.mutate({ ids: selectedIds, staffId: secondaryVal || null }, { onSuccess: done })
+              }
+            >
+              {secondaryVal ? '지정' : '해제'}
+            </Button>
+          </>
+        }
+      >
+        <label className="mb-1.5 block text-[12px] font-semibold text-gray-600">2차담당자(실장)</label>
+        <select className={selectCls} value={secondaryVal} onChange={(e) => setSecondaryVal(e.target.value)}>
+          <option value="">2차담당 해제</option>
+          {leaders.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-[11.5px] leading-relaxed text-gray-500">
+          1차담당(팀장)은 그대로 유지되며 우선 담당입니다. 2차담당 지정은 금일 디비 수량에 포함되지 않습니다.
+        </p>
       </Modal>
 
       {/* 문자 발송 */}

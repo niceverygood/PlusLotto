@@ -3,7 +3,7 @@ import { useRef } from 'react'
 // 컴포넌트 직접 fetch 금지. 뮤테이션은 mock DB 를 변경하고 §8 흐름대로
 // 로그/배정/문자 부수효과를 만든 뒤 관련 쿼리를 무효화한다.
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LegacyHistoryCursor, LegacyHistoryKind, LegacyHistoryPage } from './legacyHistory'
+import { EMPTY_LEGACY_WIN_SUMMARY, type LegacyHistoryCursor, type LegacyHistoryKind, type LegacyHistoryPage, type LegacyWinSummary } from './legacyHistory'
 import type { CallRecording, Grade, LogEntry, Member, MemberStatus, Payment, PaymentMethod, Role, SmsSend, Staff, WeeklyRecoIssue } from '@/types/db'
 import { genId, mutateDb, nowIso, readDb } from '@/lib/db/store'
 import { cancelPaymentInDb, cancelPaymentRemote } from '@/lib/db/paymentCancel'
@@ -41,6 +41,19 @@ export function useLegacyMemberHistory(memberId: string, kind: LegacyHistoryKind
       ? supa.fetchLegacyMemberHistory(memberId, kind, pageParam)
       : Promise.resolve({ rows: [], hasMore: false, nextCursor: null }),
     getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextCursor ?? undefined : undefined,
+    staleTime: 30_000,
+  })
+}
+
+/** 이전 전산 당첨기록 등수별 개수·총 당첨금(현장 10/14). 목록과 같은 권한 범위(RLS)로 집계된다. */
+export function useLegacyWinSummary(memberId: string, enabled: boolean) {
+  const user = useCurrentUser()
+  return useQuery({
+    queryKey: ['legacyMemberWinSummary', memberId, user?.id, user?.role, user?.teamId],
+    enabled: Boolean(enabled && memberId && user),
+    queryFn: (): Promise<LegacyWinSummary> => dataSource === 'supabase'
+      ? supa.fetchLegacyWinSummary(memberId)
+      : Promise.resolve(EMPTY_LEGACY_WIN_SUMMARY),
     staleTime: 30_000,
   })
 }
@@ -1133,6 +1146,30 @@ export function useBulkImportMembers() {
 }
 
 /** 담당자 수동 배정. members.assigned_staff_id/team_id 갱신 + assignments 로그(§8). */
+/** 2차담당자(실장) 지정·해제(현장 10/14). staffId=null 이면 해제. 최고관리자만(1차 배정과 같은 기준). */
+export function useAssignSecondaryStaff() {
+  const user = useCurrentUser()
+  const invalidate = useInvalidateMembers()
+  return useMutation({
+    mutationFn: async (v: { ids: string[]; staffId: string | null }) => {
+      if (user?.role !== 'admin') throw new Error('2차담당자 지정은 최고관리자만 가능합니다.')
+      if (dataSource === 'supabase') {
+        await supa.assignSecondaryStaff(v.ids, v.staffId, user.id)
+        return v.ids
+      }
+      mutateDb((db) => {
+        for (const m of db.members) if (v.ids.includes(m.id)) m.secondary_staff_id = v.staffId
+        db.logs.push(adminLog(user.id, v.staffId ? 'member.assign_secondary' : 'member.reset_secondary', null, {
+          count: v.ids.length,
+          staff_id: v.staffId,
+        }))
+      })
+      return v.ids
+    },
+    onSuccess: (ids) => invalidate(ids),
+  })
+}
+
 export function useAssignStaff() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()

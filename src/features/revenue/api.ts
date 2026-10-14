@@ -20,7 +20,7 @@ export type GroupDim = 'staff' | 'team' | 'product' | 'pg'
 
 export const GROUP_LABEL: Record<GroupDim, string> = {
   staff: '담당자',
-  team: '팀',
+  team: '센터',
   product: '상품',
   pg: '결제수단',
 }
@@ -31,6 +31,8 @@ export interface RevenueQuery {
   to: string | null
   /** 'real' 뷰에서만 사용. team→'team', conversion→'staff' 로 고정. */
   groupBy: GroupDim
+  /** 센터(팀) 필터(현장 10/14) — 결제 담당자의 현재 센터. null/생략 = 전체. */
+  teamId?: string | null
 }
 
 export interface RevenueSummary {
@@ -171,6 +173,8 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
           p_to: q.to,
           p_group: q.groupBy,
           p_source_site: rpcSourceSite(siteScope),
+          // 센터를 고른 때만 보낸다 — 미지정 호출은 센터 인자 추가 전(5인자) 함수와도 그대로 맞는다.
+          ...(q.teamId ? { p_team_id: q.teamId } : {}),
         })
         if (error) throw error
         return data as RevenueResult
@@ -188,10 +192,13 @@ export function useRevenue(q: RevenueQuery, opts: { enabled?: boolean } = {}) {
       const scoped = scopeApproved(db.payments, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
       const convIds = conversionIds(scoped)
       const roleById = staffRoleById(db.staff)
+      const teamByStaff: Record<string, string | null> = {}
+      for (const s of db.staff) teamByStaff[s.id] = s.team_id
 
       // 기간 필터(승인일 기준). periodAll = 전체 승인, periodConv = 그중 전환(1차결제) — "신규전환율"
-      // KPI 전용(뷰 선택과 무관, 아래 activeSet 필터와는 별개 지표).
-      const periodAll = scoped.filter((p) => inRange(dayOf(recognitionIso(p)), q.from, q.to))
+      // KPI 전용(뷰 선택과 무관, 아래 activeSet 필터와는 별개 지표). 센터 필터는 둘 다에 적용(admin_revenue 동일).
+      const periodAll = scoped.filter((p) => inRange(dayOf(recognitionIso(p)), q.from, q.to)
+        && (!q.teamId || (p.staff_id != null && teamByStaff[p.staff_id] === q.teamId)))
       const periodConv = periodAll.filter((p) => convIds.has(p.id))
       // 팀장매출(conversion)=담당자 역할이 팀장. 실장매출(team)=실장 이상(현장 피드백 7/29).
       const activeSet =
