@@ -9,6 +9,7 @@ const migration = await load('20260910140000_legacy_815_member_history.sql')
 const reviewAccess = await load('20260914052203_legacy_history_leader_review_access.sql')
 const cplottoHistory = await load('20260916020038_cplotto_member_history.sql')
 const validateCplottoHistory = await load('20260916020233_validate_cplotto_member_history.sql')
+const winSummary = await load('20261014100000_legacy_member_win_summary.sql')
 const hash = 'a'.repeat(64)
 let sequence = 100
 async function as(role, id, fn) {
@@ -267,4 +268,39 @@ test('cplotto history has independent source keys and preserves all role boundar
   }
   await assert.rejects(db.exec("UPDATE members SET meta=meta||'{\"source_site\":\"lotto815\"}' WHERE id='cp1'"),{code:'23503'})
   await assert.rejects(db.exec("DELETE FROM members WHERE id='cp1'"),{code:'23001'})
+})
+test('win summary counts every visible win row per rank with an exact text prize total and the same role scope as the list',async()=>{
+  await db.exec(winSummary)
+  await db.exec(winSummary) // 재적용 가능
+  await db.query('INSERT INTO members(id,user_id,name,team_id,assigned_staff_id,meta) VALUES ($1,$1,$1,$2,$3,$4)',
+    ['ws1','t1','rep',JSON.stringify({source_site:'lotto815',legacy_idx:51,reco_paused:true})])
+  await db.query('INSERT INTO members(id,user_id,name,team_id,assigned_staff_id,meta) VALUES ($1,$1,$1,$2,$3,$4)',
+    ['ws2','t2','other',JSON.stringify({source_site:'lotto815',legacy_idx:52,reco_paused:true})])
+  const summary=async member=>(await db.query('SELECT public.member_legacy_win_summary($1) AS result',[member])).rows[0].result
+  await as('service_role',null,async()=>{
+    await insert('wins',{member_id:'ws1',source_user_idx:51,round_no:1101,rank:1,prize:'9007199254740000'})
+    await insert('wins',{member_id:'ws1',source_user_idx:51,round_no:1102,rank:1,prize:2000000000})
+    await insert('wins',{member_id:'ws1',source_user_idx:51,round_no:1103,rank:3,prize:1500000})
+    await insert('wins',{member_id:'ws1',source_user_idx:51,round_no:1104,rank:5,prize:5000,source_status:'remove'})
+    await insert('wins',{member_id:'ws2',source_user_idx:52,round_no:1105,rank:4,prize:50000})
+  })
+  const expected={rank_counts:{1:2,2:0,3:1,4:0,5:1},total_count:4,total_prize:'9007201256245000',removed_count:1}
+  const zeros={rank_counts:{1:0,2:0,3:0,4:0,5:0},total_count:0,total_prize:'0',removed_count:0}
+  for(const key of ['admin','manager','leader','leaderNoTeam','rep']) await as('authenticated',uuid(key),async()=>{
+    assert.deepEqual(await summary('ws1'),expected,key)
+  })
+  // 요약은 목록과 같은 행을 센다.
+  await as('authenticated',uuid('admin'),async()=>assert.equal((await page('win','ws1')).rows.length,expected.total_count))
+  await as('authenticated',uuid('other'),async()=>{
+    assert.deepEqual(await summary('ws1'),zeros)
+    assert.deepEqual(await summary('ws2'),{rank_counts:{1:0,2:0,3:0,4:1,5:0},total_count:1,total_prize:'50000',removed_count:0})
+  })
+  await as('authenticated',uuid('noStaff'),async()=>assert.deepEqual(await summary('ws1'),zeros))
+  await as('anon',null,()=>assert.rejects(summary('ws1'),{code:'42501'}))
+  await as('authenticated',uuid('admin'),async()=>{
+    for(const bad of ['',null,'x'.repeat(257)]) await assert.rejects(summary(bad),{code:'22023'})
+  })
+  const fn=(await db.query("SELECT prosecdef,proconfig FROM pg_proc WHERE proname='member_legacy_win_summary'")).rows[0]
+  assert.equal(fn.prosecdef,false)
+  assert.deepEqual(fn.proconfig,['search_path=""'])
 })

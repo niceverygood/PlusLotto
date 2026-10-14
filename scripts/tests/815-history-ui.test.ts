@@ -63,3 +63,16 @@ test('wrong record kind and wrong round cursor are rejected', () => {
   assert.throws(() => parseLegacyHistoryPage('win', page([memo])))
   assert.throws(() => parseLegacyHistoryPage('memo', { rows: [memo], has_more: true, next_cursor: { at: '-infinity', idx: '1', round: 1000 } }))
 })
+
+test('legacy win summary parser keeps exact large totals and rejects inconsistent counts', async () => {
+  const { parseLegacyWinSummary, formatWinPrizeTotal } = await import('../../src/features/members/legacyHistory.ts')
+  const ok = { rank_counts: { 1: 2, 2: 0, 3: 1, 4: 0, 5: 1 }, total_count: 4, total_prize: '9007201256245000', removed_count: 1 }
+  assert.deepEqual(parseLegacyWinSummary(ok), ok)
+  assert.equal(formatWinPrizeTotal(ok.total_prize), '9,007,201,256,245,000원')
+  assert.equal(formatWinPrizeTotal('0'), '0원')
+  assert.throws(() => parseLegacyWinSummary({ ...ok, total_count: 5 }))
+  assert.throws(() => parseLegacyWinSummary({ ...ok, removed_count: 5 }))
+  assert.throws(() => parseLegacyWinSummary({ ...ok, rank_counts: { ...ok.rank_counts, 2: -1 } }))
+  assert.throws(() => parseLegacyWinSummary({ ...ok, total_prize: '-1' }))
+  assert.throws(() => parseLegacyWinSummary({ ...ok, total_prize: 12 }))
+})

@@ -1249,6 +1249,7 @@ export type Database = {
       app_touch_login: { Args: never; Returns: undefined }
       canonical_inflow_type: { Args: { p_value: string }; Returns: string }
       legacy_815_source_datetime: { Args: { p_raw: string }; Returns: string }
+      member_legacy_win_summary: { Args: { p_member_id: string }; Returns: Json }
       member_legacy_history_page: {
         Args: {
           p_before_at?: string

@@ -3,7 +3,7 @@
 //       쓰기는 mock 의 mutateDb 부수효과(§8)를 supabase 호출로 1:1 미러링한다.
 import { type SupabaseClient } from '@supabase/supabase-js'
 import type { Database as LegacyDatabase } from '@/types/legacy815.generated'
-import { parseLegacyHistoryPage, type LegacyHistoryCursor, type LegacyHistoryKind } from './legacyHistory'
+import { parseLegacyHistoryPage, parseLegacyWinSummary, type LegacyHistoryCursor, type LegacyHistoryKind } from './legacyHistory'
 import type { AdminResetMembersArgs, Assignment, CallAiAnalysis, CallRecording, Member, MemberStatus, Payment, Product, SiteSettings, SmsSend, SmsTemplate } from '@/types/db'
 import { supabase } from '@/lib/supabase'
 import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/lib/siteScope'
@@ -39,6 +39,13 @@ export async function fetchLegacyMemberHistory(memberId: string, kind: LegacyHis
   })
   if (error) throw new Error('과거 이력을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
   return parseLegacyHistoryPage(kind, data)
+}
+
+export async function fetchLegacyWinSummary(memberId: string) {
+  const client = sb() as SupabaseClient<LegacyDatabase>
+  const { data, error } = await client.rpc('member_legacy_win_summary', { p_member_id: memberId })
+  if (error) throw new Error('당첨기록 요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+  return parseLegacyWinSummary(data)
 }
 
 // 상태 변경 시 파생 불리언 플래그(스키마 컬럼)를 함께 갱신.

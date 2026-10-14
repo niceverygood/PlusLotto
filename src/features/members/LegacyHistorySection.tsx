@@ -1,20 +1,22 @@
 import { useState } from 'react'
 import { Button, LottoBalls, Tabs } from '@/design-system/components'
-import { krw } from '@/lib/format'
+import { krw, num } from '@/lib/format'
 import { legacySiteLabel, type LegacyHistorySite } from '@/lib/legacySites'
-import { useLegacyMemberHistory } from './api'
-import { formatLegacySourceDatetime, type LegacyHistoryKind } from './legacyHistory'
+import { useLegacyMemberHistory, useLegacyWinSummary } from './api'
+import { formatLegacySourceDatetime, formatWinPrizeTotal, type LegacyHistoryKind, type LegacyWinSummary } from './legacyHistory'
 
 const tabs = [{ key: 'memo', label: '상담메모' }, { key: 'sms', label: '문자기록' }, { key: 'win', label: '당첨기록' }]
 
 export function LegacyHistorySection({ memberId, sourceSite }: { memberId: string; sourceSite: LegacyHistorySite }) {
   const [kind, setKind] = useState<LegacyHistoryKind>('memo')
   const query = useLegacyMemberHistory(memberId, kind)
+  const summary = useLegacyWinSummary(memberId, kind === 'win')
   const rows = query.data?.pages.flatMap((page) => page.rows) ?? []
   const siteLabel = legacySiteLabel(sourceSite)
   return <section aria-label={`${siteLabel} 이전 전산 이력`} className="space-y-4">
     <p className="text-sm text-gray-500">{siteLabel} 이전 전산에 기록된 내용입니다. 아래 시각은 원본 기록 시각이며, 문자 접수·도달 여부와 다를 수 있습니다.</p>
     <Tabs tabs={tabs} value={kind} onChange={(value) => setKind(value as LegacyHistoryKind)} />
+    {kind === 'win' && <WinSummaryBox query={summary} />}
     {query.isPending && <p role="status" className="py-6 text-center text-sm text-gray-500">이력을 불러오는 중입니다.</p>}
     {query.isError && <div role="alert" className="rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
       과거 이력을 불러오지 못했습니다.
@@ -35,4 +37,31 @@ export function LegacyHistorySection({ memberId, sourceSite }: { memberId: strin
     </article>)}</div>
     {query.hasNextPage && <Button variant="sec" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{query.isFetchingNextPage ? '불러오는 중…' : '이전 기록 더 보기'}</Button>}
   </section>
+}
+
+const RANKS = [1, 2, 3, 4, 5] as const
+
+/** 이전 전산 당첨기록 요약표(현장 10/14) — "1등 0개 / … / 전체 당첨금 0원". 0개인 등수도 모두 보여 준다. */
+function WinSummaryBox({ query }: { query: { data?: LegacyWinSummary; isPending: boolean; isError: boolean; refetch: () => unknown } }) {
+  if (query.isPending) return <p role="status" className="text-sm text-gray-500">당첨기록 요약을 불러오는 중입니다.</p>
+  if (query.isError || !query.data) return <div role="alert" className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+    당첨기록 요약을 불러오지 못했습니다.
+    <Button variant="sec" size="sm" className="ml-3" onClick={() => void query.refetch()}>다시 시도</Button>
+  </div>
+  const s = query.data
+  return <div aria-label="당첨기록 요약" className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <dl className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+      {RANKS.map((r) => <div key={r}>
+        <dt className="text-xs text-gray-500">{r}등</dt>
+        <dd className="font-mono text-[15px] font-bold tabular-nums text-ink-800">{num(s.rank_counts[r])}개</dd>
+      </div>)}
+      <div className="col-span-3 sm:col-span-1">
+        <dt className="text-xs text-gray-500">전체 당첨금</dt>
+        <dd className="font-mono text-[15px] font-bold tabular-nums text-ink-800">{formatWinPrizeTotal(s.total_prize)}</dd>
+      </div>
+    </dl>
+    {s.removed_count > 0 && <p className="mt-2 text-xs text-gray-500">
+      원본 전산에서 삭제 표시된 {num(s.removed_count)}건이 포함된 합계입니다(아래 목록과 같은 기준).
+    </p>}
+  </div>
 }

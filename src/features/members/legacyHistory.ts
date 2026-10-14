@@ -58,3 +58,31 @@ export function parseLegacyHistoryPage(kind: LegacyHistoryKind, input: unknown):
   if (new Set(keys).size !== rows.length) throw new Error('과거 이력에 중복된 원본 키가 있습니다.')
   return { rows, hasMore: page.has_more, nextCursor: page.has_more ? page.next_cursor : null }
 }
+
+/** 이전 전산 당첨기록 요약(현장 10/14) — member_legacy_win_summary RPC 응답. */
+const countSchema = z.number().int().min(0)
+const winSummarySchema = z.object({
+  rank_counts: z.object({ 1: countSchema, 2: countSchema, 3: countSchema, 4: countSchema, 5: countSchema }),
+  total_count: countSchema,
+  // bigint 합계라 안전 정수를 넘을 수 있어 문자열 그대로 받고 표시할 때 BigInt 로 다룬다.
+  total_prize: z.string().regex(/^\d+$/),
+  removed_count: countSchema,
+})
+export type LegacyWinSummary = z.infer<typeof winSummarySchema>
+export const EMPTY_LEGACY_WIN_SUMMARY: LegacyWinSummary = {
+  rank_counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, total_count: 0, total_prize: '0', removed_count: 0,
+}
+
+export function parseLegacyWinSummary(input: unknown): LegacyWinSummary {
+  const summary = winSummarySchema.parse(input)
+  const ranks = [1, 2, 3, 4, 5] as const
+  if (ranks.reduce((sum, r) => sum + summary.rank_counts[r], 0) !== summary.total_count)
+    throw new Error('당첨기록 요약의 건수가 맞지 않습니다.')
+  if (summary.removed_count > summary.total_count) throw new Error('당첨기록 요약의 건수가 맞지 않습니다.')
+  return summary
+}
+
+/** "1,234,567원" — 안전 정수를 넘는 합계도 자릿수 손실 없이 표시한다. */
+export function formatWinPrizeTotal(totalPrize: string): string {
+  return `${BigInt(totalPrize).toLocaleString('ko-KR')}원`
+}
