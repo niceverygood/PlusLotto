@@ -115,6 +115,8 @@ export interface PaymentsQuery {
   method?: PaymentMethod | ''
   pg?: string
   staffId?: string
+  secondaryStaffId?: string // 결제 회원의 2차담당자(실장) — 현장 10/16
+  hasSecondary?: boolean // false = 2차담당 미지정 회원의 결제
   dateFrom?: string // 결제일 범위(YYYY-MM-DD, 포함) — 현장 피드백. paid_at 없으면 created_at 기준
   dateTo?: string
   page: number
@@ -135,12 +137,15 @@ function paymentDateStr(p: PaymentRow): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function matchFilters(p: PaymentRow, q: PaymentsQuery): boolean {
+function matchFilters(p: PaymentRow, q: PaymentsQuery, members: Record<string, Member>): boolean {
   if (q.status && q.status !== 'all' && p.status !== q.status) return false
   if (q.grade && p.product?.grade_granted !== q.grade) return false
   if (q.method && p.method !== q.method) return false
   if (q.pg && p.pg_provider !== q.pg) return false
   if (q.staffId && p.staff_id !== q.staffId) return false
+  const secondary = members[p.member_id]?.secondary_staff_id ?? null
+  if (q.secondaryStaffId && secondary !== q.secondaryStaffId) return false
+  if (q.hasSecondary !== undefined && (secondary !== null) !== q.hasSecondary) return false
   if (q.dateFrom || q.dateTo) {
     const d = paymentDateStr(p)
     if (q.dateFrom && d < q.dateFrom) return false
@@ -170,7 +175,7 @@ export function usePayments(q: PaymentsQuery) {
       const members = indexBy(db.members)
       const products = indexBy(db.products)
       const scoped = scopePayments(db.payments, members, user).filter((p) => matchesSiteScope(members[p.member_id]?.meta, siteScope))
-      const rows = scoped.map((p) => enrich(p, members, products)).filter((p) => matchFilters(p, q))
+      const rows = scoped.map((p) => enrich(p, members, products)).filter((p) => matchFilters(p, q, members))
       const sorted = q.sortId
         ? sortRows(rows, q.sortId, q.sortDesc ?? false)
         : sortRows(rows, 'created_at', true)

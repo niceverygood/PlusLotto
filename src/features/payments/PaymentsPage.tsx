@@ -1,4 +1,4 @@
-// 결제 목록 (CLAUDE §6·§8). 상태 탭(전체/대기/승인/실패/취소) + FilterBar(검색·결제수단·PG·담당,
+// 결제 목록 (CLAUDE §6·§8). 상태 탭(전체/대기/승인/실패/취소) + FilterBar(검색·결제수단·PG·담당·2차담당,
 // URL 동기화) + DataTable(서버 정렬·페이지) + 행 클릭 → 상세 Drawer(승인/PG취소). 수기결제 등록 링크.
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -69,6 +69,7 @@ export function PaymentsPage() {
   const gradeF = gradeRaw && PRODUCT_GRADES.includes(gradeRaw) ? gradeRaw : undefined
   const pgF = get('pg')
   const staffF = get('staff')
+  const secondaryF = get('sec') // 2차담당자(실장) — 현장 10/16, 이용자 목록과 같은 키. '__none' = 미지정
   const dateFromF = get('rf') // 결제일 범위(현장 피드백)
   const dateToF = get('rt')
 
@@ -79,6 +80,8 @@ export function PaymentsPage() {
     method: methodF ?? '',
     pg: pgF,
     staffId: staffF,
+    secondaryStaffId: secondaryF && secondaryF !== '__none' ? secondaryF : undefined,
+    hasSecondary: secondaryF === '__none' ? false : undefined,
     dateFrom: dateFromF,
     dateTo: dateToF,
     page,
@@ -128,6 +131,10 @@ export function PaymentsPage() {
   if (staffF) {
     const name = staff.find((s) => s.id === staffF)?.name ?? staffF
     chips.push({ key: 'staff', label: `담당: ${name}`, onRemove: () => remove('staff') })
+  }
+  if (secondaryF) {
+    const name = secondaryF === '__none' ? '미지정' : staff.find((s) => s.id === secondaryF)?.name ?? secondaryF
+    chips.push({ key: 'sec', label: `2차담당: ${name}`, onRemove: () => remove('sec') })
   }
   if (dateFromF || dateToF)
     chips.push({
@@ -217,6 +224,24 @@ export function PaymentsPage() {
                   {s.name}
                 </option>
               ))}
+            </select>
+          </Field>
+          {/* 2차담당자(실장) — 현장 10/16 "결제내역 페이지에서도 2차담당자 필터". 결제 회원의 2차담당 기준 */}
+          <Field label="2차담당">
+            <select
+              className={selectCls}
+              value={secondaryF ?? ''}
+              onChange={(e) => set('sec', e.target.value || null, { resetPage: true })}
+            >
+              <option value="">전체</option>
+              <option value="__none">미지정</option>
+              {staff
+                .filter((s) => s.role === 'leader')
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.is_active ? '' : ' (비활성)'}
+                  </option>
+                ))}
             </select>
           </Field>
           {/* 결제일 범위(현장 피드백) — 승인일(paid_at) 기준, 미승인 건은 등록일 */}
