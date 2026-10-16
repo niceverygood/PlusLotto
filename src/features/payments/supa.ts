@@ -52,6 +52,8 @@ export async function fetchPaymentsPage(q: PaymentsQuery, siteScope: SiteScope):
     method: q.method,
     pg: q.pg,
     staffId: q.staffId,
+    secondaryStaffId: q.secondaryStaffId,
+    hasSecondary: q.hasSecondary,
     dateFrom: q.dateFrom,
     dateTo: q.dateTo,
   }
