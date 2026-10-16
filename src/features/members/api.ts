@@ -14,6 +14,7 @@ import { matchesSiteScope, rpcSourceSite, memberSite, type SiteScope } from '@/l
 import { useSiteScope } from '@/lib/siteScopeStore'
 import { staffById, staffRoleById, assignableReps } from '@/lib/staff'
 import { useCurrentUser, type CurrentUser } from '@/lib/auth'
+import { canAssignSecondaryStaff } from '@/lib/permissions'
 import { callReservationAlertsKey } from '@/lib/callReservations'
 import { memberKeys, operationalKeys, paymentKeys, revenueKeys, smsTemplateKeys } from '@/lib/queryKeys'
 import { recoSmsBody, renderSms, smsTypeForTemplate } from '@/lib/sms'
@@ -1146,13 +1147,13 @@ export function useBulkImportMembers() {
 }
 
 /** 담당자 수동 배정. members.assigned_staff_id/team_id 갱신 + assignments 로그(§8). */
-/** 2차담당자(실장) 지정·해제(현장 10/14). staffId=null 이면 해제. 최고관리자만(1차 배정과 같은 기준). */
+/** 2차담당자(실장) 지정·해제(현장 10/14). staffId=null 이면 해제. 실장 이상(현장 10/16, canAssignSecondaryStaff). */
 export function useAssignSecondaryStaff() {
   const user = useCurrentUser()
   const invalidate = useInvalidateMembers()
   return useMutation({
     mutationFn: async (v: { ids: string[]; staffId: string | null }) => {
-      if (user?.role !== 'admin') throw new Error('2차담당자 지정은 최고관리자만 가능합니다.')
+      if (!user || !canAssignSecondaryStaff(user.role)) throw new Error('2차담당자 지정은 실장 이상만 가능합니다.')
       if (dataSource === 'supabase') {
         await supa.assignSecondaryStaff(v.ids, v.staffId, user.id)
         return v.ids

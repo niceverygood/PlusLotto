@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { filterMembers } from '../../src/features/members/views.ts'
+import { canAssignSecondaryStaff } from '../../src/lib/permissions.ts'
 import type { Member } from '../../src/types/db.ts'
 
 // 2차담당자(실장) 필터 — 현장 10/14 "필터링에서도 2차담당자로 검색".
@@ -27,4 +28,12 @@ test('hasSecondary separates members with and without a secondary (missing field
   assert.deepEqual(ids({ hasSecondary: true }), ['a', 'b'])
   assert.deepEqual(ids({ hasSecondary: false }), ['c', 'd'])
   assert.deepEqual(ids({}), ['a', 'b', 'c', 'd'])
+})
+
+test('secondary assignee can be changed by leader and above, not by rep (현장 10/16)', () => {
+  assert.equal(canAssignSecondaryStaff('admin'), true)
+  assert.equal(canAssignSecondaryStaff('manager'), true)
+  assert.equal(canAssignSecondaryStaff('leader'), true)
+  assert.equal(canAssignSecondaryStaff('rep'), false)
+  assert.equal(canAssignSecondaryStaff(null), false)
 })

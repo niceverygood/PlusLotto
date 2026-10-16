@@ -58,6 +58,13 @@ export function canExportMembers(role: Role | null): boolean {
   return role === 'leader' || role === 'manager' || role === 'admin'
 }
 
+// 2차담당자(실장) 지정·해제(현장 10/16, 정의현 차장 — "실장급 아이디 권한에서 2차담당자 변경할 수 있도록").
+// 실장(leader) 이상 = leader·manager·admin. 1차담당(디비 배분)은 계속 최고관리자만이다.
+// DB 트리거(enforce_member_admin_ops)가 같은 기준으로 막는다 — 범위를 바꾸면 양쪽을 함께 고친다.
+export function canAssignSecondaryStaff(role: Role | null): boolean {
+  return role === 'leader' || role === 'manager' || role === 'admin'
+}
+
 // 메뉴 노출 기본 매트릭스 (CLAUDE §5). 권한관리(/admins/roles)에서 편집 → DB nav_access 로 영속.
 // 데이터 접근은 RLS(lib/rls/policies.sql)로 이중 통제.
 // TODO(live-verify): `08 권한관리` 화면 미확인 → 아래는 합리적 기본값. ASSUMPTIONS 기록.

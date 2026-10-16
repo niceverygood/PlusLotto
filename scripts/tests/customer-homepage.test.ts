@@ -4,9 +4,9 @@ import { CUSTOMER_SITES, customerSiteTiers, resolveCustomerSite } from '../../sr
 import { loadPortalSession, PORTAL_SESSION_KEY, savePortalSession } from '../../src/lib/portalScope'
 import { membershipTermsPath, membershipTermsSourceSite } from '../../src/lib/membership'
 
-test('only the four supplied domains select an imported customer site', () => {
+test('only the supplied domains select an imported customer site', () => {
   const expected = [
-    ['815korean.co.kr', 'lotto815'], ['infolotto.co.kr', 'infolotto'],
+    ['815korean.co.kr', 'lotto815'], ['infolotto.kr', 'infolotto'], ['infolotto.co.kr', 'infolotto'],
     ['ilhanglotto.co.kr', 'cplotto'], ['premiumlotto.co.kr', 'best'],
   ]
   for (const [host, key] of expected) {
@@ -24,7 +24,17 @@ test('only the four supplied domains select an imported customer site', () => {
 test('a separate 88 deployment never adopts the PlusLotto tenant allowlist', () => {
   for (const site of CUSTOMER_SITES) {
     assert.equal(resolveCustomerSite(site.hostname, '88로또'), null)
+    for (const alias of site.aliases ?? []) assert.equal(resolveCustomerSite(alias, '88로또'), null)
     assert.equal(resolveCustomerSite(`${site.key}.localhost`, '88로또', true), null)
+  }
+})
+
+test('infolotto now advertises infolotto.kr and keeps the old .co.kr address working (현장 10/16)', () => {
+  const info = CUSTOMER_SITES.find((site) => site.key === 'infolotto')
+  assert.equal(info?.hostname, 'infolotto.kr')
+  assert.deepEqual(info?.aliases, ['infolotto.co.kr'])
+  for (const invalid of ['infolotto.kr.co', 'admin.infolotto.kr', 'infolotto.com']) {
+    assert.equal(resolveCustomerSite(invalid, '플러스로또'), null)
   }
 })
 

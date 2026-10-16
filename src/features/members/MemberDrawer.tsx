@@ -19,7 +19,7 @@ import { GRADE_LABEL, PAYMENT_METHOD_LABEL, SMS_TYPE_LABEL } from '@/design-syst
 import { date, datetime, krw } from '@/lib/format'
 import { useStaff, useTeams } from '@/lib/staff'
 import { useCurrentUser, useRole } from '@/lib/auth'
-import { canAmendPayment, canViewCallRecordings } from '@/lib/permissions'
+import { canAmendPayment, canAssignSecondaryStaff, canViewCallRecordings } from '@/lib/permissions'
 import { usePaymentDrawerStore } from '@/lib/paymentDrawerStore'
 import { isEndDatePast } from '@/lib/memberExpiry'
 import { recoEligibility } from '@/lib/recoEligibility'
@@ -480,10 +480,10 @@ export function MemberDrawer({
             </span>
           )}
         </label>
-        {/* 2차담당자(실장) — 현장 10/14. 1차와 같이 최고관리자만 변경. */}
+        {/* 2차담당자(실장) — 현장 10/14. 변경은 실장 이상(현장 10/16, canAssignSecondaryStaff). */}
         <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
           2차담당
-          {role === 'admin' ? (
+          {canAssignSecondaryStaff(role) ? (
             <select
               className={selectCls}
               value={member.secondary_staff_id ?? ''}
@@ -852,15 +852,15 @@ export function MemberDrawer({
                     value={payProduct}
                     onChange={(e) => {
                       setPayProduct(e.target.value)
-                      // 금액 기본값 = 상품가(수기 수정 가능, <결제> 1)
+                      // 금액 기본값 = 상품가(수기 수정 가능, <결제> 1). 가격 미정 상품(0원, 예: 루비)은 비워 직접 입력.
                       const p = activeProducts.find((x) => x.id === e.target.value)
-                      setPayAmount(p ? String(p.price) : '')
+                      setPayAmount(p && p.price > 0 ? String(p.price) : '')
                     }}
                   >
                     <option value="">상품 선택</option>
                     {activeProducts.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} · {krw(p.price)}
+                        {p.name} · {p.price > 0 ? krw(p.price) : '금액 직접입력'}
                       </option>
                     ))}
                   </select>
@@ -923,7 +923,7 @@ export function MemberDrawer({
                 </div>
                 <p className="mt-1.5 text-[11px] text-gray-500">
                   금액은 상품가가 기본이며 수기로 수정할 수 있습니다
-                  {Number(payAmount) > 0 && selected && Number(payAmount) !== selected.price
+                  {Number(payAmount) > 0 && selected && selected.price > 0 && Number(payAmount) !== selected.price
                     ? ` (현재 ${krw(Number(payAmount))} — 상품가 ${krw(selected.price)}와 다름)`
                     : ''}
                   . 요청 시 ‘대기’ 결제가 생성되고, 최고관리자/관리자가 결제 모듈에서 승인합니다.

@@ -27,7 +27,7 @@ export interface MemberColumnsCtx {
   onChangeStaff: (id: string, staffId: string) => void // '' = 미지정(리셋)
   secondaryOptions: InlineSelectOption[] // 2차담당(실장) 셀렉트 옵션([미지정] 포함) — 현장 10/14
   onChangeSecondary: (id: string, staffId: string) => void // '' = 2차 해제
-  canEditSecondary: boolean // 2차담당 변경 권한 — 최고관리자만(DB 트리거와 같은 기준)
+  canEditSecondary: boolean // 2차담당 변경 권한 — 실장 이상(lib/permissions canAssignSecondaryStaff, DB 트리거와 같은 기준)
   onChangeConsult: (id: string, consult: string) => void // 상담상태 인라인 변경
 }
 

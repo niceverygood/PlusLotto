@@ -8,6 +8,7 @@ import { Button, DataTable, FilterBar, PageHeader, Tabs, type TabItem } from '@/
 import { usePageMeta } from '@/app/uiStore'
 import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useRole } from '@/lib/auth'
+import { canAssignSecondaryStaff } from '@/lib/permissions'
 import { useSiteScope } from '@/lib/siteScopeStore'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
@@ -88,7 +89,7 @@ export function MyCustomersPage() {
         onChangeStaff: (id, staffId) =>
           staffId ? assignStaff.mutate({ ids: [id], staffId }) : resetAssign.mutate({ ids: [id] }),
         secondaryOptions,
-        canEditSecondary: role === 'admin',
+        canEditSecondary: canAssignSecondaryStaff(role),
         onChangeSecondary: (id, staffId) => assignSecondary.mutate({ ids: [id], staffId: staffId || null }),
         onChangeConsult: (id, consult) =>
           updateMember.mutate({ id, patch: { consult_status: consult || null } }),
