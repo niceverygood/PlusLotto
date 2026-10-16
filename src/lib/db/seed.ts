@@ -733,8 +733,8 @@ export function buildSeed(): DbShape {
       { id: 'prod-gold', name: '골드 1개월', price: 33000, duration_months: 1, grade_granted: 'gold', is_active: true },
       // 상품명 = 실사용 고객 홈페이지 등급명(현장 피드백 7/21) — goldp→실버·vip→골드·royal→다이아.
       { id: 'prod-goldp', name: '실버', price: 55000, duration_months: 1, grade_granted: 'goldp', is_active: true },
-      // 루비(현장 10/16) — 가격 미정이라 0원(금액 직접입력). 운영 DB 는 20261016110000_ruby_product.sql.
-      { id: 'prod-ruby', name: '루비', price: 0, duration_months: 1, grade_granted: 'ruby', is_active: true },
+      // 루비(현장 10/16 문서 '루비 (1년 / 390,000원)'). 운영 DB 는 20261016110000_ruby_product.sql.
+      { id: 'prod-ruby', name: '루비', price: 390000, duration_months: 12, grade_granted: 'ruby', is_active: true },
       { id: 'prod-vip', name: '골드', price: 132000, duration_months: 3, grade_granted: 'vip', is_active: true },
       { id: 'prod-royal', name: '다이아', price: 264000, duration_months: 6, grade_granted: 'royal', is_active: true },
     ],

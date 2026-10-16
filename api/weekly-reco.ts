@@ -572,13 +572,13 @@ const SILVER_FILTERS: PatentFilters = {
 }
 const GOLD_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true, carryoverMax2: true }
 const DIAMOND_FILTERS: PatentFilters = { ...GOLD_FILTERS, lastDigitMax2: true }
-// 루비(10/12 추가, 실버와 골드 사이) — 문서에 루비 기준이 없어 실버·골드의 중간값으로 정했다.
-// 분석 창 20회차·제외 10개·필터는 실버 + 연번제한·구간균등(이월수제한은 골드부터).
-// TODO(live-verify): 루비 제외수 개수·분석 창·필터 현장 확정 후 이 한 줄만 바꾼다 (ASSUMPTIONS).
-const RUBY_FILTERS: PatentFilters = { ...SILVER_FILTERS, consecutivePairMax2: true, segmentMax3: true }
+// 루비(10/12 추가, 실버와 골드 사이) — 현장 10/16 "루비등급 제외수 로직" 문서(1년 390,000원, <제외수 9>):
+// 최근 10회차, 자동 제외 5개(①과열+②장기미출현 총점 순), 필터는 번호합(100~175)·홀짝(3:3/4:2/2:4) 2가지,
+// ③ 동점이면 10회차씩 늘려 재계산 — 실버와 같은 모델에 전부 자동 제외 개수만 9개다.
+const RUBY_FILTERS: PatentFilters = { ...SILVER_FILTERS }
 const PATENT_CONFIG: Record<PatentGrade, PatentGradeConfig> = {
   goldp: { window: 10, excludeCount: 5, fullAutoExcludeCount: 7, filters: SILVER_FILTERS }, // 실버
-  ruby: { window: 20, excludeCount: 6, fullAutoExcludeCount: 10, filters: RUBY_FILTERS }, // 루비
+  ruby: { window: 10, excludeCount: 5, fullAutoExcludeCount: 9, filters: RUBY_FILTERS }, // 루비
   vip: { window: 30, excludeCount: 8, fullAutoExcludeCount: 12, filters: GOLD_FILTERS }, // 골드
   royal: { window: 'all', excludeCount: 12, fullAutoExcludeCount: 15, filters: DIAMOND_FILTERS }, // 다이아
 }

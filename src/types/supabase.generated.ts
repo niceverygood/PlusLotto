@@ -210,11 +210,13 @@ export type Database = {
           answered_at: string | null
           answered_by: string | null
           author_name: string
+          author_phone: string | null
           body: string
           category: string
           created_at: string
           id: string
           member_id: string | null
+          source_site: string | null
           status: Database["public"]["Enums"]["inquiry_status"]
           title: string
         }
@@ -223,11 +225,13 @@ export type Database = {
           answered_at?: string | null
           answered_by?: string | null
           author_name?: string
+          author_phone?: string | null
           body?: string
           category?: string
           created_at?: string
-          id: string
+          id?: string
           member_id?: string | null
+          source_site?: string | null
           status?: Database["public"]["Enums"]["inquiry_status"]
           title: string
         }
@@ -236,11 +240,13 @@ export type Database = {
           answered_at?: string | null
           answered_by?: string | null
           author_name?: string
+          author_phone?: string | null
           body?: string
           category?: string
           created_at?: string
           id?: string
           member_id?: string | null
+          source_site?: string | null
           status?: Database["public"]["Enums"]["inquiry_status"]
           title?: string
         }
@@ -1281,6 +1287,26 @@ export type Database = {
       }
       portal_membership_tiers: { Args: never; Returns: Json }
       portal_site_public: { Args: never; Returns: Json }
+      portal_inquiry_board: {
+        Args: { p_limit?: number; p_source_site: string }
+        Returns: Json
+      }
+      portal_my_inquiries: {
+        Args: { p_password: string; p_phone: string; p_source_site: string }
+        Returns: Json
+      }
+      portal_submit_inquiry: {
+        Args: {
+          p_body: string
+          p_category: string
+          p_name: string
+          p_password?: string
+          p_phone: string
+          p_source_site: string
+          p_title: string
+        }
+        Returns: Json
+      }
       portal_terms_posts: {
         Args: { p_grade?: string; p_source_site: string }
         Returns: Json

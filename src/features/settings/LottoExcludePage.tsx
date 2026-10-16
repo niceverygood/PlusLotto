@@ -322,7 +322,7 @@ export function LottoExcludePage() {
         {/* 김형준 이사 결정(10/8): 실버·골드·다이아 제외수는 전부 자동 선정, 매주 직접 입력은 없앤다. 루비(10/12 추가)도 같다. */}
         <div className="mb-3 rounded-md border border-accent-100 bg-accent-50 px-3 py-2 text-[12.5px] leading-relaxed text-gray-700">
           <b className="text-ink-800">실버·루비·골드·다이아 제외수는 {PATENT_FULL_AUTO_FROM_ROUND}회부터 전산이 자동 선정합니다.</b>{' '}
-          특허 제외수 로직의 점수 순위대로 실버 7개·루비 10개·골드 12개·다이아 15개를 매주 자동으로 고릅니다. 이 화면에서 입력한
+          특허 제외수 로직의 점수 순위대로 실버 7개·루비 9개·골드 12개·다이아 15개를 매주 자동으로 고릅니다. 이 화면에서 입력한
           ‘제외수’는 이 네 등급에 적용되지 않으며, ‘고정수’는 계속 적용됩니다. {PATENT_FULL_AUTO_FROM_ROUND - 1}회까지는 기존대로
           적용됩니다.
         </div>
