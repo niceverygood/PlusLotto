@@ -229,6 +229,8 @@ export interface Inquiry {
   answered_by: string | null // staff.id
   answered_at: string | null
   created_at: string
+  source_site?: string | null // 접수된 고객 홈페이지(현장 10/16, 이전 행은 없음)
+  author_phone?: string | null // 작성자 연락처(숫자형, 비밀글 열람 확인용)
 }
 
 export interface Faq {

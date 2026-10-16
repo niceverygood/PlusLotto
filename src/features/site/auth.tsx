@@ -87,8 +87,8 @@ function saveSession(m: SiteMember | null): void {
 // 이유: ① 고객 사이트는 anon 키 → members INSERT 는 RLS(0002: members 정책 to authenticated)에
 //   걸려 애초에 불가. ② 설령 authenticated 라도 0003 트리거(members_admin_ops)가 비-admin INSERT 차단.
 //   → 셀프 가입은 불가하므로, 운영자가 후처리하도록 '가입문의'를 inquiries 에 남기는 폴백.
-// 그런데 inquiries RLS 도 to authenticated 라 anon insert 가 막힐 가능성이 높다.
-//   막히면 graceful 에러(전화 가입 안내)로 폴백한다 — 화면이 죽지 않게.
+// 접수는 RPC portal_submit_inquiry 로만 한다(현장 10/16 — anon 직접 INSERT 는 id 누락으로 늘 실패했고
+//   지금은 닫혀 있다). 비밀번호 없이 접수해 홈페이지에서 열람 대상이 아니다. 실패하면 전화 가입 안내로 폴백.
 async function doSignup(input: SignupInput): Promise<AuthResult> {
   const name = input.name.trim()
   const d = digits(input.phone)
@@ -106,15 +106,15 @@ async function doSignup(input: SignupInput): Promise<AuthResult> {
 
   if (dataSource === 'supabase' && supabase) {
     try {
-      const { error } = await supabase.from('inquiries').insert({
-        member_id: null,
-        author_name: name,
-        category: '가입문의',
-        title: '홈페이지 회원가입 신청',
-        body,
-        status: 'open',
+      const { error } = await supabase.rpc('portal_submit_inquiry', {
+        p_source_site: CUSTOMER_LOGIN_SITE ?? 'pluslotto',
+        p_name: name,
+        p_phone: d,
+        p_category: '가입문의',
+        p_title: '홈페이지 회원가입 신청',
+        p_body: body,
       })
-      // RLS(anon) 거부 등 → graceful 폴백
+      // 검증·과다 접수 거부 등 → graceful 폴백
       if (error) {
         return {
           ok: false,

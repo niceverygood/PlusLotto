@@ -17,7 +17,7 @@
 //
 //   InquiryInput = { name:string; phone?:string; category?:string; title:string; body:string }
 // ─────────────────────────────────────────────────────────────────────────
-import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import type { BankTransferSettings, BusinessInfo, Faq, Grade, LottoRound, MembershipTier, Notice, PromoSlide, TermsPost, WinnerStats } from '@/types/db'
 import { dataSource, supabase } from '@/lib/supabase'
 import { readDb } from '@/lib/db/store'
@@ -192,14 +192,18 @@ export function useFaqs(): UseQueryResult<Faq[]> {
   })
 }
 
-// ── 1:1 문의(고객센터) 제출 ───────────────────────────────────────────────
+// ── 1:1 문의(고객센터) — 접수·비밀글 (현장 10/16) ─────────────────────────────
+// anon 은 inquiries 를 직접 못 쓰고 못 읽는다. 사이트·길이·연락처를 검증하는 RPC 로만 접수하고,
+// 작성자는 연락처 + 접수 때 정한 비밀번호로 자기 글과 답변만 본다. 목록은 가린 행(이름·날짜·상태)뿐.
 export interface InquiryInput {
   name: string
-  phone?: string
+  phone: string
   /** 문의 유형(결제/번호/계정/기타 등). 미지정 시 '기타'. */
   category?: string
   title: string
   body: string
+  /** 비밀글 열람 비밀번호(4~20자). */
+  password: string
 }
 
 export interface SubmitInquiryResult {
@@ -207,48 +211,61 @@ export interface SubmitInquiryResult {
   error?: string
 }
 
-/**
- * inquiries insert 뮤테이션. anon RLS(0002: inquiries to authenticated)로 막힐 수 있어
- * 실패 시 graceful 에러 메시지를 반환(throw 하지 않음 — UI 가 안내문구로 처리).
- */
+export interface InquiryBoardRow {
+  id: string
+  author: string // 가린 이름(홍*동)
+  status: 'open' | 'answered'
+  created_at: string
+}
+
+export interface MyInquiry {
+  id: string
+  category: string
+  title: string
+  body: string
+  status: 'open' | 'answered'
+  answer: string | null
+  answered_at: string | null
+  created_at: string
+}
+
+const INQUIRY_SITE: PortalSourceSite = CUSTOMER_SITE?.key ?? 'pluslotto'
+const INQUIRY_FAIL = '문의 접수가 일시적으로 어렵습니다. 고객센터 전화로 문의해주시면 도와드리겠습니다.'
+
+/** 실패 시 throw 하지 않고 안내문구를 돌려준다(UI 가 그대로 표시). */
 export function useSubmitInquiry() {
+  const qc = useQueryClient()
   return useMutation<SubmitInquiryResult, never, InquiryInput>({
     mutationFn: async (input): Promise<SubmitInquiryResult> => {
       const name = input.name.trim()
       const title = input.title.trim()
       const body = input.body.trim()
+      const phone = digits(input.phone)
+      const password = input.password.trim()
       if (!name) return { ok: false, error: '이름을 입력해주세요.' }
+      if (phone.length < 9) return { ok: false, error: '연락처를 정확히 입력해주세요.' }
+      if (password.length < 4 || password.length > 20) return { ok: false, error: '비밀번호는 4~20자로 입력해주세요.' }
       if (!title) return { ok: false, error: '제목을 입력해주세요.' }
       if (!body) return { ok: false, error: '문의 내용을 입력해주세요.' }
 
-      const phone = input.phone ? digits(input.phone) : ''
-      const contactBody = phone ? `${body}\n\n연락처: ${phone}` : body
+      // 직원 화면은 본문만 보므로 연락처·가입 서비스를 본문 끝에 함께 남긴다(기존 형식 유지).
+      const contactBody = `${body}\n\n연락처: ${phone}`
       const fullBody = CUSTOMER_SITE ? `${contactBody}\n\n가입 서비스: ${CUSTOMER_BRAND.name}` : contactBody
 
       if (dataSource === 'supabase' && supabase) {
         try {
-          const { error } = await supabase.from('inquiries').insert({
-            member_id: null,
-            author_name: name,
-            category: input.category?.trim() || '기타',
-            title,
-            body: fullBody,
-            status: 'open',
+          const { error } = await supabase.rpc('portal_submit_inquiry', {
+            p_source_site: INQUIRY_SITE, p_name: name, p_phone: phone,
+            p_category: input.category?.trim() || '기타', p_title: title, p_body: fullBody, p_password: password,
           })
           if (error) {
-            return {
-              ok: false,
-              error:
-                '문의 접수가 일시적으로 어렵습니다. 고객센터 전화로 문의해주시면 도와드리겠습니다.',
-            }
+            if (error.code === '54000') return { ok: false, error: '짧은 시간에 문의가 많이 접수되었습니다. 잠시 후 다시 시도해주세요.' }
+            return { ok: false, error: INQUIRY_FAIL }
           }
+          void qc.invalidateQueries({ queryKey: siteKeys.inquiryBoard() })
           return { ok: true }
         } catch {
-          return {
-            ok: false,
-            error:
-              '문의 접수가 일시적으로 어렵습니다. 고객센터 전화로 문의해주시면 도와드리겠습니다.',
-          }
+          return { ok: false, error: INQUIRY_FAIL }
         }
       }
 
@@ -256,4 +273,51 @@ export function useSubmitInquiry() {
       return { ok: true }
     },
   })
+}
+
+/** 문의 목록(가림) — 그 사이트 최근 문의의 가린 이름·날짜·답변상태. */
+export function useInquiryBoard(): UseQueryResult<InquiryBoardRow[]> {
+  return useQuery({
+    queryKey: [...siteKeys.inquiryBoard(), INQUIRY_SITE],
+    queryFn: async (): Promise<InquiryBoardRow[]> => {
+      if (dataSource === 'supabase' && supabase) {
+        const { data, error } = await supabase.rpc('portal_inquiry_board', { p_source_site: INQUIRY_SITE, p_limit: 20 })
+        if (error) throw new Error('문의 목록을 불러오지 못했습니다.')
+        return Array.isArray(data) ? (data as unknown as InquiryBoardRow[]) : []
+      }
+      return [...readDb().inquiries]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 20)
+        .map((q) => ({ id: q.id, author: maskName(q.author_name), status: q.status, created_at: q.created_at }))
+    },
+    staleTime: 30_000,
+  })
+}
+
+/** 내 문의 확인 — 연락처 + 비밀번호가 맞는 글(제목·내용·답변)만. 맞는 글이 없으면 빈 목록. */
+export function useMyInquiries() {
+  return useMutation<MyInquiry[], Error, { phone: string; password: string }>({
+    mutationFn: async ({ phone, password }) => {
+      if (dataSource === 'supabase' && supabase) {
+        const { data, error } = await supabase.rpc('portal_my_inquiries', {
+          p_source_site: INQUIRY_SITE, p_phone: digits(phone), p_password: password.trim(),
+        })
+        if (error) {
+          throw new Error(error.code === '54000'
+            ? '확인 시도가 너무 많습니다. 10분 뒤 다시 시도해주세요.'
+            : '문의 내역을 불러오지 못했습니다.')
+        }
+        return Array.isArray(data) ? (data as unknown as MyInquiry[]) : []
+      }
+      return [] // mock: 비밀번호를 저장하지 않으므로 열람 대상 없음
+    },
+  })
+}
+
+/** 이름 가리기 — 홍길동→홍*동, 이영→이*. 서버 portal_inquiry_board 와 같은 규칙(mock 용). */
+export function maskName(name: string): string {
+  const chars = [...name.trim()]
+  if (chars.length <= 1) return '*'
+  if (chars.length === 2) return `${chars[0]}*`
+  return `${chars[0]}${'*'.repeat(chars.length - 2)}${chars[chars.length - 1]}`
 }

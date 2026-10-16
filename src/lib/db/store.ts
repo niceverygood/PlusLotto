@@ -63,7 +63,8 @@ const DB_KEY = 'pluslotto-db'
 // v13: 역할별 메뉴 축소(팀장=이용자·나의고객, 실장=로또 제외) + 등급별 약관(현장 피드백 6/11).
 // v16: 당첨자 수를 current+admin 로그 이력으로 전환 + 생성기록을 회차·등급 로직 중심으로 전환.
 // v19: 팀 → 센터(대전·전주·원주, 현장 10/14).
-const DB_VERSION = 19
+// v20: 루비 결제 상품(prod-ruby, 현장 10/16).
+const DB_VERSION = 20
 
 interface Persisted {
   __v: number

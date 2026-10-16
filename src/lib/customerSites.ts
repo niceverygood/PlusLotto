@@ -16,7 +16,9 @@ export interface CustomerPlan {
 export interface CustomerSite {
   key: CustomerSiteKey
   name: string
-  hostname: string
+  hostname: string // 대표 주소(현재 안내하는 도메인)
+  /** 예전 주소 — 이미 저장·공유된 링크가 계속 같은 사이트로 열리게 남겨 둔다. */
+  aliases?: readonly string[]
   plans: readonly CustomerPlan[]
   bank: BankTransferSettings
   business: BusinessInfo
@@ -28,7 +30,9 @@ export const CUSTOMER_SITES: readonly CustomerSite[] = [
   {
     "key": "infolotto",
     "name": "인포로또",
-    "hostname": "infolotto.co.kr",
+    // 현장 10/16(정의현 차장): 회원용 홈페이지 도메인 infolotto.co.kr → infolotto.kr 변경. 예전 주소도 계속 연다.
+    "hostname": "infolotto.kr",
+    "aliases": ["infolotto.co.kr"],
     "plans": [
       {
         "grade": "goldp",
@@ -199,7 +203,7 @@ export const CUSTOMER_SITES: readonly CustomerSite[] = [
 export function resolveCustomerSite(hostname: string, deploymentBrand: string, allowLocalPreview = false): CustomerSite | null {
   if (deploymentBrand !== '플러스로또') return null
   const host = hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, '')
-  return CUSTOMER_SITES.find((site) => site.hostname === host
+  return CUSTOMER_SITES.find((site) => site.hostname === host || site.aliases?.includes(host)
     || (allowLocalPreview && host === `${site.key}.localhost`)) ?? null
 }
 

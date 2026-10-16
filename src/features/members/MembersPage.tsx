@@ -20,7 +20,7 @@ import { useUrlFilters } from '@/lib/useUrlFilters'
 import { useCurrentUser, useRole } from '@/lib/auth'
 import { useMemberDrawerStore } from '@/lib/memberDrawerStore'
 import { useStaff } from '@/lib/staff'
-import { canExportMembers } from '@/lib/permissions'
+import { canAssignSecondaryStaff, canExportMembers } from '@/lib/permissions'
 import { useSiteScope } from '@/lib/siteScopeStore'
 import { GRADE_LABEL, STATUS_META } from '@/design-system/labels'
 import type { Grade, MemberStatus } from '@/types/db'
@@ -209,7 +209,7 @@ export function MembersPage() {
             ? assignStaff.mutate({ ids: [id], staffId })
             : resetAssign.mutate({ ids: [id] }),
         secondaryOptions,
-        canEditSecondary: role === 'admin',
+        canEditSecondary: canAssignSecondaryStaff(role),
         onChangeSecondary: (id, staffId) => assignSecondary.mutate({ ids: [id], staffId: staffId || null }),
         onChangeConsult: (id, consult) =>
           updateMember.mutate({ id, patch: { consult_status: consult || null } }),

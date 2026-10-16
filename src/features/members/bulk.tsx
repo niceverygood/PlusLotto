@@ -6,6 +6,7 @@ import { BulkButton, ConfirmModal, Modal, Button } from '@/design-system/compone
 import { STATUS_META, GRADE_LABEL } from '@/design-system/labels'
 import { useStaff } from '@/lib/staff'
 import { useRole } from '@/lib/auth'
+import { canAssignSecondaryStaff } from '@/lib/permissions'
 import { useTodayDbCounts } from '@/lib/todayDb'
 import { useSiteScope } from '@/lib/siteScopeStore'
 import { koByteLength, classifyMsgType } from '@/lib/oneshot'
@@ -44,6 +45,8 @@ export function MemberBulkActions({
   // 디비 배분/입력·담당자 변경·유입분류는 최고관리자만(현장 피드백)
   const role = useRole()
   const isAdmin = role === 'admin'
+  // 2차담당 일괄 지정은 실장 이상(현장 10/16 — "실장급 아이디 권한에서 2차담당자 변경")
+  const canSecondary = canAssignSecondaryStaff(role)
   // 자유본문(직접입력) 일괄발송은 최고관리자·관리자만(현장 피드백 6/22, 오발송·스팸 위험)
   const canDirectSms = role === 'admin' || role === 'manager'
   const [modal, setModal] = useState<BulkModal>(null)
@@ -142,9 +145,6 @@ export function MemberBulkActions({
           <BulkButton onClick={openAssign}>
             <UserPlus className="h-3.5 w-3.5" /> 담당배정
           </BulkButton>
-          <BulkButton onClick={openSecondary}>
-            <UserCog className="h-3.5 w-3.5" /> 2차담당
-          </BulkButton>
           <BulkButton onClick={openAuto}>
             <Wand2 className="h-3.5 w-3.5" /> 자동할당
           </BulkButton>
@@ -155,6 +155,11 @@ export function MemberBulkActions({
             <Eraser className="h-3.5 w-3.5" /> DB초기화
           </BulkButton>
         </>
+      )}
+      {canSecondary && (
+        <BulkButton onClick={openSecondary}>
+          <UserCog className="h-3.5 w-3.5" /> 2차담당
+        </BulkButton>
       )}
       <BulkButton onClick={openSms}>
         <MessageSquare className="h-3.5 w-3.5" /> 문자발송

@@ -76,6 +76,8 @@ export const siteKeys = {
   publicInfo: () => ['site', 'public-info'] as const,
   // 고객 약관보기(공개 글만, 사이트·등급별).
   terms: () => ['site', 'terms-posts'] as const,
+  // 고객 1:1 문의 목록(가린 행, 현장 10/16).
+  inquiryBoard: () => ['site', 'inquiry-board'] as const,
 }
 
 // SMS 템플릿: members(드로어·일괄·나의문자)와 settings(편집)가 공유 → lib 단일 출처(§2·§8).

@@ -19,7 +19,7 @@ function rounds(last: number): LottoRound[] {
 }
 
 const manual = { fixed: [], excluded: [1, 2, 3, 44, 45] }
-const EXPECTED = { before: { goldp: 5, ruby: 6, vip: 8, royal: 12 }, after: { goldp: 7, ruby: 10, vip: 12, royal: 15 } } as const
+const EXPECTED = { before: { goldp: 5, ruby: 5, vip: 8, royal: 12 }, after: { goldp: 7, ruby: 9, vip: 12, royal: 15 } } as const
 
 test('전부 자동 시작 회차는 1246회이고 두 사본이 같은 값을 쓴다', () => {
   assert.equal(API_FROM, 1246)
@@ -74,18 +74,25 @@ test('자동발송(api)과 화면(src) 사본은 같은 입력에 같은 제외�
   }
 })
 
-test('루비(10/12 추가)는 실버와 골드 사이 — 분석 창 20회차·제외 10개, 연번·구간 필터를 적용한다', () => {
-  const data = rounds(1245)
+test('루비(현장 10/16 문서)는 최근 10회차·제외수 9개, 번호합·홀짝 필터만 적용한다', () => {
+  const data = rounds(1246) // 다음 회차 = 1247(전부 자동)
   const ruby = apiGenerate(data, 'ruby', manual, 5, 7)
-  assert.equal(ruby.window, 20)
-  assert.equal(ruby.autoExcluded.length, 10)
-  for (const n of manual.excluded.filter((x) => !ruby.autoExcluded.includes(x))) assert.ok(!ruby.excluded.includes(n), '수동 제외 미적용')
+  assert.ok(ruby.window >= 10)
+  assert.equal(ruby.autoExcluded.length, 9)
   for (const set of ruby.sets) {
-    let pairs = 0
-    for (let i = 1; i < set.length; i++) if (set[i] - set[i - 1] === 1) pairs++
-    assert.ok(pairs <= 2, `연번 ${pairs}쌍: ${set}`)
-    const buckets = new Map<number, number>()
-    for (const n of set) { const b = n >= 40 ? 4 : Math.floor(n / 10); buckets.set(b, (buckets.get(b) ?? 0) + 1) }
-    assert.ok(Math.max(...buckets.values()) <= 3, `구간 쏠림: ${set}`)
+    const sum = set.reduce((a, n) => a + n, 0)
+    assert.ok(sum >= 100 && sum <= 175, `번호합 ${sum}: ${set}`)
+    const odd = set.filter((n) => n % 2 === 1).length
+    assert.ok(odd >= 2 && odd <= 4, `홀짝 ${odd}: ${set}`)
+    for (const n of ruby.excluded) assert.ok(!set.includes(n), `제외수 ${n} 포함: ${set}`)
   }
+})
+
+test('루비 1245회까지(수동 제외 합산 시기)는 실버와 같은 10회차·자동 5개', () => {
+  const data = rounds(1244) // 다음 회차 = 1245
+  const ruby = apiGenerate(data, 'ruby', manual, 5, 7)
+  const silver = apiGenerate(data, 'goldp', manual, 5, 7)
+  assert.equal(ruby.autoExcluded.length, 5)
+  assert.deepEqual(ruby.autoExcluded, silver.autoExcluded)
+  assert.equal(ruby.window, silver.window)
 })

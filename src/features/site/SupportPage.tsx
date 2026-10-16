@@ -4,7 +4,7 @@
 // 한 페이지 안에서 3개 섹션을 탭으로 구분한다.
 //   ① 공지사항  — useNotices() 목록(고정 우선→최신순), 펼침형 본문
 //   ② 자주 묻는 질문 — useFaqs() 아코디언(sort_order asc)
-//   ③ 1:1 문의   — useSubmitInquiry() (이름·연락처·제목·내용)
+//   ③ 1:1 문의   — useSubmitInquiry() (이름·연락처·비밀번호·제목·내용) + 비밀글 목록·내 문의 확인(현장 10/16)
 // 공유 파일은 수정하지 않는다. 필요한 로컬 상태/헬퍼만 이 파일에 둔다.
 // 데이터 훅은 RLS(anon) 차단 시 빈 배열/graceful 에러로 폴백하므로,
 //   로딩/빈/에러 상태를 모두 화면에서 안내한다.
@@ -14,17 +14,22 @@ import { useMemo, useState, type FormEvent } from 'react'
 import {
   ChevronDown,
   HelpCircle,
+  Lock,
   Megaphone,
   MessageSquarePlus,
   Phone,
   Pin,
+  Search,
 } from 'lucide-react'
 import { Button, EmptyState, Skeleton } from '@/design-system/components'
-import { datetime } from '@/lib/format'
+import { date, datetime } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import type { Faq, Notice } from '@/types/db'
 import { CUSTOMER_SITE } from '@/lib/customerSiteContext'
-import { useFaqs, useNotices, usePublicSiteInfo, useSubmitInquiry, type InquiryInput } from './api'
+import {
+  useFaqs, useInquiryBoard, useMyInquiries, useNotices, usePublicSiteInfo, useSubmitInquiry,
+  type InquiryInput, type MyInquiry,
+} from './api'
 
 // 전산(설정 > 사이트 설정 > 사업자 정보)에 값이 없을 때만 쓰는 안내용 기본값(현장 피드백: 1660-0681).
 const FALLBACK_SUPPORT_PHONE = '1660-0681'
@@ -291,6 +296,7 @@ function InquirySection() {
   const submit = useSubmitInquiry()
   const [name, setName] = useState('')
   const [contact, setContact] = useState('')
+  const [password, setPassword] = useState('')
   const [category, setCategory] = useState<string>(INQUIRY_CATEGORIES[0])
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -304,13 +310,16 @@ function InquirySection() {
 
     const input: InquiryInput = {
       name: name.trim(),
-      phone: contact.trim() || undefined,
+      phone: contact.trim(),
+      password: password.trim(),
       category,
       title: title.trim(),
       body: body.trim(),
     }
     // 클라이언트 1차 검증(서버 훅도 동일 검증을 한 번 더 한다).
     if (!input.name) return setFeedback({ tone: 'err', msg: '이름을 입력해주세요.' })
+    if (input.phone.replace(/\D/g, '').length < 9) return setFeedback({ tone: 'err', msg: '연락처를 정확히 입력해주세요.' })
+    if (input.password.length < 4) return setFeedback({ tone: 'err', msg: '비밀번호를 4자 이상 입력해주세요.' })
     if (!input.title) return setFeedback({ tone: 'err', msg: '제목을 입력해주세요.' })
     if (!input.body) return setFeedback({ tone: 'err', msg: '문의 내용을 입력해주세요.' })
 
@@ -318,10 +327,11 @@ function InquirySection() {
     if (res.ok) {
       setFeedback({
         tone: 'ok',
-        msg: '문의가 정상적으로 접수되었습니다. 빠른 시일 내에 답변드리겠습니다.',
+        msg: '문의가 비밀글로 접수되었습니다. 답변은 아래 [내 문의 확인]에서 연락처와 비밀번호로 보실 수 있습니다.',
       })
       setName('')
       setContact('')
+      setPassword('')
       setTitle('')
       setBody('')
       setCategory(INQUIRY_CATEGORIES[0])
@@ -331,6 +341,7 @@ function InquirySection() {
   }
 
   return (
+    <div className="flex flex-col gap-6">
     <div className="grid gap-6 lg:grid-cols-[1fr,300px]">
       {/* 폼 */}
       <form
@@ -338,7 +349,7 @@ function InquirySection() {
         className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6"
         noValidate
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field label="이름" required>
             <input
               type="text"
@@ -349,7 +360,7 @@ function InquirySection() {
               className={inputCls}
             />
           </Field>
-          <Field label="연락처">
+          <Field label="연락처" required>
             <input
               type="tel"
               value={contact}
@@ -360,7 +371,21 @@ function InquirySection() {
               className={cn(inputCls, 'font-mono tabular-nums')}
             />
           </Field>
+          <Field label="비밀번호" required>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="4자 이상"
+              autoComplete="new-password"
+              maxLength={20}
+              className={inputCls}
+            />
+          </Field>
         </div>
+        <p className="mt-2 flex items-center gap-1.5 text-[12px] text-gray-500">
+          <Lock className="h-3.5 w-3.5" /> 문의글은 비밀글로 접수되어 작성자 본인만 연락처와 비밀번호로 볼 수 있습니다.
+        </p>
 
         <div className="mt-4">
           <Field label="문의 유형">
@@ -385,6 +410,7 @@ function InquirySection() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="문의 제목을 입력해주세요"
+              maxLength={200}
               className={inputCls}
             />
           </Field>
@@ -397,6 +423,7 @@ function InquirySection() {
               onChange={(e) => setBody(e.target.value)}
               placeholder="문의하실 내용을 자세히 적어주세요."
               rows={6}
+              maxLength={4500}
               className={cn(inputCls, 'min-h-[140px] resize-y leading-relaxed')}
             />
           </Field>
@@ -451,6 +478,122 @@ function InquirySection() {
         </p>
       </aside>
     </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <InquiryBoard />
+        <MyInquiriesLookup />
+      </div>
+    </div>
+  )
+}
+
+// 문의 목록 — 다른 사람 글은 제목·내용 없이 '비밀글'로만 보인다(현장 10/16 "작성자외에는 볼 수 없도록").
+function InquiryBoard() {
+  const { data: rows = [], isLoading, isError } = useInquiryBoard()
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white">
+      <h3 className="border-b border-gray-100 px-5 py-3 text-[14px] font-bold text-ink-900">문의 게시판</h3>
+      {isLoading ? (
+        <p className="px-5 py-6 text-[13px] text-gray-400">불러오는 중…</p>
+      ) : isError ? (
+        <p role="alert" className="px-5 py-6 text-[13px] text-gray-500">문의 목록을 불러오지 못했습니다.</p>
+      ) : rows.length === 0 ? (
+        <p className="px-5 py-6 text-[13px] text-gray-500">등록된 문의가 없습니다.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {rows.map((r) => (
+            <li key={r.id} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
+              <Lock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+              <span className="min-w-0 flex-1 truncate text-gray-500">비밀글입니다</span>
+              <span className="shrink-0 text-gray-500">{r.author}</span>
+              <span className="shrink-0 font-mono tabular-nums text-gray-400">{date(r.created_at)}</span>
+              <StatusPill answered={r.status === 'answered'} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+// 내 문의 확인 — 접수 때 쓴 연락처 + 비밀번호가 맞는 글만 제목·내용·답변을 보여 준다.
+function MyInquiriesLookup() {
+  const lookup = useMyInquiries()
+  const [phone, setPhone] = useState('')
+  const [pw, setPw] = useState('')
+  const [items, setItems] = useState<MyInquiry[] | null>(null)
+
+  async function handleLookup(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setItems(null)
+    try {
+      setItems(await lookup.mutateAsync({ phone, password: pw }))
+    } catch {
+      /* 오류 문구는 lookup.error 로 표시 */
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white">
+      <h3 className="border-b border-gray-100 px-5 py-3 text-[14px] font-bold text-ink-900">내 문의 확인</h3>
+      <form onSubmit={handleLookup} className="flex flex-wrap items-end gap-2 px-5 py-4" noValidate>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="연락처"
+          inputMode="tel"
+          className={cn(inputCls, 'w-auto flex-1 font-mono tabular-nums')}
+        />
+        <input
+          type="password"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          placeholder="비밀번호"
+          maxLength={20}
+          className={cn(inputCls, 'w-auto flex-1')}
+        />
+        <Button type="submit" variant="sec" disabled={lookup.isPending} icon={<Search className="h-4 w-4" />}>
+          {lookup.isPending ? '확인 중…' : '확인'}
+        </Button>
+      </form>
+      {lookup.error && <p role="alert" className="px-5 pb-4 text-[13px] text-danger">{lookup.error.message}</p>}
+      {items && items.length === 0 && (
+        <p className="px-5 pb-4 text-[13px] text-gray-500">연락처와 비밀번호가 맞는 문의가 없습니다.</p>
+      )}
+      {items && items.length > 0 && (
+        <ul className="divide-y divide-gray-100 border-t border-gray-100">
+          {items.map((q) => (
+            <li key={q.id} className="px-5 py-3">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-ink-900">{q.title}</span>
+                <StatusPill answered={q.status === 'answered'} />
+              </div>
+              <p className="mt-0.5 text-[12px] text-gray-400">
+                {q.category} · <span className="font-mono tabular-nums">{datetime(q.created_at)}</span>
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">{q.body}</p>
+              {q.answer && (
+                <div className="mt-2 rounded-md bg-primary-50 px-3 py-2">
+                  <p className="text-[12px] font-bold text-primary-700">답변</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">{q.answer}</p>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function StatusPill({ answered }: { answered: boolean }) {
+  return (
+    <span className={cn(
+      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+      answered ? 'bg-success-bg text-success' : 'bg-warning-bg text-warning',
+    )}>
+      {answered ? '답변완료' : '답변대기'}
+    </span>
   )
 }
 
